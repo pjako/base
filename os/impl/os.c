@@ -474,6 +474,7 @@ typedef struct os__SemaphoreInternal {
 } os__SemaphoreInternal;
 
 void os_semaphoreInit(os_Semaphore* sem) {
+    STATIC_ASSERT(sizeof(os_Semaphore) >= sizeof(os__SemaphoreInternal));
     os__SemaphoreInternal* si = (os__SemaphoreInternal*) sem->internal;
     si->handle = dispatch_semaphore_create(0);
     ASSERT(si->handle != NULL && "dispatch_semaphore_create failed.");
