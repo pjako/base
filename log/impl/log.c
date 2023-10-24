@@ -25,7 +25,7 @@ void log__writeTimestamp(Arena* arena, log_Severity severity, Str8 fileName, u64
     time_t t = time(NULL);
     struct tm *time = localtime(&t);
     char timeBuffer[64];
-    s32 size = strftime(timeBuffer, sizeof(timeBuffer), "%Y-%m-%d %H:%M:%S", time);
+    i32 size = strftime(timeBuffer, sizeof(timeBuffer), "%Y-%m-%d %H:%M:%S", time);
     timeBuffer[size] = '\0';
     Str8 timeStr;
     timeStr.size = size;

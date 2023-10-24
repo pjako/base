@@ -504,7 +504,7 @@ void os_semaphoreDestroy(os_Semaphore* sem) {
 typedef struct os__SemaphoreInternal {
     pthread_mutex_t mutex;
     pthread_cond_t cond;
-    s32 count;
+    i32 count;
 } os__SemaphoreInternal;
 
 void os_semaphoreInit(os_Semaphore* sem) {
@@ -556,10 +556,10 @@ INLINE struct timespec os__timespecAdd(struct timespec ts, u64 msecs) {
     return os__toTimespecNs(ts, ns + msecs * u64_val(1000000));
 }
 
-bool os_semaphoreWait(os_Semaphore* sem, s32 count) {
+bool os_semaphoreWait(os_Semaphore* sem, i32 count) {
     os__SemaphoreInternal* si = (os__SemaphoreInternal*) sem->internal;
 
-    s32 result = pthread_mutex_lock(&si->mutex);
+    i32 result = pthread_mutex_lock(&si->mutex);
     ASSERT(result == 0);
 
     if (count == -1) {

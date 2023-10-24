@@ -278,7 +278,19 @@
 #define ASSERT(C) while(!(C)) __builtin_unreachable()
 #endif
 
-#define STATIC_ASSERT(_condition, ...) static_assert(_condition, "" __VA_ARGS__)
+#define BASE_STRING_JOIN_IMMEDIATE(ARG1, ARG2) ARG1 ## ARG2
+#define BASE_STRING_JOIN_DELAY(ARG1, ARG2) BASE_STRING_JOIN_IMMEDIATE(ARG1, ARG2)
+#define BASE_STRING_JOIN(ARG1, ARG2) BASE_STRING_JOIN_DELAY(ARG1, ARG2)
+
+#ifdef COMPILER_MSVC
+  #define BASE_UNIQUE_NAME(NAME) BASE_STRING_JOIN(NAME,__COUNTER__)
+#else
+  #define BASE_UNIQUE_NAME(NAME) BASE_STRING_JOIN(NAME,__LINE__)
+#endif
+
+#ifndef STATIC_ASSERT
+  #define STATIC_ASSERT(EXP) typedef u8 BASE_UNIQUE_NAME(__staticAssertDummyArr)[(EXP)?1:-1]
+#endif
 
 #if COMPILER_MSVC
 #define debugBreak() __debugbreak()

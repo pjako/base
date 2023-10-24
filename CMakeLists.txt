@@ -53,6 +53,14 @@ if(APPLE)
     )
 endif()
 
+# OS
+
+file(GLOB PARSER_HEADERS "parser/*.h")
+file(GLOB PARSER_SRC "parser/impl/*.c")
+
+add_library(parser STATIC ${PARSER_HEADERS} ${PARSER_SRC})
+set_target_properties(parser PROPERTIES LINKER_LANGUAGE C)
+
 # tests
 
 add_subdirectory(_tests)
