@@ -5,7 +5,7 @@ extern "C" {
 #endif
 
 ////////////////////////////////
-// Note(pjako): scf is a simplified version of
+// Note(pjako): scf is pseudo ini
 //
 
 typedef enum scf_Type {

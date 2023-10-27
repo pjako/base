@@ -36,7 +36,7 @@ API BaseMemory mem_getMallocBaseMem(void);
 
 API Arena* mem_makeArena(BaseMemory* baseMem, u64 size);
 API Arena* mem_makeArenaPreAllocated(void* mem, u64 size);
-API void  mem_destroyArena(Arena* arena);
+API void mem_destroyArena(Arena* arena);
 
 API u64 mem_getArenaMemOffsetPos(Arena* arena);
 

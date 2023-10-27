@@ -11,3 +11,20 @@ Highlights of this lib:
 + Typed string formatter for C & C++
 + Various Platform abstractions
 
+
+## BASE
+
+## OS
+Dependencies: BASE
+
+## LOG
+Dependencies: BASE, OS
+
+## RX
+Dependencies: BASE
+
+## SHD
+Dependencies: BASE, OS
+
+## AUDIO
+Dependencies: BASE

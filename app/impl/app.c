@@ -1,18 +1,14 @@
 #include "base/base.h"
 #include "base/base_types.h"
-#include "base/base_debug.h"
 #include "base/base_str.h"
 #include "base/base_mem.h"
 #include "base/base_math.h"
 
 #include "os/os.h"
-#include "os/os_log.h"
-#include "os/os_helper.h"
-#include "os/os_app.h"
-
+#include "log/log.h"
 #include "app/app.h"
 
-#if APP_DLL_HOST
+#if os_DlL_HOST
 Str8 app__useDll(void) {
     return str8(OS_DLL_PATH);
 }
@@ -25,8 +21,8 @@ typedef struct app__Ctx {
 static app__Ctx* app__ctx;
 
 LOCAL void app__initApp(app__Ctx* ctx, app_ApplicationDesc* appDesc) {
-    BaseMemory mem = os_getBaseMemory(void);
-    Arena* mainAppArena = mem_makeArena(BaseMemory* baseMem);
+    BaseMemory mem = os_getBaseMemory();
+    Arena* mainAppArena = mem_makeArena(&mem, MEGABYTE(2));
     ctx->arena = mainAppArena;
 }
 
@@ -36,6 +32,9 @@ LOCAL void app__uninitApp(app__Ctx* ctx, app_ApplicationDesc* appDesc) {
 
 #if OS_APPLE
 #if OS_OSX
+#ifndef GL_SILENCE_DEPRECATION
+#define GL_SILENCE_DEPRECATION
+#endif
 #import <Cocoa/Cocoa.h>
 #import <QuartzCore/QuartzCore.h>
 #else
@@ -47,10 +46,11 @@ LOCAL void app__uninitApp(app__Ctx* ctx, app_ApplicationDesc* appDesc) {
 
 #ifdef OS_DLLHOST
 #include "app__dllhost.h"
-#endif
 
 #define DMON_IMPL
 #include "dmon.h"
+
+#endif
 
 #if __has_feature(objc_arc)
 #define OS_OBJC_RELESE(obj) { obj = nil; }
@@ -63,7 +63,7 @@ LOCAL void app__uninitApp(app__Ctx* ctx, app_ApplicationDesc* appDesc) {
 @end
 @interface OsAppDelegate : NSObject<NSApplicationDelegate>
 @end
-@interface OsWindowDelegate : NSObject<NSWindowDelegate>
+@interface AppWindowDelegate : NSObject<NSWindowDelegate>
 @end
 //static NSWindow* window;
 #define AppleWindow NSWindow
@@ -76,14 +76,26 @@ LOCAL void app__uninitApp(app__Ctx* ctx, app_ApplicationDesc* appDesc) {
 
 @class AppleWindow;
 
-@interface RawMetalView : NSView
+@interface AppMetalView : NSView
 -(CALayer*) makeBackingLayer;
 @property(nonatomic, strong) CALayer* metalLayer;
 @property(nonatomic, strong) NSTrackingArea* trackingArea;
 @end
 
-@interface OsWindow : AppleWindow
-@property(nonatomic, strong) RawMetalView* metalView;
+#if OS_OSX
+@interface AppGlView : NSOpenGLView
+#else
+@interface AppGlView : GLKView
+#endif
+@end
+
+@interface AppInputView : NSView
+@end
+
+@interface AppWindow : AppleWindow
+@property(nonatomic, strong) AppMetalView* metalView;
+@property(nonatomic, strong) AppGlView*    glView;
+@property(nonatomic, strong) AppInputView* inputView;
 @property(nonatomic)         u32           windowId;
 @property(nonatomic)         u32           frameBufferWidth;
 @property(nonatomic)         u32           frameBufferHeight;
@@ -119,11 +131,11 @@ typedef struct app__AppleCtx {
     f32 frameBufferHeight;
     Str8 dllFileName;
     Str8 dllFullPath;
-    app_Dl* clientDll;
+    os_Dl* clientDll;
     u64 dllIdx;
     bx loadNewClientDll;
     app_ApplicationDesc  desc;
-    NSMutableArray<OsWindow*>*     windows;
+    NSMutableArray<AppWindow*>*     windows;
     OsAppDelegate*      delegate;
     CVDisplayLinkRef    displayLink;
     app_window focusedWindow;
@@ -150,8 +162,7 @@ static THREAD_LOCAL app__AppThreadCtx app__appThreadCtx;
 
 //#ifdef OS_RELOAD
 
-#define DMON_IMPL
-#include "dmon.h"
+#ifdef OS_DLLHOST
 
 static void app__watchCallback(dmon_watch_id watch_id, dmon_action action, const char* rootdir, const char* filepath, const char* oldfilepath, void* user) {
     (void)(user);
@@ -174,11 +185,11 @@ static void app__watchCallback(dmon_watch_id watch_id, dmon_action action, const
 }
 
 void app__hotReload(void) {
-    // app_Dl* app_dlOpen(Str8 filePath);
-    // void   app_dlClose(app_Dl* handle);
-    // void*  app_dlSym(app_Dl* handle, const char* symbol);
-    app_Dl* dllHandle = app_dlOpen(str8("foo/bar.dll"));
-    void* entry = app_dlSym(dllHandle, "app__appDllEntry");
+    // os_Dl* os_dlOpen(Str8 filePath);
+    // void   os_dlClose(os_Dl* handle);
+    // void*  os_DlSym(os_Dl* handle, const char* symbol);
+    os_Dl* dllHandle = os_dlOpen(str8("foo/bar.dll"));
+    void* entry = os_DlSym(dllHandle, "app__appDllEntry");
 
 
     dmon_init();
@@ -187,10 +198,11 @@ void app__hotReload(void) {
     // getchar();
     dmon_deinit();
 }
-//#endif
-// API app_Dl* app_dlOpen(Str8 filePath);
-// API void   app_dlClose(app_Dl* handle);
-// API void*  app_dlSym(app_Dl* handle, const char* symbol);
+#endif
+
+// API os_Dl* os_dlOpen(Str8 filePath);
+// API void   os_dlClose(os_Dl* handle);
+// API void*  os_DlSym(os_Dl* handle, const char* symbol);
 
 #ifndef OS_NO_ENTRY
 
@@ -215,11 +227,11 @@ extern void app__dllContinue(app__AppleCtx* ctx) {
 LOCAL bx app__clientDllCloseAndLoad(Arena* tmpArena) {
     if (app__appleCtx->clientDll) {
         log_trace(tmpArena, str8("dll close last"));
-        app_dlClose(app__appleCtx->clientDll);
+        os_dlClose(app__appleCtx->clientDll);
         app__appleCtx->clientDll = NULL;
     }
     bx success = true;
-    app_Dl* dllHandle = NULL;
+    os_Dl* dllHandle = NULL;
     mem_scoped(tempMem, tmpArena) {
         i32 oldIdx = app__appleCtx->dllIdx;
         app__appleCtx->dllIdx += 1;
@@ -230,29 +242,29 @@ LOCAL bx app__clientDllCloseAndLoad(Arena* tmpArena) {
         Str8 dllFullPath = str_join(tempMem.arena, app__appleCtx->dllFullPath, str8(".dylib"));
 
         // delete target dll file if it existed previously
-        if (app_fileExists(targetFileName)) {
+        if (os_fileExists(targetFileName)) {
             log_trace(tempMem.arena, str8("dll delete:"), targetFileName);
-            app_fileDelete(targetFileName);
-            // ASSERT(!app_fileExists(targetFileName));
+            os_fileDelete(targetFileName);
+            // ASSERT(!os_fileExists(targetFileName));
         }
-        if (app_fileExists(oldTargetFileName)) {
+        if (os_fileExists(oldTargetFileName)) {
             log_trace(tempMem.arena, str8("dll delete:"), oldTargetFileName);
-            app_fileDelete(oldTargetFileName);
-            // ASSERT(!app_fileExists(targetFileName));
+            os_fileDelete(oldTargetFileName);
+            // ASSERT(!os_fileExists(targetFileName));
         }
         log_trace(tempMem.arena, str8("dll read new:"), dllFullPath);
-        Str8 dllData = app_fileRead(tempMem.arena, dllFullPath);
+        Str8 dllData = os_fileRead(tempMem.arena, dllFullPath);
         if (!dllData.content) {
             success = false;
             continue;
         }
-        bx success = app_fileWrite(targetFileName, dllData);
+        bx success = os_fileWrite(targetFileName, dllData);
         log_trace(tempMem.arena, str8("dll write:"), targetFileName);
         if (!success) {
             success = false;
             continue;
         }
-        app__appleCtx->clientDll = app_dlOpen(targetFileNameB);
+        app__appleCtx->clientDll = os_dlOpen(targetFileNameB);
         log_trace(tempMem.arena, str8("dll load:"), targetFileName);
         if (!app__appleCtx->clientDll) {
             success = false;
@@ -279,15 +291,15 @@ LOCAL i32 app__hostStart(int argc, char* argv[]) {
     app__appleCtx->dllFileName = str_from(dllFile, str_lastIndexOfChar(dllFile, '/') + 1);
 
     if (!app__clientDllCloseAndLoad(app__appleCtx->mainArena)) {
-        app_log(str8("No Dll to load!"));
+        //app_log(str8("No Dll to load!"));
         return 1;
     }
 
-    app_Dl* dllHandle = app__appleCtx->clientDll;
-    app__dllMainFn* dllMainFn = app_dlSym(dllHandle, "app__dllMain");
+    os_Dl* dllHandle = app__appleCtx->clientDll;
+    app__dllMainFn* dllMainFn = os_DlSym(dllHandle, "app__dllMain");
     if (dllMainFn == NULL) {
         // error!
-        app_log(str8("No entry point in client dll! (app__dllMain)"));
+        //app_log(str8("No entry point in client dll! (app__dllMain)"));
         return 1;
     }
 
@@ -321,14 +333,11 @@ int app__hostEnd(void) {
 
 
 int main(int argc, char* argv[]) {
-    app_init();
-    app_threadInit();
 
-    BaseMemory baseMem = app_getBaseMemory();
+#if 0
+
+#endif
     
-    Arena* mainArena = mem_makeArena(&baseMem);
-    app__appleCtx = mem_arenaPushStructZero(mainArena, app__AppleCtx);
-    app__appleCtx->mainArena = mainArena;
     // HACK: we need argument buffers for molten vulkan... 
     setenv("MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS", "1", true);
     i32 val = 0;
@@ -592,7 +601,7 @@ LOCAL void app__mouseEvents(app_appEventType type, app_mouseButton btn, u32 mod)
 
 LOCAL void app__updateMouse(NSEvent* event) {
     if (!app__appleCtx->mouse.locked) {
-        OsWindow* window = (OsWindow*) event.window;
+        AppWindow* window = (AppWindow*) event.window;
         const NSPoint mousePos = event.locationInWindow;
         f32 dpiScale = window.dpiScale;
         f32 newX = mousePos.x * dpiScale;
@@ -627,7 +636,7 @@ LOCAL void app__keyEvent(app_appEventType type, app_keyCode key, bx repeat, u32 
     can dynamically update the DPI scaling factor when a window is moved
     between HighDPI / LowDPI screens.
 */
-LOCAL void app__updateDimesion(OsWindow* appleWindow) {
+LOCAL void app__updateDimesion(AppWindow* appleWindow) {
     if (app__appleCtx->desc.highDpi) {
         appleWindow.dpiScale = [appleWindow screen].backingScaleFactor;
     } else {
@@ -796,9 +805,9 @@ LOCAL void _sapp_macapp_set_icon(const sapp_icon_desc* icon_desc, int num_images
 
 
 #if OS_OSX
-@interface OsWindow () <NSWindowDelegate>
+@interface AppWindow () <NSWindowDelegate>
 #else
-@interface OsWindow () <UIApplicationDelegate>
+@interface AppWindow () <UIApplicationDelegate>
 #endif
 @end
 
@@ -810,7 +819,11 @@ static CVReturn app__appleDisplayLinkCallback(CVDisplayLinkRef displayLink,
                                     void* target);
 
 
-@implementation RawMetalView
+@implementation AppGlView
+@end
+
+
+@implementation AppMetalView
     
 /** Indicates that the view wants to draw using the backing layer instead of using drawRect:.  */
 -(BOOL) wantsUpdateLayer {
@@ -825,7 +838,7 @@ static CVReturn app__appleDisplayLinkCallback(CVDisplayLinkRef displayLink,
 
 #if 0
 - (void)reshape {
-    app__updateDimesion((OsWindow*) self.window);
+    app__updateDimesion((AppWindow*) self.window);
     [super reshape];
 }
 #endif
@@ -1060,7 +1073,7 @@ static CVReturn app__appleDisplayLinkCallback(CVDisplayLinkRef displayLink,
 
 @end
 
-@implementation OsWindow
+@implementation AppWindow
 
 - (void)windowDidResize:(NSNotification*)notification {
     unusedVars(notification);
@@ -1146,9 +1159,9 @@ static CVReturn app__appleDisplayLinkCallback(CVDisplayLinkRef displayLink,
 #endif
     // call the init function
     if (app__appleCtx->desc.init) {
-        mem_Scratch scratch = mem_scratchStart(app_tempMemory());
+        //mem_Scratch scratch = mem_scratchStart(app_tempMemory());
         app__appleCtx->desc.init();
-        mem_scratchEnd(&scratch);
+        //mem_scratchEnd(&scratch);
     }
 
 
@@ -1166,7 +1179,6 @@ static CVReturn app__appleDisplayLinkCallback(CVDisplayLinkRef displayLink,
     [NSApp activateIgnoringOtherApps:YES];
     [NSEvent setMouseCoalescingEnabled:NO];
     
-    app_threadInit();
     app_appInitThread();
 
     CVDisplayLinkCreateWithActiveCGDisplays(&app__appleCtx->displayLink);
@@ -1223,18 +1235,17 @@ CVReturn app__appleDisplayLinkCallback(CVDisplayLinkRef displayLink,
                                     CVOptionFlags* flagsOut,
                                     void* target) {
     // update can happen on a different thread so we initialize it again.
-    app_threadInit();
     app_appInitThread();
-    mem_scoped(_, app_tempMemory()) {
+    {
         if (app__appleCtx->loadNewClientDll) {
             app__appleCtx->loadNewClientDll = false;
             app__appleCtx->desc.prepareReloadDll();
             if (app__clientDllCloseAndLoad(app__appleCtx->mainArena)) {
 
-                app__dllContinueFn* dllMainFn = app_dlSym(app__appleCtx->clientDll, "app__dllContinue");
+                app__dllContinueFn* dllMainFn = os_dlSym(app__appleCtx->clientDll, "app__dllContinue");
                 if (dllMainFn == NULL) {
                     // error!
-                    app_log(str8("No entry point in client dll! (app__dllMain)"));
+                    // app_log(str8("No entry point in client dll! (app__dllMain)"));
                     return 1;
                 }
 
@@ -1248,7 +1259,7 @@ CVReturn app__appleDisplayLinkCallback(CVDisplayLinkRef displayLink,
     return kCVReturnSuccess;
 }
 
-static void app__appleSetWindowName(OsWindow* window, Str8 name) {
+static void app__appleSetWindowName(AppWindow* window, Str8 name) {
 #if OS_OSX
     u8 title[2057];
     u64 size = minVal(name.size, (sizeof(title) - 1));
@@ -1262,19 +1273,19 @@ static void app__appleSetWindowName(OsWindow* window, Str8 name) {
 }
 
 static uint32_t app__appleCreateWindow(app_WindowDesc* desc) {
-    OsWindow* window = nil;
+    AppWindow* window = nil;
     // window delegate and main window
     #if OS_IOS
         CGRect mainScreenBounds = [[UIScreen mainScreen] bounds];
-        window = [[OsWindow alloc] initWithFrame:mainScreenBounds];
+        window = [[AppWindow alloc] initWithFrame:mainScreenBounds];
     #else
-        //window.windowDelegate = [[OsWindowDelegate alloc] init];
+        //window.windowDelegate = [[AppWindowDelegate alloc] init];
         const NSUInteger style =
             NSWindowStyleMaskTitled |
             NSWindowStyleMaskClosable |
             NSWindowStyleMaskMiniaturizable |
             NSWindowStyleMaskResizable;
-        window = [[OsWindow alloc]
+        window = [[AppWindow alloc]
             initWithContentRect:NSMakeRect(desc->x, desc->y, desc->width, desc->height)
             styleMask:style
             backing:NSBackingStoreBuffered
@@ -1284,14 +1295,51 @@ static uint32_t app__appleCreateWindow(app_WindowDesc* desc) {
         [window setRestorable:YES];
         [window setDelegate:window];
     #endif
-    window.metalView = [[RawMetalView alloc] init];
+    NSRect windowRect = NSMakeRect(0, 0, desc->width, desc->height);
+    if (desc->gfxApi == app_windowGfxApi_openGl) {
+        NSOpenGLPixelFormatAttribute attrs[32];
+        int i = 0;
+        attrs[i++] = NSOpenGLPFAAccelerated;
+        attrs[i++] = NSOpenGLPFADoubleBuffer;
+        attrs[i++] = NSOpenGLPFAOpenGLProfile;
+        const int glVersion = 41; //_sapp.desc.gl_major_version * 10 + _sapp.desc.gl_minor_version;
+        switch(glVersion) {
+            case 10: attrs[i++] = NSOpenGLProfileVersionLegacy;  break;
+            case 32: attrs[i++] = NSOpenGLProfileVersion3_2Core; break;
+            case 41: attrs[i++] = NSOpenGLProfileVersion4_1Core; break;
+            default: ASSERT(!"MACOS_INVALID_NSOPENGL_PROFILE");//_SAPP_PANIC(MACOS_INVALID_NSOPENGL_PROFILE);
+        }
+        attrs[i++] = NSOpenGLPFAColorSize; attrs[i++] = 24;
+        attrs[i++] = NSOpenGLPFAAlphaSize; attrs[i++] = 8;
+        attrs[i++] = NSOpenGLPFADepthSize; attrs[i++] = 24;
+        attrs[i++] = NSOpenGLPFAStencilSize; attrs[i++] = 8;
+        if (desc->sampleCount > 1) {
+            attrs[i++] = NSOpenGLPFAMultisample;
+            attrs[i++] = NSOpenGLPFASampleBuffers; attrs[i++] = 1;
+            attrs[i++] = NSOpenGLPFASamples; attrs[i++] = (NSOpenGLPixelFormatAttribute) desc->sampleCount;
+        }
+        else {
+            attrs[i++] = NSOpenGLPFASampleBuffers; attrs[i++] = 0;
+        }
+        attrs[i++] = 0;
+        NSOpenGLPixelFormat* glpixelformatObj = [[NSOpenGLPixelFormat alloc] initWithAttributes:attrs];
+        ASSERT(glpixelformatObj != nil);
+
+        window.glView = [[AppGlView alloc] initWithFrame:windowRect pixelFormat:glpixelformatObj];
+        OS_OBJC_RELESE(glpixelformatObj);
+
+#if OS_OSX
+        [window setContentView:window.glView];
+        // [window.glView open]
+#endif
+    } else {
+        window.metalView = [[AppMetalView alloc] init];
 
     #if OS_OSX
         [window setContentView:window.metalView];
         CGSize drawable_size = { (CGFloat) desc->width, (CGFloat) desc->height };
         // [mtk_view setDrawableSize:drawable_size];
         // [[mtk_view layer] setMagnificationFilter:kCAFilterNearest];
-        [window makeKeyAndOrderFront:nil];
         
         //[window.metalView setContentScaleFactor:1.0f];
         //[window.metalView setUserInteractionEnabled:YES];
@@ -1299,14 +1347,19 @@ static uint32_t app__appleCreateWindow(app_WindowDesc* desc) {
         //[window addSubview:window.metalView];
         //[window makeKeyAndVisible];
     #endif
+        [window layoutIfNeeded];
+        [window.metalView setLayer:[window.metalView makeBackingLayer]];
+        [window.metalView setWantsLayer:YES];
+        [window.metalView.layer setContentsScale:[window backingScaleFactor]];
+    }
+    
     app__appleSetWindowName(window, desc->title);
-    [window layoutIfNeeded];
-    [window.metalView setLayer:[window.metalView makeBackingLayer]];
-    [window.metalView setWantsLayer:YES];
-    [window.metalView.layer setContentsScale:[window backingScaleFactor]];
+    [window makeKeyAndOrderFront:nil];
     [window layoutIfNeeded];
     [app__appleCtx->windows addObject:window];
     app__updateDimesion(window);
+
+
     return [app__appleCtx->windows count] - 1;
 }
 
@@ -1320,6 +1373,13 @@ void app_appleStartApplication(void) {
 }
 
 void app_initApplication(app_ApplicationDesc* applicationDesc) {
+    BaseMemory baseMem = os_getBaseMemory();
+    mms appMemoryBudget = applicationDesc->appMemoryBudget == 0 ? MEGABYTE(20) : applicationDesc->appMemoryBudget;
+    Arena* mainArena = mem_makeArena(&baseMem, appMemoryBudget);
+    app__appleCtx = mem_arenaPushStructZero(mainArena, app__AppleCtx);
+    app__appleCtx->mainArena = mainArena;
+
+
     app__appleCtx->started = true;
     bx highDpi = app__appleCtx->desc.highDpi;
     void* user = app__appleCtx->desc.user;
@@ -1350,7 +1410,7 @@ u32 app_maxWindows(void) {
 }
 
 Vec2 app_getWindowSizeF32(app_window window) {
-    OsWindow* osWindow = app__appleCtx->windows[window.id - 1];
+    AppWindow* osWindow = app__appleCtx->windows[window.id - 1];
     Vec2 size;
     size.x = osWindow.frameBufferWidth;
     size.y = osWindow.frameBufferHeight;
@@ -1381,7 +1441,7 @@ app_window app_makeWindow(app_WindowDesc* desc) {
 void app_showWindow(app_window window) {
     ASSERT(window.id);
     u32 windowIndex = window.id - 1;
-    OsWindow* nsWindow = app__appleCtx->windows[windowIndex];
+    AppWindow* nsWindow = app__appleCtx->windows[windowIndex];
 
     ASSERT(nsWindow);
 #if OS_OSX
@@ -1398,7 +1458,7 @@ void app_hideWindow(app_window window) {
     ASSERT(window.id);
 #if OS_OSX
     u32 windowIndex = window.id - 1;
-    OsWindow* nsWindow = app__appleCtx->windows[windowIndex];
+    AppWindow* nsWindow = app__appleCtx->windows[windowIndex];
     ASSERT(nsWindow);
     [nsWindow orderOut:nsWindow];
 #else
@@ -1410,10 +1470,10 @@ void app_destroyWindow(app_window window) {
     ASSERT(window.id);
 #if OS_OSX
     u32 windowIndex = window.id - 1;
-    OsWindow* nsWindow = app__appleCtx->windows[windowIndex];
+    AppWindow* nsWindow = app__appleCtx->windows[windowIndex];
     ASSERT(nsWindow);
     app_hideWindow(window);
-    app__appleCtx->windows[windowIndex] = (OsWindow*) [NSNull null];
+    app__appleCtx->windows[windowIndex] = (AppWindow*) [NSNull null];
 #else
     unusedVars(&window);
 #endif // OS_OSX
@@ -1422,7 +1482,7 @@ void app_destroyWindow(app_window window) {
 void* app_getGraphicsHandle(app_window window) {
     ASSERT(window.id);
     u32 windowIndex = window.id - 1;
-    OsWindow* nsWindow = app__appleCtx->windows[windowIndex];
+    AppWindow* nsWindow = app__appleCtx->windows[windowIndex];
     return (void*) [nsWindow.metalView makeBackingLayer];
 }
 
@@ -1434,9 +1494,9 @@ void app_appInitThread(void) {
     if (app__appThreadCtx.initialized == true) {
         return;
     }
-    BaseMemory baseMem = app_getBaseMemory();
+    BaseMemory baseMem = os_getBaseMemory();
     for (u32 idx = 0; idx < countOf(app__appThreadCtx.arenas); idx++) {
-        app__appThreadCtx.arenas[idx] = mem_makeArena(&baseMem);
+        app__appThreadCtx.arenas[idx] = mem_makeArena(&baseMem, 20);
     }
     app__appThreadCtx.initialized = true;
 }
@@ -1565,7 +1625,7 @@ static LRESULT DefaultWindowProcWin32(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
     return DefWindowProcA(hWnd, msg, wParam, lParam);
 }
 
-static const char* app__Win32WindowClass = "OSWindowClass";
+static const char* app__Win32WindowClass = "AppWindowClass";
 void app_startApplication(void) {
     WNDCLASSEXA* windowClass = &app__win32AppCtx->windowClass;
     windowClass->cbSize        = sizeof(WNDCLASSEXA);
@@ -1648,6 +1708,14 @@ app_window app_makeWindow(app_WindowDesc* desc) {
     return window;
 }
 
+
+typedef struct app_WindowContext {
+    struct {
+        u32 (*getFrameBuffer)(void*);
+        void* userPtr;
+    } gl;
+} app_WindowContext;
+
 void app_showWindow(app_window window) {
     ASSERT(window.id);
     window.id -= 1;
@@ -1677,4 +1745,4 @@ void* app_getGraphicsHandle(app_window window) {
 #error "OS no implemented"
 #endif
 
-#endif // APP_DLL_HOST
+#endif // os_DlL_HOST
