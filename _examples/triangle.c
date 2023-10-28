@@ -35,9 +35,9 @@ void g_init(void) {
     });
 
     rx_setup(&(rx_SetupDesc) {
-
+        .context.gl.appleCaOpenGlLayer = app_getGraphicsHandle(state->window),
+        .sampleCount = 1
     });
-
 
     u32 vertexData[] = {2};
 

@@ -18,6 +18,10 @@
 #define RX_OGL 0
 #endif
 
+
+//#if RX_METAL
+//#import <QuartzCore/CAMetalLayer.h>
+//#endif
 #if RX_OGL
 #if OS_APPLE
 #include <TargetConditionals.h>
@@ -28,13 +32,24 @@
 #if OS_IOS
 #include <OpenGLES/ES3/gl.h>
 #include <OpenGLES/ES3/glext.h>
+#import <UIKit/UIKit.h>
 #else
 #include <OpenGL/gl3.h>
+#import <Cocoa/Cocoa.h>
+#import <QuartzCore/QuartzCore.h>
 #define RX_GLCORE33
 #endif
 
 #else
 #error "Undefined platform"
+#endif
+#endif
+
+#if OS_APPLE
+#if __has_feature(objc_arc)
+#define RX_OBJC_RELESE(obj) { obj = nil; }
+#else
+#define RX_OBJC_RELESE(obj) { [obj release]; obj = nil; }
 #endif
 #endif
 
@@ -50,7 +65,9 @@ typedef struct rx_Shader {
 typedef struct rx_Buffer {
     union {
 #if RX_OGL
-        GLuint glBuffer;
+        struct {
+            GLuint handle;
+        } gl;
 #endif
     };
     u32                 gen : 16;
@@ -63,7 +80,9 @@ typedef struct rx_Buffer {
 typedef struct rx_Texture {
     union {
 #if RX_OGL
-        GLuint handle;
+        struct {
+            GLuint handle;
+        } gl;
 #endif
     };
     u32 gen : 16;
@@ -72,7 +91,9 @@ typedef struct rx_Texture {
 typedef struct rx_TextureView {
     union {
 #if RX_OGL
-        GLuint handle;
+        struct {
+            GLuint handle;
+        } gl;
 #endif
     };
     u32 gen : 7;
@@ -91,6 +112,9 @@ typedef struct rx_Sampler {
 typedef enum rx_api {
     rx_api_default = 0,
     rx_api_ogl,
+    rx_api_vk,
+    rx_api_mtl,
+    rx_api_dx12,
 } rx_api;
 
 typedef struct rx_IndexQueue {
@@ -191,10 +215,22 @@ typedef struct rx_VulkanCtx {
 #if RX_OGL
 #define rx__oglCheckErrors() { ASSERT(glGetError() == GL_NO_ERROR); }
 
+
+#if OS_OSX
+#define RXGLLayer NSOpenGLLayer
+#else
+#define RXGLLayer CAEAGLLayer
+#endif
 typedef struct rx_OpenGlCtx {
     rx_Ctx base;
 #if OS_WINDOWS
     os_Dl* openGlLib;
+#endif
+#if OS_APPLE
+    RXGLLayer* nsGlLayer;
+#endif
+#if OS_OSX
+    NSOpenGLContext* nsOpenGlContext;
 #endif
     GLuint vao;
     GLuint defaultFramebuffer;
@@ -295,6 +331,7 @@ LOCAL void rx__setupBackend(rx_Ctx* baseCtx, const rx_SetupDesc* desc) {
     _sg_gl_load_opengl();
     #endif
 
+
     // clear initial GL error state
     #if defined(SOKOL_DEBUG)
         while (glGetError() != GL_NO_ERROR);
@@ -315,12 +352,62 @@ LOCAL rx_Ctx* rx__create(Arena* arena, rx_SetupDesc* desc) {
     os_Dl* openGlLib = os_dlOpen(s8(""))
 #endif
 
+
+#if OS_APPLE
+    ctx->nsGlLayer = (RXGLLayer*) desc->context.gl.appleCaOpenGlLayer;
+    ASSERT(ctx->nsGlLayer != 0);
+#endif
+
+#if OS_OSX
+    {
+        NSOpenGLPixelFormatAttribute attrs[32];
+        int i = 0;
+        attrs[i++] = NSOpenGLPFAAccelerated;
+        attrs[i++] = NSOpenGLPFADoubleBuffer;
+        attrs[i++] = NSOpenGLPFAOpenGLProfile;
+        const int glVersion = 41; //_sapp.desc.gl_major_version * 10 + _sapp.desc.gl_minor_version;
+        switch(glVersion) {
+            case 10: attrs[i++] = NSOpenGLProfileVersionLegacy;  break;
+            case 32: attrs[i++] = NSOpenGLProfileVersion3_2Core; break;
+            case 41: attrs[i++] = NSOpenGLProfileVersion4_1Core; break;
+            default: ASSERT(!"MACOS_INVALID_NSOPENGL_PROFILE");//_SAPP_PANIC(MACOS_INVALID_NSOPENGL_PROFILE);
+        }
+        attrs[i++] = NSOpenGLPFAColorSize; attrs[i++] = 24;
+        attrs[i++] = NSOpenGLPFAAlphaSize; attrs[i++] = 8;
+        attrs[i++] = NSOpenGLPFADepthSize; attrs[i++] = 24;
+        attrs[i++] = NSOpenGLPFAStencilSize; attrs[i++] = 8;
+        if (desc->sampleCount > 1) {
+            attrs[i++] = NSOpenGLPFAMultisample;
+            attrs[i++] = NSOpenGLPFASampleBuffers;
+            attrs[i++] = 1;
+            attrs[i++] = NSOpenGLPFASamples;
+            attrs[i++] = (NSOpenGLPixelFormatAttribute) desc->sampleCount;
+        }
+        else {
+            attrs[i++] = NSOpenGLPFASampleBuffers; attrs[i++] = 0;
+        }
+        attrs[i++] = 0;
+        NSOpenGLPixelFormat* glpixelformatObj = [[NSOpenGLPixelFormat alloc] initWithAttributes:attrs];
+        
+        ctx->nsOpenGlContext = [[NSOpenGLContext alloc] initWithFormat:glpixelformatObj shareContext: nil];
+        ctx->nsGlLayer.openGLContext = ctx->nsOpenGlContext;
+        [ctx->nsOpenGlContext makeCurrentContext];
+        NSView* view = ctx->nsGlLayer.view;
+        [ctx->nsOpenGlContext setView:view];
+        [ctx->nsOpenGlContext flushBuffer];
+
+        RX_OBJC_RELESE(glpixelformatObj);
+    }
+#endif
+
     // init context
 #if 1
     glGetIntegerv(GL_FRAMEBUFFER_BINDING, (GLint*)&ctx->defaultFramebuffer);
     rx__oglCheckErrors()
+    //ASSERT(ctx->defaultFramebuffer);
     glGenVertexArrays(1, &ctx->vao);
     rx__oglCheckErrors()
+    ASSERT(ctx->vao);
     glBindVertexArray(ctx->vao);
 #endif
     rx__oglCheckErrors()
@@ -425,8 +512,9 @@ LOCAL bx rx__glMakeBuffer(rx_Ctx* baseCtx, rx_Buffer* buffer, rx_BufferDesc* des
 
     GLuint glBuffer = 0;
     glGenBuffers(1, &glBuffer);
+    ASSERT(glBuffer != 0); 
+    buffer->gl.handle = glBuffer;
     rx__oglCheckErrors();
-    ASSERT(glBuffer);
 
     rx__glCacheStoreBufferBinding(ctx, glTarget);
     rx__glCacheBindBuffer(ctx, glTarget, glBuffer);
@@ -443,7 +531,7 @@ LOCAL void rx__glUpdateBuffer(rx_Ctx* baseCtx, rx_Buffer* buffer, mms offset, rx
     rx_OpenGlCtx* ctx = (rx_OpenGlCtx*) baseCtx;
     GLenum glTarget = rx__glBufferTarget(buffer->usage);
     rx__glCacheStoreBufferBinding(ctx, glTarget);
-    rx__glCacheBindBuffer(ctx, glTarget, buffer->glBuffer);
+    rx__glCacheBindBuffer(ctx, glTarget, buffer->gl.handle);
     glBufferSubData(glTarget, offset, (GLsizeiptr)range.size, range.ptr);
     rx__oglCheckErrors();
     rx__glCacheRestoreBufferBinding(ctx, glTarget);
