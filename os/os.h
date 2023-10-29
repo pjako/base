@@ -9,11 +9,6 @@
 extern "C" {
 #endif
 
-
-/////////////////////////
-// os init func, must be called immediately but only if os_entry is not used
-API void os_init(void);
-
 /////////////////////////
 // Memory Fuctions
 #if OS_EMSCRIPTEN
@@ -175,9 +170,6 @@ API void os_threadShutdown(os_Thread* thread);
 API bool os_threadIsRunning(os_Thread* thread);
 API i32  os_threadGetExitCode(os_Thread* thread);
 API void os_threadSetName(os_Thread* thread, Str8 str);
-
-API void os_threadInit(void);
-API void os_threadUninit(void);
 
 /////////////////////////
 // Fiber

@@ -13,7 +13,7 @@ arg_Ctx arg_makeCtx(arg_Opt* opts, u32 optsCount, char** inputOpts, u32 inputOpt
 Str8 arg_createHelpText(Arena* arena, arg_Ctx* ctx) {
     for (u64 idx = 0; idx < ctx->optCount; idx++) {
         arg_Opt* opt = ctx->opts + idx;
-        str_join(arena, str8("argument:"), opt->name, str8(" or "), opt->shortName, str8("\n"));
+        str_join(arena, s8("argument:"), opt->name, s8(" or "), opt->shortName, s8("\n"));
     }
     return str8("");
 }
