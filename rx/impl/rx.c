@@ -690,17 +690,15 @@ _SOKOL_PRIVATE void _sg_gl_unload_opengl(void) {
 }
 #endif
 
-#endif // _SOKOL_USE_WIN32_GL_LOADER
-
-
 #if OS_OSX
 #define RXGLLayer NSOpenGLLayer
 #else
 #define RXGLLayer CAEAGLLayer
 #endif
+
 typedef struct rx_OpenGlCtx {
     rx_Ctx base;
-#if OS_WIN
+#if defined(RX_USE_WIN32_GL_LOADER)
     os_Dl* openGl32Dll;
 #endif
 #if OS_APPLE
