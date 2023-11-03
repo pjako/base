@@ -287,7 +287,7 @@ API void        app_showWindow(app_window window);
 API void        app_hideWindow(app_window window);
 API void*       app_getGraphicsHandle(app_window window);
 
-API SVec2       app_getWindowSize(app_window window);
+API Vec2i       app_getWindowSize(app_window window);
 API Vec2        app_getWindowSizeF32(app_window window);
 
 API void        app_lockMouse(bx lock);

@@ -289,6 +289,7 @@
 #else
   #define BASE_UNIQUE_NAME(NAME) BASE_STRING_JOIN(NAME,__LINE__)
 #endif
+#define BASE_LINE_UNIQUE_NAME(NAME) BASE_STRING_JOIN(NAME,__LINE__)
 
 #ifndef STATIC_ASSERT
   #define STATIC_ASSERT(EXP) typedef u8 BASE_UNIQUE_NAME(__staticAssertDummyArr)[(EXP)?1:-1]
