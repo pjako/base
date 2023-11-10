@@ -2,6 +2,7 @@
 #include "base/base_types.h"
 #include "base/base_mem.h"
 #include "base/base_str.h"
+#include "base/base_color.h"
 #include "os/os.h"
 #include "app/app.h"
 #include "rx/rx.h"
@@ -121,10 +122,11 @@ void g_update(void) {
 
     Vec2i windowSize = app_getWindowSize(state->window);
     
-    rx_textureView textureView = rx_getCurrentSwapTextureView();
+    rx_texture texture = rx_getCurrentSwapTexture();
 
     rx_renderPass renderPass = rx_makeRenderPass(&(rx_RenderPassDesc) {
-        .colorTargets[0].view = textureView,
+        .colorTargets[0].target = texture,
+        .colorTargets[0].clearColor = rgba_red,
         // Only needed on legacy apis (OpenGL/WebGL) for the "default pass"
         .width = windowSize.x,
         .height = windowSize.y
