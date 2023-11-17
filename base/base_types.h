@@ -117,20 +117,22 @@ typedef union f16x4 {
     ALIGN_DECL(16, f16) values[4];
 } f16x4;
 
-
 #else
 
 typedef union f32x4 {
-    ALIGN_DECL(16, f32) values[4];
+    //ALIGN_DECL(16, f32) values[4];
+    f32 values[4];
 } f32x4;
 typedef union i32x4 {
-    ALIGN_DECL(16, i32) values[4];
+    //ALIGN_DECL(16, i32) values[4];
+    i32 values[4];
 } i32x4;
 typedef union f32x16 {
     f32x4 rows[4];
 } f32x16;
 typedef union f16x4 {
-    ALIGN_DECL(16, f16) values[4];
+    //ALIGN_DECL(16, f16) values[4];
+    f16 values[4];
 } f16x4;
 #endif
 
@@ -295,11 +297,12 @@ typedef struct Str8 {
     u64 size;
     
 #if CPP_ENV
-    inline u8 &operator[](const int &index) {
+    inline u8 operator[](const int &index) {
         if (content == NULL || size == 0) {
+            ASSERT(!"str is empty");
             return 0;
         }
-        return store[maxVal(0, minVal(index, (size - 1)))];
+        return content[maxVal(0, minVal(index, (size - 1)))];
     }
 #endif
 } Str8;
@@ -316,14 +319,27 @@ typedef struct Str16 {
     u16* content;
     u64  size;
 #if CPP_ENV
-    inline u16 &operator[](const int &index) {
+    inline u16 operator[](const int &index) {
         if (content == NULL || size == 0) {
             return 0;
         }
-        return store[maxVal(0, minVal(index, (size - 1)))];
+        return content[maxVal(0, minVal(index, (size - 1)))];
     }
 #endif
 } Str16;
+
+typedef struct Str32 {
+    u32* content;
+    u64  size;
+#if CPP_ENV
+    inline u32 operator[](const int &index) {
+        if (content == NULL || size == 0) {
+            return 0;
+        }
+        return content[maxVal(0, minVal(index, (size - 1)))];
+    }
+#endif
+} Str32;
 
 typedef struct str_handle {
     u32 id;

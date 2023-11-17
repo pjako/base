@@ -62,4 +62,7 @@ API mem_Scratch mem_scratchStart(Arena* arena);
 API void mem_scratchEnd(mem_Scratch* scratch);
 #define mem_scoped(NAME, ARENA) for (mem_Scratch NAME = mem_scratchStart(ARENA);(NAME).arena; (mem_scratchEnd(&NAME), (NAME).arena = NULL))
 
+#ifdef __cplusplus
+}
+#endif
 #endif // _BASE_MEM_
