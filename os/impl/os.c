@@ -19,6 +19,11 @@
 #include <sys/stat.h>
 #include <dlfcn.h>
 
+#if OS_APPLE
+#include <sys/types.h>
+#include <pwd.h>
+#endif
+
 
 #ifdef OS_OSX
 #define DLL_EXTENSION ".dylib"
@@ -40,7 +45,7 @@ os_Dl* os_dlOpen(Str8 filePath) {
     ASSERT(sizeOf(fileName) > size + 1);
     fileName[size] = '\0';
 
-    void* handle = dlopen((const char *) fileName, RTLD_LAZY);
+    void* handle = dlopen((const char *) fileName, RTLD_NOW);
 
     return (os_Dl*) handle;
 }
@@ -120,6 +125,78 @@ BaseMemory os_getBaseMemory(void) {
     return mem;
 }
 
+
+// Time
+
+LOCAL DateTime os__posixDateTimeFromSystemTime(struct tm* in, u16 ms) {
+	DateTime result = {0};
+	result.year   = in->tm_year;
+	result.mon    = in->tm_mon;
+	result.day    = in->tm_mday;
+	result.hour   = in->tm_hour;
+	result.min    = in->tm_min;
+	result.sec    = in->tm_sec;
+	result.msec   = ms;
+	return result;
+}
+
+LOCAL struct timespec os__posixLocalSystemTimeFromDateTime(DateTime* in) {
+	struct tm result_tm = {0};
+	result_tm.tm_year = in->year;
+	result_tm.tm_mon  = in->mon;
+	result_tm.tm_mday = in->day;
+	result_tm.tm_hour = in->hour;
+	result_tm.tm_min  = in->min;
+	result_tm.tm_sec  = in->sec;
+	long ms = in->msec;
+	time_t result_tt = timelocal(&result_tm);
+	struct timespec result = { .tv_sec = result_tt, .tv_nsec = ms * 1000000 };
+	return result;
+}
+
+LOCAL struct timespec os__posixUniversalSystemTimeFromDateTime(DateTime* in) {
+	struct tm result_tm = {0};
+	result_tm.tm_year = in->year;
+	result_tm.tm_mon  = in->mon;
+	result_tm.tm_mday = in->day;
+	result_tm.tm_hour = in->hour;
+	result_tm.tm_min  = in->min;
+	result_tm.tm_sec  = in->sec;
+	long ms = in->msec;
+	time_t result_tt = timegm(&result_tm);
+	struct timespec result = { .tv_sec = result_tt, .tv_nsec = ms * 1000000 };
+	return result;
+}
+
+DateTime os_timeUniversalNow(void) {
+	struct timespec spec;
+	clock_gettime(CLOCK_REALTIME, &spec);
+	struct tm *the_tm = localtime(&spec.tv_sec);
+	return os__posixDateTimeFromSystemTime(the_tm, (u16)(spec.tv_nsec / 1000000));
+}
+
+DateTime os_timeLocalFromUniversal(DateTime* date_time) {
+	struct timespec local = os__posixLocalSystemTimeFromDateTime(date_time);
+	struct tm *the_tm = localtime(&local.tv_sec);
+	return os__posixDateTimeFromSystemTime(the_tm, (u16)(local.tv_nsec / 1000000));
+}
+
+DateTime os_timeUniversalFromLocal(DateTime* date_time) {
+	struct timespec univ = os__posixUniversalSystemTimeFromDateTime(date_time);
+	struct tm *the_tm = localtime(&univ.tv_sec);
+	return os__posixDateTimeFromSystemTime(the_tm, (u16)(univ.tv_nsec / 1000000));
+}
+
+u64 os_timeMicrosecondsNow(void) {
+	struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC_RAW, &ts);
+	u64 us = ((u64)ts.tv_sec * 1000000) + ((u64)ts.tv_nsec / 1000000);
+    return us;
+}
+
+
+/// File/Dir
+
 Str8 os_fileRead(Arena* arena, Str8 fileName) {
     os_FileProperties fileProps = os_fileProperties(fileName);
     if (fileProps.size == 0) {
@@ -181,6 +258,74 @@ bx os_fileExists(Str8 fileName) {
     return access((const char*) path, F_OK) == 0;
 }
 
+
+
+
+bx os_dirCreate(Str8 dirname) {
+    mem_defineMakeStackArena(tmpMem, 1024 * sizeof(u32) + 1);
+    if (!str_isNullTerminated(dirname)) {
+        dirname = str_copyNullTerminated(tmpMem, dirname);
+    }
+	b32 result = true;
+	// NOTE(voxel): Not sure what mode is actually a good default...
+	size_t o = mkdir((const char*) dirname.content, S_IRUSR | S_IRGRP | S_IROTH | S_IWOTH | S_IRGRP | S_IWGRP);
+	if (o == -1) result = false;
+	return o == -1 ? false : true;
+}
+
+bx os_dirDelete(Str8 dirname) {
+    mem_defineMakeStackArena(tmpMem, 1024 * sizeof(u32) + 1);
+    if (!str_isNullTerminated(dirname)) {
+        dirname = str_copyNullTerminated(tmpMem, dirname);
+    }
+	size_t o = rmdir((const char*) dirname.content);
+
+	return o == -1 ? false : true;
+}
+
+Str8 os_filepath(Arena* arena, os_systemPath path) {
+	Str8 result = {0};
+	
+	switch (path) {
+		case os_systemPath_currentDir: {
+            mms pushAmount = 1024 * sizeOf(u32);
+            u8* mem = mem_arenaPush(arena, pushAmount);
+			getcwd((char*)mem, pushAmount);
+			result.size = strlen((const char*)mem) - 1;
+            result.content = mem;
+            mem_arenaPopAmount(arena, pushAmount - result.size);
+		} break;
+		case os_systemPath_binary: {
+            mms pushAmount = 1024 * sizeOf(u32);
+            u8* mem = mem_arenaPush(arena, pushAmount);
+			readlink("/proc/self/exe", (char*)mem, pushAmount);
+			u64 end = str_lastIndexOfChar(result, '/');
+			result.size = end - 1;
+            result.content = mem;
+            mem_arenaPopAmount(arena, pushAmount - result.size);
+		} break;
+		case os_systemPath_userData: {
+			char* buffer = getenv("HOME");
+
+            if (!buffer) {
+                struct passwd* pwd = getpwuid(getuid());
+                if (pwd) {
+                    buffer = pwd->pw_dir;
+                }
+            }
+            if (buffer) {
+                result.content = (u8*)buffer;
+                result.size = strlen((const char*)buffer);
+            }
+		} break;
+		case os_systemPath_tempData: {
+			return str_lit("/tmp");
+		} break;
+	}
+	
+	return result;
+}
+
 os_FileProperties os_fileProperties(Str8 fileName) {
     // max file length + max file path length + '\0'
     u8 path[255 + 4096 + 1];
@@ -240,6 +385,7 @@ os_FileProperties os_fileProperties(Str8 fileName) {
 
     return fileProps;
 }
+
 
 void* os_execute(Arena* tmpArena, Str8 execPath, Str8* args, u32 argCount) {
     pid_t pid = fork();
@@ -735,6 +881,71 @@ bool os_fileWrite(Str8 fileName, Str8 data) {
     return result;
 }
 
+
+bx os_dirCreate(Str8 dirname) {
+    mem_defineMakeStackArena(tmpMem, 1024 * sizeof(u32) + 1);
+    Str16 dirname16 = str_toStr16(tmpMem, dirname);
+	b32 result = CreateDirectoryW((WCHAR*) dirname16.content, 0);
+	return result;
+}
+
+bx os_dirDelete(Str8 dirname) {
+    mem_defineMakeStackArena(tmpMem, 1024 * sizeof(u32) + 1);
+    Str16 dirname16 = str_toStr16(tmpMem, dirname);
+	b32 result = RemoveDirectoryW((WCHAR*) dirname16.content);
+	return result;
+}
+
+#if 0
+static U_DateTime w32_date_time_from_system_time(SYSTEMTIME* in){
+	U_DateTime result = {0};
+	result.year   = in->wYear;
+	result.month  = (u8)in->wMonth;
+	result.day    = in->wDay;
+	result.hour   = in->wHour;
+	result.minute = in->wMinute;
+	result.sec    = in->wSecond;
+	result.ms     = in->wMilliseconds;
+	return result;
+}
+
+static SYSTEMTIME w32_system_time_from_date_time(U_DateTime* in){
+	SYSTEMTIME result    = {0};
+	result.wYear         = in->year;
+	result.wMonth        = in->month;
+	result.wDay          = in->day;
+	result.wHour         = in->hour;
+	result.wMinute       = in->minute;
+	result.wSecond       = in->sec;
+	result.wMilliseconds = in->ms;
+	return result;
+}
+
+static u64 w32_dense_time_from_file_time(FILETIME *file_time) {
+	SYSTEMTIME system_time;
+	FileTimeToSystemTime(file_time, &system_time);
+	U_DateTime date_time = w32_date_time_from_system_time(&system_time);
+	U_DenseTime result = U_DenseTimeFromDateTime(&date_time);
+	return result;
+}
+
+static OS_FilePropertyFlags w32_prop_flags_from_attribs(DWORD attribs) {
+	OS_FilePropertyFlags result = 0;
+	if (attribs & FILE_ATTRIBUTE_DIRECTORY){
+		result |= FileProperty_IsFolder;
+	}
+	return result;
+}
+
+static OS_DataAccessFlags w32_access_from_attributes(DWORD attribs) {
+	OS_DataAccessFlags result = DataAccess_Read | DataAccess_Exec;
+	if (!(attribs & FILE_ATTRIBUTE_READONLY)){
+		result |= DataAccess_Write;
+	}
+	return result;
+}
+#endif
+
 os_FileProperties os_fileProperties(Str8 fileName) {
     // max file length + max file path length + '\0'
     u8 path[255 + 4096 + 1];
@@ -743,6 +954,21 @@ os_FileProperties os_fileProperties(Str8 fileName) {
     ASSERT(fileName.size > 0);
     mem_copy(path, fileName.content, fileName.size);
     path[fileName.size] = '\0';
+    #if 0
+	M_Scratch scratch = scratch_get();
+	string_utf16 filename16 = str16_from_str8(&scratch.arena, filename);
+	OS_FileProperties result = {0};
+	WIN32_FILE_ATTRIBUTE_DATA attribs = {0};
+	if (GetFileAttributesExW((WCHAR*)filename16.str, GetFileExInfoStandard,
+							 &attribs)) {
+		result.size = ((u64)attribs.nFileSizeHigh << 32) | (u64)attribs.nFileSizeLow;
+		result.flags = w32_prop_flags_from_attribs(attribs.dwFileAttributes);
+		result.create_time = w32_dense_time_from_file_time(&attribs.ftCreationTime);
+		result.modify_time = w32_dense_time_from_file_time(&attribs.ftLastWriteTime);
+		result.access = w32_access_from_attributes(attribs.dwFileAttributes);
+	}
+	return result;
+    #endif
 
     #if 0
     M_ArenaTemp scratch = m_get_scratch(0, 0);
@@ -812,6 +1038,141 @@ os_FileProperties os_fileProperties(Str8 fileName) {
 
     return fileProps;
     #endif
+}
+
+Str8 os_filepath(Arena* arena, os_systemPath path) {
+	Str8 result = {0};
+
+    DWORD tmpName[2048 * 2];
+    DWORD tmpCount = countOf(tmpName);
+    Str16 path16 = {0};
+    path16.content = (u16*) tmpName;
+
+    mem_defineMakeStackArena(tmpArena, 2048 * sizeOf(u32));
+
+	switch (path) {
+		case os_systemPath_currentDir: {
+            mms pushAmount = 1024 * sizeOf(u32);
+            u8* mem = mem_arenaPush(arena, pushAmount);
+			DWORD size = GetCurrentDirectoryW(tmpCount, (WCHAR*) tmpName);
+            ASSERT((size >= tmpCount) && "Increase tmpName size");
+            path16.size = size;
+            result = str_fromStr16(tmpArena, path16);
+        case os_systemPath_binary: {
+            mms pushAmount = 1024 * sizeOf(u32);
+            u8* mem = mem_arenaPush(arena, pushAmount);
+            DWORD size = GetModuleFileNameW(0, (WCHAR*)try_buffer, cap);
+            ASSERT(size == tmpCount && GetLastError() == ERROR_INSUFFICIENT_BUFFER && "Increase tmpName size");
+            path16.size = size;
+            Str8 fullPath = str_fromStr16(tmpArena, path16);
+			Str8 binaryPath = os_getDirectoryFromFilepath(fullPath);
+            result = binaryPath;
+		} break;
+		case os_systemPath_userData: {
+			HANDLE token = GetCurrentProcessToken();
+            bx success = GetUserProfileDirectoryW(token, (WCHAR*)tmpName, &tmpCount);
+            ASSERT(success && "Increase tmpName size");
+            path16.size = tmpCount;
+            result = str_fromStr16(tmpArena, path16);
+		} break;
+		case os_systemPath_tempData: {
+			DWORD size = GetTempPathW(cap, (WCHAR*)buffer);
+            ASSERT(size >= tmpCount && "Increase tmpName size");
+            path16.size = size;
+            result = str_fromStr16(tmpArena, path16);
+		} break;
+	}
+
+    result = str_replaceAll(arena, result, str_lit("\\"), str_lit("/"));
+	
+	return result;
+}
+
+Str8 os_filepath(Arena* arena, os_systemPath path) {
+	string result = {0};
+	switch (path) {
+		case SystemPath_CurrentDir: {
+			M_Scratch scratch = scratch_get();
+			DWORD cap = 2048;
+			u16* buffer = arena_alloc_array(&scratch.arena, u16, cap);
+			DWORD size = GetCurrentDirectoryW(cap, (WCHAR*) buffer);
+			if (size >= cap) {
+				scratch_reset(&scratch);
+				buffer = arena_alloc_array(&scratch.arena, u16, size + 1);
+				size = GetCurrentDirectoryW(size + 1, (WCHAR*) buffer);
+			}
+			result = str8_from_str16(&scratch.arena, (string_utf16) { buffer, size });
+			result = str_replace_all(arena, result, str_lit("\\"), str_lit("/"));
+			
+			scratch_return(&scratch);
+		} break;
+		
+		case SystemPath_Binary: {
+			M_Scratch scratch = scratch_get();
+			
+			DWORD cap = 2048;
+			u16 *buffer = 0;
+			DWORD size = 0;
+			for (u64 r = 0; r < 4; r += 1, cap *= 4){
+				u16* try_buffer = arena_alloc_array(&scratch.arena, u16, cap);
+				DWORD try_size = GetModuleFileNameW(0, (WCHAR*)try_buffer, cap);
+				
+				if (try_size == cap && GetLastError() == ERROR_INSUFFICIENT_BUFFER) {
+					scratch_reset(&scratch);
+				} else {
+					buffer = try_buffer;
+					size = try_size;
+					break;
+				}
+			}
+			
+			string full_path = str8_from_str16(&scratch.arena, (string_utf16) { buffer, size });
+			string binary_path = U_GetDirectoryFromFilepath(full_path);
+			result = str_replace_all(arena, binary_path, str_lit("\\"), str_lit("/"));
+			
+			scratch_return(&scratch);
+		} break;
+		
+		case SystemPath_UserData: {
+			M_Scratch scratch = scratch_get();
+			
+			HANDLE token = GetCurrentProcessToken();
+			DWORD cap = 2048;
+			u16 *buffer = arena_alloc_array(&scratch.arena, u16, cap);
+			if (!GetUserProfileDirectoryW(token, (WCHAR*)buffer, &cap)) {
+				scratch_reset(&scratch);
+				buffer = arena_alloc_array(&scratch.arena, u16, cap + 1);
+				if (GetUserProfileDirectoryW(token, (WCHAR*)buffer, &cap)) {
+					buffer = 0;
+				}
+			}
+			
+			if (buffer) {
+				result = str8_from_str16(&scratch.arena, str16_cstring(buffer));
+				result = str_replace_all(arena, result, str_lit("\\"), str_lit("/"));
+			}
+			
+			scratch_return(&scratch);
+		} break;
+		
+		case SystemPath_TempData: {
+			M_Scratch scratch = scratch_get();
+			DWORD cap = 2048;
+			u16 *buffer = arena_alloc_array(&scratch.arena, u16, cap);
+			DWORD size = GetTempPathW(cap, (WCHAR*)buffer);
+			if (size >= cap){
+				scratch_reset(&scratch);
+				buffer = arena_alloc_array(&scratch.arena, u16, size + 1);
+				size = GetTempPathW(size + 1, (WCHAR*)buffer);
+			}
+			result = str8_from_str16(&scratch.arena, (string_utf16) { buffer, size - 1 });
+			result = str_replace_all(arena, result, str_lit("\\"), str_lit("/"));
+			
+			scratch_return(&scratch);
+		} break;
+	}
+	
+	return result;
 }
 
 void* os_execute(Arena* tmpArena, Str8 execPath, Str8* args, u32 argCount) {
@@ -1041,6 +1402,49 @@ os_Dl* os_dlOpen(Str8 filePath) {
 #endif
     return (os_Dl*) hInst;
 }
+
+DateTime os_timeUniversalNow(void) {
+	SYSTEMTIME system_time;
+	GetSystemTime(&system_time);
+	DateTime result = w32_date_time_from_system_time(&system_time);
+	return result;
+}
+
+DateTime os_timeLocalFromUniversal(DateTime* date_time) {
+	SYSTEMTIME univ_system_time = w32_system_time_from_date_time(date_time);
+	FILETIME univ_file_time;
+	SystemTimeToFileTime(&univ_system_time, &univ_file_time);
+	FILETIME local_file_time;
+	FileTimeToLocalFileTime(&univ_file_time, &local_file_time);
+	SYSTEMTIME local_system_time;
+	FileTimeToSystemTime(&local_file_time, &local_system_time);
+	DateTime result = w32_date_time_from_system_time(&local_system_time);
+	return result;
+}
+
+DateTime os_timeUniversalFromLocal(DateTime* date_time) {
+	SYSTEMTIME local_system_time = w32_system_time_from_date_time(date_time);
+	FILETIME local_file_time;
+	SystemTimeToFileTime(&local_system_time, &local_file_time);
+	FILETIME univ_file_time;
+	LocalFileTimeToFileTime(&local_file_time, &univ_file_time);
+	SYSTEMTIME univ_system_time;
+	FileTimeToSystemTime(&univ_file_time, &univ_system_time);
+	DateTime result = w32_date_time_from_system_time(&univ_system_time);
+	return result;
+}
+
+u64 os_timeMicrosecondsNow(void) {
+	u64 result = 0;
+	LARGE_INTEGER perf_counter = {0};
+	if (QueryPerformanceCounter(&perf_counter)) {
+		u64 ticks = ((u64)perf_counter.HighPart << 32) | perf_counter.LowPart;
+		result = ticks * 1000000 / w32_ticks_per_sec;
+	}
+	return result;
+}
+
+// DLL
 
 void os_dlClose(os_Dl* handle) {
     //BOOL ok;
