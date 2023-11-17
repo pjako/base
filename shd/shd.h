@@ -4,19 +4,17 @@
 extern "C" {
 #endif
 
-typedef enum shd_backend {
-    shd_backend_rx = 0, // default
-//    shd_backend_sokol,
-} shd_backend;
+typedef enum shd_variation {
+    shd_variation_ogl40 = 1,
+    shd_variation_oglES3 = 2,
+    shd_variation_mtl = 4,
+    shd_variation_vk = 8,
+    shd_variation_vkBindless = 16,
+    shd_variation_dx12 = 32,
+} shd_variation;
+typedef flags32 shd_variationFlags;
 
-typedef enum shd_variations {
-    shd_backend_legacy = 0, // default
-    shd_backend_bindless = 0,
-//    shd_backend_sokol,
-} shd_variations;
-
-
-API RESULT shd_generateShader(Arena* storeMem, Str8 shdFileName, Str8 shdFileContent, shd_backend backend, shd_variations variation);
+API void shd_generateShader(Arena* storeMem, Str8 shdFilePath, Str8 shdFileContent, shd_variationFlags variationFlags);
 
 
 #ifdef __cplusplus

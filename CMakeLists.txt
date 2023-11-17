@@ -5,6 +5,8 @@ if(WIN32)
   add_definitions("/wd4068")
 endif(WIN32)
 
+add_definitions(-DPROJECT_ROOT="${PROJECT_SOURCE_DIR}")
+
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
 # Base
@@ -103,25 +105,15 @@ endif()
 
 # SHD
 
-add_library(spirvCross STATIC
-    shd/impl/deps/spirv_cross/spirv_cfg.cpp
-    shd/impl/deps/spirv_cross/spirv_cpp.cpp
-    shd/impl/deps/spirv_cross/spirv_cross_c.cpp
-    shd/impl/deps/spirv_cross/spirv_cross_parsed_ir.cpp
-    shd/impl/deps/spirv_cross/spirv_cross_util.cpp
-    shd/impl/deps/spirv_cross/spirv_cross.cpp
-    shd/impl/deps/spirv_cross/spirv_glsl.cpp
-    shd/impl/deps/spirv_cross/spirv_hlsl.cpp
-    shd/impl/deps/spirv_cross/spirv_msl.cpp
-    shd/impl/deps/spirv_cross/spirv_parser.cpp
-    shd/impl/deps/spirv_cross/spirv_reflect.cpp
-)
+file(GLOB SPIRV_HEADERS "shd/impl/deps/spirv_cross/*.hpp")
+file(GLOB SPIRV_SRC "shd/impl/deps/spirv_cross/*.cpp")
 
-set_property(TARGET spirvCross PROPERTY CXX_STANDARD 20)
+add_library(spirvCross STATIC ${SPIRV_HEADERS} ${SPIRV_SRC})
+set_property(TARGET spirvCross PROPERTY CXX_STANDARD 17)
 
 add_executable(shdc shd/impl/dxc_wrapper.cc shd/impl/shd_main.cc)
-set_property(TARGET shdc PROPERTY CXX_STANDARD 20)
-target_link_libraries(shdc base os parser log spirv_cross)
+set_property(TARGET shdc PROPERTY CXX_STANDARD 17)
+target_link_libraries(shdc base os parser log spirvCross)
 
 function(app app_name)
     if(APPLE)
