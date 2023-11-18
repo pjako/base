@@ -1431,9 +1431,9 @@ static void shd__toCombinedImageSamplers(CompilerGLSL& compiler) {
         const std::string img_name = compiler.get_name(remap.image_id);
         const std::string smp_name = compiler.get_name(remap.sampler_id);
         mem_scoped(scopedMem, nameArena) {
-            //Str8 imgName0 = str_makeViewSized((u8*) (img_name).c_str(), (img_name).size())
-            //Str8 imgName0 = str_fromCppStd(img_name);
-            Str8 name = str_join(scopedMem.arena, str_fromCppStd(img_name), s8("_"), str_fromCppStd(smp_name));
+            Str8 img_name0 = str_fromCppStd(img_name);
+            Str8 smp_name0 = str_fromCppStd(smp_name);
+            Str8 name = str_join(scopedMem.arena, img_name0, s8("_"), smp_name0);
             const std::string stdName((const char*) name.content, (size_t) name.size);
             compiler.set_name(remap.combined_id, stdName);
         }
@@ -1971,14 +1971,15 @@ bx shd_generateShaders(Arena* arena, DxCompiler* dxCompiler, ShaderFileInfo* sha
             void* userPtr;
             dxc_CompileOptions options;
         */
-       log_debug(arena, generatedCode);
+        log_debug(arena, generatedCode);
         dxc_CompileDesc compilerDesc = {};
-        compilerDesc.dxCompiler               = dxCompiler;
-        compilerDesc.type                     = dxc_shaderType_vertex;
-        compilerDesc.source                   = generatedCode;
-        compilerDesc.inputFileName            = codeInfo->name;
-        compilerDesc.defines                  = &defs;
-        compilerDesc.defineCount              = 0;
+        compilerDesc.dxCompiler                = dxCompiler;
+        compilerDesc.type                      = dxc_shaderType_vertex;
+        compilerDesc.source                    = generatedCode;
+        compilerDesc.inputFileName             = codeInfo->name;
+        compilerDesc.defines                   = &defs;
+        compilerDesc.defineCount               = 0;
+        compilerDesc.options.optimizationLevel = 3;
 
         compilerDesc.entryPoint               = program->vs.entry;
         compilerDesc.options.binaryShaderType = dxc_binaryShader_spirv;
