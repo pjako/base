@@ -279,7 +279,15 @@ Str8 str_alloc(Arena* arena, mms size) {
    return result;
 }
 
+Str8 str_copy(Arena* arena, Str8 sourceStr) {
+   if (sourceStr.size == 0) {
+      return STR_NULL;
+   }
+   Str8 result = str_alloc(arena, sourceStr.size);
+   mem_copy(result.content, sourceStr.content, sourceStr.size);
 
+   return result;
+}
 
 u64 str_findFirst(Str8 str, Str8 findStr, u64 offset) {
    u64 i = 0;
@@ -540,7 +548,7 @@ u32 str_encodeUtf8(u8 *dst, u32 codepoint){
     return(size);
 }
 
-Str8 str_fromStr16(Arena* arena, Str16 str) {
+Str8 str_fromS16(Arena* arena, S16 str) {
    u8 *memory = mem_arenaPushArrayZero(arena, u8, str.size * 3 + 1);
 
    u8  *dptr = memory;
@@ -565,7 +573,7 @@ Str8 str_fromStr16(Arena* arena, Str16 str) {
    return(result);
 }
 
-Str16 str_toStr16(Arena *arena, Str8 str) {
+S16 str_toS16(Arena *arena, Str8 str) {
    u64 allocSize = str.size * 4 + 2;
    u16 *memory = mem_arenaPushArray(arena, u16, allocSize);
 
@@ -589,11 +597,11 @@ Str16 str_toStr16(Arena *arena, Str8 str) {
    u64 unusedCount = allocSize - stringCount - 1;
    //mem_arenaPopAmount(arena, unusedCount);
 
-   Str16 result = {memory, stringCount};
+   S16 result = {memory, stringCount};
    return result;
 }
 
-Str32 str_toStr32(Arena *arena, Str8 str) {
+S32 str_toS32(Arena *arena, Str8 str) {
    u64 allocSize = str.size * 4 + 2;
    u32 *memory = mem_arenaPushArray(arena, u32, allocSize);
 
@@ -617,7 +625,7 @@ Str32 str_toStr32(Arena *arena, Str8 str) {
    u64 unusedCount = allocSize - stringCount - 1;
    //mem_arenaPopAmount(arena, unusedCount);
 
-   Str32 result = {memory, stringCount};
+   S32 result = {memory, stringCount};
    return result;
 }
 
@@ -864,6 +872,7 @@ Str8 str_fmtVargs(Arena* arena, Str8 fmt, u32 argCount, va_list list) {
                   textStartIdx = insertStartIdx;
                }
                insertStartIdx = -1;
+               insertCount += 1;
             }
          } else if (currentChar == '{') {
             if (!(idx < fmt.size)) {
