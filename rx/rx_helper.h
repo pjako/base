@@ -84,7 +84,7 @@ INLINE void rx_renderCmdBuilderDraw(rx_RenderCmdBuilder* builder, u32 indexOffse
                 //drawList->passIdxDepFlags |=  (builder->resGroup1.passIdx - 1) << 2;
             }
         }
-
+#if 0
         if ((builder->changedFlags & rx_renderCmd_resGroup3) != 0) {
             drawList->commands[drawList->count++] = builder->resGroup3.id;
             if (builder->resGroup3.hasPassDep) {
@@ -92,7 +92,7 @@ INLINE void rx_renderCmdBuilderDraw(rx_RenderCmdBuilder* builder, u32 indexOffse
                 //drawList->passIdxDepFlags |=  (builder->resGroup1.passIdx - 1) << 2;
             }
         }
-
+#endif
         if ((builder->changedFlags & rx_renderCmd_dynResGroup0) != 0) {
             drawList->commands[drawList->count++] = builder->dynResGroup0;
         }

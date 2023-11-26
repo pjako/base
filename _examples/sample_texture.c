@@ -8,7 +8,7 @@
 #include "rx/rx.h"
 #include "rx/rx_helper.h"
 
-//#include "triangle.hlsl.h"
+#include "sample_texture.hlsl.h"
 
 typedef struct FrameContext {
     Arena* perThreadTempArenas;
@@ -20,7 +20,9 @@ typedef struct g_State {
     Arena* arena;
     app_window window;
     rx_buffer vertexBuffer;
-    //rx_buffer indexBuffer;
+    rx_buffer indexBuffer;
+    rx_sampler sampler;
+    rx_texture texture;
     rx_resGroupLayout resGroupLayout;
     rx_renderPipeline renderPipeline;
     rx_resGroup resGroup;
@@ -35,7 +37,7 @@ void g_init(void) {
     app_setUserData(state);
 
     state->window = app_makeWindow(&(app_WindowDesc) {
-        .title  = s8("Sampe texture"),
+        .title  = s8("Sample texture"),
         .width  = 375,
         .height = 668
     });
@@ -49,9 +51,10 @@ void g_init(void) {
 
     f32 vertexData[] = {
         // positions            // colors
-         0.0f,  0.5f, 0.5f,     1.0f, 0.0f, 0.0f, 1.0f,
-         0.5f, -0.5f, 0.5f,     0.0f, 1.0f, 0.0f, 1.0f,
-        -0.5f, -0.5f, 0.5f,     0.0f, 0.0f, 1.0f, 1.0f
+        -0.5f, -0.5f, 0.0f,  1.0f, 1.0f, 1.0f,   0.0f, 0.0f,   /* Vertex 0 */
+        -0.5f,  0.5f, 0.0f,  1.0f, 1.0f, 1.0f,   0.0f, 1.0f,   /* Vertex 1 */
+        0.5f,  0.5f, 0.0f,   1.0f, 1.0f, 1.0f,   1.0f, 1.0f,   /* Vertex 2 */
+        0.5f, -0.5f, 0.0f,   1.0f, 1.0f, 1.0f,   1.0f, 0.0f    /* Vertex 3 */
     };
 
     state->vertexBuffer = rx_makeBuffer(&(rx_BufferDesc) {
@@ -64,10 +67,115 @@ void g_init(void) {
         .content = vertexData
     });
 
+
+    static uint32_t indexData[] = {
+        0, 1, 2, 2, 3, 0
+    };
+
+    state->indexBuffer = rx_makeBuffer(&(rx_BufferDesc) {
+        .usage = rx_bufferUsage_vertex,
+        .size = sizeOf(indexData)
+    });
+
+    rx_updateBuffer(state->vertexBuffer, 0, (rx_Range) {
+        .size = sizeOf(indexData),
+        .content = indexData
+    });
+
+    // texture
+
+    static const uint32_t textureDataRGBA[4] = {
+        0xFF0000FF, 0xFF000000, /* Encoding is 0xAABBGGRR. */
+        0xFF00FF00, 0xFFFF0000
+    };
+
+    state->texture = rx_makeTexture(&(rx_TextureDesc) {
+        .label   = "MyTexture",
+        .format  = rx_textureFormat_rgba8unorm,
+        .usage   = rx_textureUsage_sampled,
+        .size.width = 2,
+        .size.height = 2,
+        .data.subimage[0][0] = {
+            .content = (u8*) &textureDataRGBA[0],
+            .size    = sizeof(textureDataRGBA)
+        }
+    });
+
+#if 0
+    rx_uploadToTexture(state->texture, &(rx_TextureUploadDesc) {
+            .layout = {
+                .bytesPerRow = sizeof(uint32_t) * 2,
+                .rowsPerTexture = 2,
+            },
+            .extend = {
+                .width = 2,
+                .height = 2,
+                .depth = 0,
+            }
+        },
+        &textureDataRGBA[0],
+        sizeof(textureDataRGBA)
+    );
+#endif
+
+    // state
+
+    state->sampler = rx_makeSampler(&(rx_SamplerDesc) {
+        .mipmapMode = rx_mipmapMode_nearest,
+        .compare = rx_compareFunc_never,
+    });
+
     // shader
 
+
+    rx_RenderShaderDesc texShaderDesc = SampleTextureProgramShaderDesc(rx_queryBackend());
+    rx_renderShader sampleShader = rx_makeRenderShader(&texShaderDesc);
+
+    #if 0
     rx_renderShader triangleShader = rx_makeRenderShader(&(rx_RenderShaderDesc) {
         .label = s8("TriangleShader"),
+        .vs = {
+            .byteCode = {},
+            .source = {},
+            .entry = "entry",
+            .textureSamplerPairs = {
+                {
+                    .glslName = "foo",
+                    .imageSlot = 0,
+                    .samplerSlot = 0,
+                    .used = true
+                }
+            },
+            .resGroups = {
+            {
+                .bindSlot = 0,
+                .buffers = {
+
+                },
+                .name = "NAME",
+                .samplers = {
+                    {
+                        .used = true
+                    }
+                },
+                // should we calculate this per backend?
+                .size = 0,
+                .textures = {
+                    {
+                        .used = true,
+                        .multisampled = false,
+                        .sampleType = rx_samplerType_foo,
+                    }
+                },
+                .uniforms = {
+                    {
+                        .arrayCount = 1,
+                        .name = "Fooog",
+                        .type = rx_uniformType_f32x2
+                    }
+                }
+            },
+        }
         .vs.source =
             s8(
             "#version 330\n"
@@ -92,17 +200,23 @@ void g_init(void) {
             "}\n"
             )
     });
+    #endif
 
     // ResGroupLayout
     state->resGroupLayout = rx_makeResGroupLayout(&(rx_ResGroupLayoutDesc) {
-        .uniformSize = sizeof(f32)
+        .resources[0] = {
+            .type = rx_resType_sampler
+        },
+        .resources[1] = {
+            .type = rx_resType_texture2d
+        },
     });
 
     // pipeline
 
     state->renderPipeline = rx_makeRenderPipeline(&(rx_RenderPipelineDesc) {
         .label = s8("TriangleShader"),
-        .program.shader = triangleShader,
+        .program.shader = sampleShader,
         .rasterizer.cullMode = rx_cullMode_back,
         .primitiveTopology = rx_primitiveTopology_triangleList,
         // pos

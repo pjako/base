@@ -17,12 +17,16 @@ enum {
 
 // limits
 enum {
+    RX_COUNT_SHADER_STAGES = 2,
     RX_MAX_COLOR_TARGETS = 4,
+    RX_MAX_RESGROUP_UNIFORM_MEMBERS = 12,
     RX_MAX_SHADERSTAGE_BINDING = 16,
     RX_MAX_SHADERSTAGE_BUFFERS = 16,
     RX_MAX_VERTEX_ATTRIBUTES = 16,
     RX_MAX_SWAP_TEXTURES = 4,
-    RX_MAX_RESOURCES_PER_RES_GROUP = 12
+    RX_MAX_RESOURCES_PER_RES_GROUP = 12,
+    RX_MAX_SHADERSTAGE_TEXTURE_SAMPLER_PAIRS = 12,
+    RX_MAX_MIPMAPS = 16,
 };
 
 typedef enum rx_error {
@@ -192,6 +196,17 @@ typedef union rx_computePass {
 #define RX_DEFAULT_MAX_DYNAMIC_UNIFORM_SIZE MEGABYTE(5)
 #endif
 
+typedef enum rx_backend {
+    rx_backend__default,
+    rx_backend_gl400,
+    rx_backend_gles3,
+    rx_backend_metal,
+    rx_backend_vulkan,
+    rx_backend_vulkanBindless,
+    rx_backend_dx12,
+    rx_backend__count,
+} rx_backend;
+
 typedef struct rx_SetupDesc {
     struct {
         struct {
@@ -214,9 +229,11 @@ typedef struct rx_SetupDesc {
     u32 maxPassesPerFrame;
     u32 streamingUniformSize;
     u32 dynamicUniformSize;
+    rx_backend backendPreference[rx_backend__count];
 } rx_SetupDesc;
 
 API void rx_setup(rx_SetupDesc* desc);
+API rx_backend rx_queryBackend(void);
 API void rx_shutdown(void);
 API void rx_reset(void);
 
@@ -311,34 +328,9 @@ typedef struct rx_SamplerDesc {
 
 API rx_sampler rx_makeSampler(const rx_SamplerDesc* desc);
 
-// Render Shader
-
-typedef enum rx_shaderStage {
-    rx_shaderStage__invalid  = 0,
-    rx_shaderStage_vertex    = 1,
-    rx_shaderStage_fragment  = 2,
-    rx_shaderStage_all       = rx_shaderStage_vertex | rx_shaderStage_fragment,
-    rx_shaderStage__forceU32 = RX_U32_MAX
-} rx_shaderStage;
-typedef flags32 rx_shaderStageFlags;
-
-typedef struct rx_ShaderStageDesc {
-    Str8 source;
-    Str8 byteCode;
-    Str8 entry;
-} rx_ShaderStageDesc;
-
-typedef struct rx_RenderShaderDesc {
-    Str8 label;
-    // TODO: attributes
-    rx_ShaderStageDesc vs;
-    rx_ShaderStageDesc fs;
-} rx_RenderShaderDesc;
-
-API rx_renderShader rx_makeRenderShader(const rx_RenderShaderDesc* desc);
-
-
 // Texture
+
+
 
 typedef enum rx_textureFormat {
     rx_textureFormat__invalid,
@@ -348,6 +340,8 @@ typedef enum rx_textureFormat {
     rx_textureFormat_r8uint,
     rx_textureFormat_r8sint,
     // 16-bit formats
+    // rx_textureFormat_r16unorm,
+    // rx_textureFormat_r16snorm,
     rx_textureFormat_r16uint,
     rx_textureFormat_r16sint,
     rx_textureFormat_r16float,
@@ -359,6 +353,8 @@ typedef enum rx_textureFormat {
     rx_textureFormat_r32uint,
     rx_textureFormat_r32sint,
     rx_textureFormat_r32float,
+    // rx_textureFormat_rg16unorm,
+    // rx_textureFormat_rg16snorm,
     rx_textureFormat_rg16uint,
     rx_textureFormat_rg16sint,
     rx_textureFormat_rg16float,
@@ -410,7 +406,7 @@ typedef enum rx_textureFormat {
     rx_textureFormat_depth24unormStencil8,
     // "depth32float-stencil8" feature
     rx_textureFormat_depth32floatStencil8,
-    rx_textureFormat_swapChain, // always matches current swapchain
+    rx_textureFormat_swapChain, // always matches current swapchain texture format
     rx_textureFormat__count,
     rx_textureFormat__forceU32 = RX_U32_MAX
 } rx_textureFormat;
@@ -431,16 +427,22 @@ typedef enum rx_textureUsage {
 } rx_textureUsage;
 typedef flags32 rx_textureUsageFlags;
 
-typedef enum rx_textureViewDimension {
-    rx_textureViewDimesion__default,
-    rx_textureViewDimesion_1d,
-    rx_textureViewDimesion_2d,
-    rx_textureViewDimesion_array2d,
-    rx_textureViewDimesion_cube,
-    rx_textureViewDimesion_cubeArray,
-    rx_textureViewDimesion_3d,
-    rx_textureViewDimesion__forceU32 = RX_U32_MAX
-} rx_textureViewDimension;
+typedef struct rx_Extend3D {
+    uint32_t width;
+    uint32_t height;
+    uint32_t depth;
+} rx_Extend3D;
+
+typedef enum rx_textureDimension {
+    rx_textureDimension__default,
+  //rx_textureDimension_1d,
+    rx_textureDimension_2d,
+    rx_textureDimension_3d,
+    rx_textureDimension_cube,
+    rx_textureDimension_array,
+    rx_textureDimension__forceU32 = RX_U32_MAX
+} rx_textureDimension;
+
 
 typedef enum rx_sampleCount {
     rx_sampleCount__default,
@@ -454,12 +456,236 @@ typedef enum rx_sampleCount {
     rx_sampleCount__forceU32 = RX_U32_MAX
 } rx_sampleCount;
 
+typedef enum sg_cube_face {
+    rx_cubeFace_posX,
+    rx_cubeFace_negX,
+    rx_cubeFace_posY,
+    rx_cubeFace_negY,
+    rx_cubeFace_posZ,
+    rx_cubeFace_negZ,
+    rx_cubeFace__count,
+    rx_cubeFace__forceU32  = RX_U32_MAX
+} sg_cube_face;
+
+typedef struct rx_ImageData {
+    rx_Range subimage[rx_cubeFace__count][RX_MAX_MIPMAPS];
+} rx_ImageData;
+
+typedef struct rx_TextureDesc {
+    const char* label;
+    rx_textureUsageFlags usage;
+    rx_textureDimension dimension;
+    rx_Extend3D size;
+    rx_textureFormat format;
+    uint32_t mipLevelCount;
+    uint32_t arrayLayerCount;
+    rx_sampleCount sampleCount;
+    rx_ImageData data;
+} rx_TextureDesc;
+
+API rx_texture rx_makeTexture(const rx_TextureDesc* desc);
+
+// TextureView
+
+typedef enum rx_textureAspect {
+    rx_textureAspect_all,
+    rx_textureAspect_stencilOnly,
+    rx_textureAspect_depthOnly,
+    rx_textureAspect_forceU32 = RX_U32_MAX
+} rx_textureAspect;
+
+typedef enum rx_textureViewDimension {
+    rx_textureViewDimesion__default,
+    rx_textureViewDimesion_1d,
+    rx_textureViewDimesion_2d,
+    rx_textureViewDimesion_array2d,
+    rx_textureViewDimesion_cube,
+    rx_textureViewDimesion_cubeArray,
+    rx_textureViewDimesion_3d,
+    rx_textureViewDimesion__forceU32 = RX_U32_MAX
+} rx_textureViewDimension;
+
+typedef struct rx_TextureViewDesc {
+    Str8 label;
+    rx_texture texture;
+    rx_textureFormat format;
+    rx_textureViewDimension dimension;
+    uint32_t baseMipLevel;
+    uint32_t mipLevelCount;
+    uint32_t baseArrayLayer;
+    uint32_t arrayLayerCount;
+    rx_textureAspect aspect;
+} rx_TextureViewDesc;
+
+API rx_texture rx_makeTextureView(const rx_TextureViewDesc* desc);
+
+// Render Shader
+
+typedef enum rx_shaderStage {
+    rx_shaderStage__invalid  = 0,
+    rx_shaderStage_vertex    = 1,
+    rx_shaderStage_fragment  = 2,
+    rx_shaderStage_all       = rx_shaderStage_vertex | rx_shaderStage_fragment,
+    rx_shaderStage__forceU32 = RX_U32_MAX
+} rx_shaderStage;
+typedef flags32 rx_shaderStageFlags;
+
+
+
+typedef enum rx_uniformType {
+    rx_uniformType__invalid,
+    rx_uniformType_f32x1,
+    rx_uniformType_f32x2,
+    rx_uniformType_f32x3,
+    rx_uniformType_f32x4,
+    rx_uniformType_i32x1,
+    rx_uniformType_i32x2,
+    rx_uniformType_i32x3,
+    rx_uniformType_i32x4,
+    rx_uniformType_mat4x4,
+    rx_uniformType_buffer,
+    rx_uniformType_tex2d,
+    rx_uniformType_tex3d,
+    rx_uniformType_cube,
+    rx_uniformType_sampler,
+    rx_uniformType__count,
+    rx_uniformType__forceU32 = RX_U32_MAX
+} rx_uniformType;
+
+typedef struct rx_ShaderUniformDesc {
+    const char* name;
+    rx_uniformType type;
+    u32 arrayCount;
+} rx_ShaderUniformDesc;
+
+#if 0
+typedef enum rx_uniformLayout {
+    rx_uniformLayout__default,
+    rx_uniformLayout_native,
+    rx_uniformLayout_std140,
+    rx_uniformLayout__count,
+    rx_uniformLayout__forceU32 = RX_U32_MAX
+} rx_uniformLayout;
+
+typedef struct rx_ShaderUniformBlockDesc {
+    u32 resGroupRef;
+    u32 size;
+    rx_uniformLayout layout;
+    rx_ShaderUniformDesc uniforms[RX_MAX_RESGROUP_UNIFORM_MEMBERS];
+} sg_shader_uniform_block_desc;
+#endif
+
+typedef enum rx_textureSampleType {
+    rx_textureSampleType__invalid,
+    rx_textureSampleType_float,
+    rx_textureSampleType_unfilterableFloat,
+    rx_textureSampleType_depth,
+    rx_textureSampleType_sint,
+    rx_textureSampleType_uint,
+    rx_textureSampleType__forceU32 = RX_U32_MAX
+} rx_textureSampleType;
+
+typedef struct rx_ShaderTextureDesc {
+    bx used;
+    bx multisampled;
+    rx_textureFormat textureFormat;
+    rx_textureSampleType sampleType;
+} rx_ShaderTextureDesc;
+
+typedef struct rx_ShaderSamplerDesc {
+    bx used;
+    rx_textureSampleType samplerType;
+} rx_ShaderSamplerDesc;
+
+// The design of this may change when compute shaders get implemented
+typedef struct rx_ShaderStorageBufferDesc {
+    bx used;
+    u32 arrayCount;
+} rx_ShaderStorageBufferDesc;
+
+typedef struct rx_ShaderResGroupDesc {
+    u32 bindSlot;
+    const char* name;
+    u32 size;
+    rx_ShaderUniformDesc uniforms[RX_MAX_RESGROUP_UNIFORM_MEMBERS];
+    rx_ShaderTextureDesc textures[4];
+    rx_ShaderSamplerDesc samplers[4];
+    rx_ShaderStorageBufferDesc buffers[4];
+} rx_ShaderResGroupDesc;
+
+typedef struct rx_ShaderDynamicConstantsDesc {
+    u32 size;
+    u32 bindGroupIdx;
+    u32 bindGroupSlot;
+} rx_ShaderDynamicConstantsDesc;
+
+typedef struct rx_ShaderTextureSamplerPairDesc {
+    bx used;
+    i32 slot;
+
+    i32 texResGroupIdx;
+    i32 texResIdx;
+    //i32 imageSlot;
+
+    i32 samplerResGroupIdx;
+    i32 samplerResIdx;
+
+    //i32 samplerSlot;
+    const char* glslName;
+} rx_ShaderTextureSamplerPairDesc;
+
+// {true, 0,  0, 1,  0, 0,  1, 0,  "rx_myTexture_rx_mySampler"}
+
+typedef struct rx_ShaderStageDesc {
+    const char* source;
+    rx_Range byteCode;
+    const char* entry;
+    rx_ShaderTextureSamplerPairDesc textureSamplerPairs[RX_MAX_SHADERSTAGE_TEXTURE_SAMPLER_PAIRS];
+
+
+
+#if 0
+    const char* source;
+    sg_range bytecode;
+    const char* entry;
+    const char* d3d11_target;
+    sg_shader_uniform_block_desc uniform_blocks[SG_MAX_SHADERSTAGE_UBS];
+    sg_shader_image_desc images[SG_MAX_SHADERSTAGE_IMAGES];
+    sg_shader_sampler_desc samplers[SG_MAX_SHADERSTAGE_SAMPLERS];
+    sg_shader_image_sampler_pair_desc image_sampler_pairs[SG_MAX_SHADERSTAGE_IMAGESAMPLERPAIRS];
+#endif
+
+} rx_ShaderStageDesc;
+
+typedef struct rx_RenderShaderDesc {
+    const char* name;
+    // TODO: attributes
+    rx_ShaderStageDesc vs;
+    rx_ShaderStageDesc fs;
+    rx_ShaderResGroupDesc resGroups[6];
+    rx_ShaderDynamicConstantsDesc dynamicConstants[2];
+} rx_RenderShaderDesc;
+
+API rx_renderShader rx_makeRenderShader(const rx_RenderShaderDesc* desc);
+
 
 
 // ResGroup
 
+typedef enum rx_resType {
+    rx_resType__invalid,
+    rx_resType_dynUniformBuffer,
+    rx_resType_texture2d,
+    rx_resType_textureCube,
+    rx_resType_texture3d,
+    rx_resType_sampler,
+    rx_resType_readOnlyBuffer,
+    rx_resType_rwBuffer,
+    rx_resType__forceU32 = RX_U32_MAX
+} rx_resType;
+
 typedef struct rx_ResLayoutDesc {
-    u32 type;
+    rx_resType type;
     u32 countOrSize;
     u32 slot;
 } rx_ResLayoutDesc;
@@ -470,6 +696,8 @@ typedef struct rx_ResGroupLayoutDesc {
 } rx_ResGroupLayoutDesc;
 
 API rx_resGroupLayout rx_makeResGroupLayout(rx_ResGroupLayoutDesc* desc);
+
+API rx_resGroupLayout rx_getResGroupLayoutForDynBuffers(void);
 
 typedef struct rx_ResUpdate {
    rx_texture texture;
@@ -491,6 +719,8 @@ typedef enum rx_resGroupUsage {
 typedef struct rx_ResGroupDesc {
     rx_resGroupLayout layout;
     u64 offset;
+    u32 dynBuffer0Idx;
+    u32 dynBuffer1Idx;
     rx_resGroupUsage usage;
     rx_ResGroupUpdateDesc initalContent;
 } rx_ResGroupDesc;
@@ -771,16 +1001,6 @@ typedef struct rx_SamplerBindingLayout {
     rx_samplerBindingType type;
 } rx_SamplerBindingLayout;
 
-typedef enum rx_textureSampleType {
-    rx_textureSampleType__invalid,
-    rx_textureSampleType_float,
-    rx_textureSampleType_unfilterableFloat,
-    rx_textureSampleType_depth,
-    rx_textureSampleType_sint,
-    rx_textureSampleType_uint,
-    rx_textureSampleType__forceU32 = RX_U32_MAX
-} rx_textureSampleType;
-
 typedef struct rx_TextureBindingLayout {
     rx_textureSampleType sampleType;
     rx_textureViewDimension viewDimension;
@@ -857,10 +1077,10 @@ typedef struct rx_DrawArea {
     rx_ViewPort viewPort;
     rx_ScissorRect scissor;
     rx_resGroup resGroup0;
+    rx_resGroup resGroupDynamicOffsetBuffers;
     uint32_t drawOffset;
     uint32_t drawCount;
 } rx_DrawArea;
-
 
 // FrameGraph
 
@@ -917,11 +1137,10 @@ typedef enum rx_renderCmds {
     rx_renderCmd_indexBuffer       = 1 << 4,
     rx_renderCmd_resGroup1         = 1 << 5,
     rx_renderCmd_resGroup2         = 1 << 6,
-    rx_renderCmd_resGroup3         = 1 << 7,
-    rx_renderCmd_dynResGroup0      = 1 << 8,
-    rx_renderCmd_dynResGroup1      = 1 << 9,
-    rx_renderCmd_instanceOffset    = 1 << 10,
-    rx_renderCmd_instanceCount     = 1 << 11,
+    rx_renderCmd_dynResGroup0      = 1 << 7,
+    rx_renderCmd_dynResGroup1      = 1 << 8,
+    rx_renderCmd_instanceOffset    = 1 << 9,
+    rx_renderCmd_instanceCount     = 1 << 10,
 } rx_renderCmds;
 
 typedef struct rx_DrawList {
@@ -932,6 +1151,22 @@ typedef struct rx_DrawList {
 
 // areas/drawList memory has to be kept alive till after rx_commit was called
 API void rx_setRenderPassDrawList(rx_renderPass renderPass, rx_DrawArea* arenas, u32 areaCount, rx_DrawList* drawList);
+
+#if 0
+// TODO: compute pass
+// - needs to access buffer and texture in read/write
+// - Resgroups need to manage know which passes they read to but also which resources MAY BE WRITTEN 
+
+LOCAL void runRenderPass(void) {
+    rx_computePass computePass = rx_makeComputePass();
+
+    rx_buffer myMutatedBuffer = rx_accesBufferAfterComputePass(computePass, myBuffer);
+
+    rx_updateResGroup(resGroup, &(MyResGroupBlock) {.myWriteBuffer = myBuffer});
+}
+#endif
+
+
 
 API void rx_commit(void);
 
