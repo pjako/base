@@ -53,7 +53,7 @@
 #endif
 
 #if OS_DLL_HOST
-Str8 app__useDll(void) {
+S8 app__useDll(void) {
     return str8(OS_DLL_PATH);
 }
 #else
@@ -188,8 +188,8 @@ typedef struct app__AppleCtx {
     f32 windowHeight;
     f32 frameBufferWidth;
     f32 frameBufferHeight;
-    Str8 dllFileName;
-    Str8 dllFullPath;
+    S8 dllFileName;
+    S8 dllFullPath;
     os_Dl* clientDll;
     u64 dllIdx;
     bx loadNewClientDll;
@@ -244,7 +244,7 @@ static void app__watchCallback(dmon_watch_id watch_id, dmon_action action, const
 }
 
 void app__hotReload(void) {
-    // os_Dl* os_dlOpen(Str8 filePath);
+    // os_Dl* os_dlOpen(S8 filePath);
     // void   os_dlClose(os_Dl* handle);
     // void*  os_DlSym(os_Dl* handle, const char* symbol);
     os_Dl* dllHandle = os_dlOpen(str8("foo/bar.dll"));
@@ -259,7 +259,7 @@ void app__hotReload(void) {
 }
 #endif
 
-// API os_Dl* os_dlOpen(Str8 filePath);
+// API os_Dl* os_dlOpen(S8 filePath);
 // API void   os_dlClose(os_Dl* handle);
 // API void*  os_DlSym(os_Dl* handle, const char* symbol);
 
@@ -295,10 +295,10 @@ LOCAL bx app__clientDllCloseAndLoad(Arena* tmpArena) {
         i32 oldIdx = app__appleCtx->dllIdx;
         app__appleCtx->dllIdx += 1;
         i32 idx = app__appleCtx->dllIdx;
-        Str8 oldTargetFileName = str_join(tempMem.arena, app__appleCtx->dllFullPath, str8("_"), oldIdx, str8(".dylib"));
-        Str8 targetFileName = str_join(tempMem.arena, app__appleCtx->dllFullPath, str8("_"), idx, str8(".dylib"));
-        Str8 targetFileNameB = str_join(tempMem.arena, app__appleCtx->dllFullPath, str8("_"), idx);
-        Str8 dllFullPath = str_join(tempMem.arena, app__appleCtx->dllFullPath, str8(".dylib"));
+        S8 oldTargetFileName = str_join(tempMem.arena, app__appleCtx->dllFullPath, str8("_"), oldIdx, str8(".dylib"));
+        S8 targetFileName = str_join(tempMem.arena, app__appleCtx->dllFullPath, str8("_"), idx, str8(".dylib"));
+        S8 targetFileNameB = str_join(tempMem.arena, app__appleCtx->dllFullPath, str8("_"), idx);
+        S8 dllFullPath = str_join(tempMem.arena, app__appleCtx->dllFullPath, str8(".dylib"));
 
         // delete target dll file if it existed previously
         if (os_fileExists(targetFileName)) {
@@ -312,7 +312,7 @@ LOCAL bx app__clientDllCloseAndLoad(Arena* tmpArena) {
             // ASSERT(!os_fileExists(targetFileName));
         }
         log_trace(tempMem.arena, str8("dll read new:"), dllFullPath);
-        Str8 dllData = os_fileRead(tempMem.arena, dllFullPath);
+        S8 dllData = os_fileRead(tempMem.arena, dllFullPath);
         if (!dllData.content) {
             success = false;
             continue;
@@ -335,7 +335,7 @@ LOCAL bx app__clientDllCloseAndLoad(Arena* tmpArena) {
 #ifdef OS_DLLHOST
 LOCAL void app__dmonFileWatchCallback(dmon_watch_id watch_id, dmon_action action, const char* rootdir, const char* filepath, const char* oldfilepath, app__AppleCtx* user) {
     if ( action == DMON_ACTION_CREATE || action == DMON_ACTION_MODIFY) {
-        Str8 filePath = str_fromNullTerminatedCharPtr(filepath);
+        S8 filePath = str_fromNullTerminatedCharPtr(filepath);
         if (str_hasSuffix(filePath, str8(".dylib")) && str_isEqual(str_to(filePath, filePath.size - str8(".dylib").size), user->dllFileName)) {
             user->loadNewClientDll = true;
         }
@@ -345,7 +345,7 @@ LOCAL void app__dmonFileWatchCallback(dmon_watch_id watch_id, dmon_action action
 
 LOCAL void app_appleStartApplication(void);
 LOCAL i32 app__hostStart(int argc, char* argv[]) {
-    Str8 dllFile = app__useDll();
+    S8 dllFile = app__useDll();
     app__appleCtx->dllFullPath = dllFile;
     app__appleCtx->dllFileName = str_from(dllFile, str_lastIndexOfChar(dllFile, '/') + 1);
 
@@ -1280,8 +1280,8 @@ static CVReturn app__appleDisplayLinkCallback(CVDisplayLinkRef displayLink,
     dmon_init();
     mem_scoped(tempMemory, app__appleCtx->mainArena) {
         i64 lastIdx = str_lastIndexOfChar(app__appleCtx->dllFullPath, '/');
-        Str8 dllFolder = str_to(app__appleCtx->dllFullPath, lastIdx + 1);
-        Str8 dllCharFolder = str_join(tempMemory.arena, dllFolder, '\0');
+        S8 dllFolder = str_to(app__appleCtx->dllFullPath, lastIdx + 1);
+        S8 dllCharFolder = str_join(tempMemory.arena, dllFolder, '\0');
         dmon_watch((unsigned char*) dllCharFolder.content, app__dmonFileWatchCallback, 0, app__appleCtx);
     }
 #endif
@@ -1378,7 +1378,7 @@ CVReturn app__appleDisplayLinkCallback(CVDisplayLinkRef displayLink,
     return kCVReturnSuccess;
 }
 
-static void app__appleSetWindowName(AppWindow* window, Str8 name) {
+static void app__appleSetWindowName(AppWindow* window, S8 name) {
 #if OS_OSX
     u8 title[2057];
     u64 size = minVal(name.size, (sizeof(title) - 1));

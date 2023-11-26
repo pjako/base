@@ -68,11 +68,11 @@ typedef enum log_Severity {
 #define log_msg(ARENA, SEVERITY, ...) STR_ARG_OVER_UNDER_FLOW_CHECKER(log__msg, STR_AT_LEAST_TWO_ARGS, __VA_ARGS__)(ARENA, SEVERITY, str_lit(__FILE__), __LINE__, STR_ARR_MACRO_CHOOSER(__VA_ARGS__)(str_Value, str__convertToValue, __VA_ARGS__))
 #define log_msgFmt(ARENA, severity, TEMPLATE, ...) STR_ARG_OVER_UNDER_FLOW_CHECKER(log__msgFmt, STR_AT_LEAST_TWO_ARGS, __VA_ARGS__)(ARENA, severity, str_lit(__FILE__), __LINE__, str__convertToKey(TEMPLATE), STR_ARR_MACRO_CHOOSER(__VA_ARGS__)(str_KeyValue, str__convertToKeyValue, __VA_ARGS__))
 
-API void log__msg(Arena* tmpArena, log_Severity severity, Str8 fileName, u64 line, u32 argCount, ...);
-API void log__msgFmt(Arena* tmpArena, log_Severity severity, Str8 fileName, u64 line, Str8 strTemplate, u32 argCount, ...);
+API void log__msg(Arena* tmpArena, log_Severity severity, S8 fileName, u64 line, u32 argCount, ...);
+API void log__msgFmt(Arena* tmpArena, log_Severity severity, S8 fileName, u64 line, S8 strTemplate, u32 argCount, ...);
 
-// API Str8 log_pull(void);
-typedef void (log_callbackFn) (log_Severity severity, Str8 fileName, u64 line, Str8 str, void* user);
+// API S8 log_pull(void);
+typedef void (log_callbackFn) (log_Severity severity, S8 fileName, u64 line, S8 str, void* user);
 API void log_setCallback(log_callbackFn* callback, void* user);
 
 #ifdef __cplusplus

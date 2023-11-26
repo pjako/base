@@ -37,13 +37,13 @@ i32 main(i32 argc, char* argv[]) {
     BaseMemory baseMem = os_getBaseMemory();
     Arena* mainArena = mem_makeArena(&baseMem, MEGABYTE(8));
 
-    Str8 targetPath = s8("/Users/peterjakobs/pjako/base_kit/_examples/sample_texture.hlsl");
+    S8 targetPath = s8("/Users/peterjakobs/pjako/base_kit/_examples/sample_texture.hlsl");
 
-    Str8 fileContent = os_fileRead(mainArena, targetPath);
+    S8 fileContent = os_fileRead(mainArena, targetPath);
 
-    Str8 headerFileContent = shd_generateShader(mainArena, targetPath, fileContent, shd_variation_ogl40);
+    S8 headerFileContent = shd_generateShader(mainArena, targetPath, fileContent, shd_variation_ogl40);
 
-    Str8 headerPath = s8("/Users/peterjakobs/pjako/base_kit/_examples/sample_texture.hlsl.h");
+    S8 headerPath = s8("/Users/peterjakobs/pjako/base_kit/_examples/sample_texture.hlsl.h");
 
     os_writeFile(headerPath, headerFileContent);
 

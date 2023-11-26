@@ -292,7 +292,7 @@ typedef union Rgba {
 
 #pragma mark - String
 
-typedef struct Str8 {
+typedef struct S8 {
     u8* content;
     u64 size;
 #if CPP_ENV
@@ -304,14 +304,14 @@ typedef struct Str8 {
         return content[maxVal(0, minVal(index, (size - 1)))];
     }
 #endif
-} Str8;
+} S8;
 
 #ifdef __cplusplus
 #define str_lit(STR) {(u8*) STR, sizeof(STR) - 1}
-#define str_dyn(NAME, SIZE) u8 __strContent##__COUNT__ Str8 NAME = {&__strContent##__COUNT__[0], SIZE}
+#define str_dyn(NAME, SIZE) u8 __strContent##__COUNT__ S8 NAME = {&__strContent##__COUNT__[0], SIZE}
 #else
-#define str_lit(STR) (Str8) {(u8*) STR, sizeof(STR) - 1}
-#define str_dyn(NAME, SIZE) u8 __strContent##__COUNT__ Str8 NAME = (Str8) {&__strContent##__COUNT__[0], SIZE}
+#define str_lit(STR) (S8) {(u8*) STR, sizeof(STR) - 1}
+#define str_dyn(NAME, SIZE) u8 __strContent##__COUNT__ S8 NAME = (S8) {&__strContent##__COUNT__[0], SIZE}
 #endif
 
 typedef struct S16 {
@@ -326,7 +326,7 @@ typedef struct S16 {
     }
 #endif
 } S16;
-#undef S32
+
 typedef struct S32 {
     u32* content;
     u64  size;
@@ -409,7 +409,7 @@ ct_def(bx);
 ct_def(b8);
 ct_def(b32);
 
-ct_def(Str8);
+ct_def(S8);
 ct_def(S16);
 
 ct_def(Vec2);

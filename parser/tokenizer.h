@@ -33,29 +33,29 @@ typedef enum tn_tokenType {
 } tn_tokenType;
 
 typedef struct tn_Token {
-    Str8 fileName;
+    S8 fileName;
     i32 columnNumber;
     i32 lineNumber;
     
     tn_tokenType type;
-    Str8 text;
+    S8 text;
     float f32;
     i32 i32;
 } tn_Token;
 
 typedef struct tn_Tokenizer {
-    Str8 fileName;
+    S8 fileName;
     i32 columnNumber;
     i32 lineNumber;
     tn_stream *errorStream;
     
-    Str8 input;
+    S8 input;
     char at[2];
     
     bool error;
 } tn_Tokenizer;
 
-TN_API bool tn_stringsAreEqual(Str8 str, char *B);
+TN_API bool tn_stringsAreEqual(S8 str, char *B);
 TN_API bool tn_parsing(tn_Tokenizer* tokenizer);
 TN_API void tn_errorOnToken(tn_Tokenizer* tokenizer, tn_Token OnToken, char *Format, ...);
 TN_API void tn_error(tn_Tokenizer* tokenizer, char *Format, ...);
@@ -69,7 +69,7 @@ TN_API tn_Token tn_requireToken(tn_Tokenizer* tokenizer, tn_tokenType DesiredTyp
 TN_API tn_Token tn_requireIdentifier(tn_Tokenizer* tokenizer, char *Match);
 TN_API tn_Token tn_requireIntegerRange(tn_Tokenizer* tokenizer, i32 MinValue, i32 MaxValue);
 TN_API bool tn_optionalToken(tn_Tokenizer* tokenizer, tn_tokenType DesiredType);
-TN_API tn_Tokenizer tn_createTokenize(Str8 Input, Str8 FileName);
+TN_API tn_Tokenizer tn_createTokenize(S8 Input, S8 FileName);
 
 #ifdef __cplusplus
 } /* extern "C" */

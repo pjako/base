@@ -25,14 +25,14 @@ typedef enum url_errorCode {
  */
 typedef struct Url {
 	url_errorCode error;
-	Str8  		  scheme;
-	Str8  		  user;
-	Str8  		  pass;
-	Str8  		  host;
+	S8  		  scheme;
+	S8  		  user;
+	S8  		  pass;
+	S8  		  host;
 	i32   		  port;
-	Str8  		  path;
-	Str8  		  query;
-	Str8  		  fragment;
+	S8  		  path;
+	S8  		  query;
+	S8  		  fragment;
 } Url;
 
 /**
@@ -42,7 +42,7 @@ typedef struct Url {
  *
  * @return parsed url. If mem is NULL this value will need to be free:ed with free().
  */
-API Url url_fromStr(Str8 urlStr);
+API Url url_fromStr(S8 urlStr);
 
 #ifdef __cplusplus
 } /* extern "C" */

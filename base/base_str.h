@@ -11,9 +11,9 @@ extern "C" {
 #include <string.h>
 #include <stdarg.h>
 
-static Str8 STR_TERMINATOR = {(u8*) "\0", 1};
-static Str8 STR_EMPTY = {(u8*) "", 0};
-static Str8 STR_NULL = {NULL, 0};
+static S8 STR_TERMINATOR = {(u8*) "\0", 1};
+static S8 STR_EMPTY = {(u8*) "", 0};
+static S8 STR_NULL = {NULL, 0};
 
 #if 0
 // reference: https://github.com/mattiasgustavsson/libs/blob/main/strpool.h
@@ -26,15 +26,15 @@ typedef struct str_Pool {
 #define str_handleEqual(A, B) ((A).id == (B).id)
 
 API void str_poolInit(Arena* arena, str_Pool* pool);
-API str_handle str_poolInject(str_Pool* pool, Str8 str);
-API Str8 str_poolGet(str_Pool* pool, str_handle handle);
+API str_handle str_poolInject(str_Pool* pool, S8 str);
+API S8 str_poolGet(str_Pool* pool, str_handle handle);
 #endif
 
 
 #define str8(STR) str_makeViewSized((u8*) (STR), sizeof(STR) - 1)
 #define s8(STR) str_makeViewSized((u8*) (STR), sizeof(STR) - 1)
-INLINE Str8 str_makeViewSized(u8* c, u64 size) {
-    Str8 str;
+INLINE S8 str_makeViewSized(u8* c, u64 size) {
+    S8 str;
     str.size = size;
     str.content = c;
     return str;
@@ -45,45 +45,45 @@ INLINE Str8 str_makeViewSized(u8* c, u64 size) {
 #define str_cpToStaticNullTerminated(STR, STATSTR) for (u32 i = 0; i < (STR).size) (STATSTR)[i] = (STR).content[i]; (STATSTR)[(STR).size] = '\0'
 #define str_isEmpty(STR) ((STR).size == 0)
 
-INLINE bx str_isNullTerminated(Str8 str) {
+INLINE bx str_isNullTerminated(S8 str) {
     return str.content[str.size - 1] == '\0';
 }
 
-API Str8 str_makeSized(Arena* arena, u8* arr, u32 size);
-API Str8 str_alloc(Arena* arena, mms size);
-API Str8 str_copy(Arena* arena, Str8 sourceStr);
+API S8 str_makeSized(Arena* arena, u8* arr, u32 size);
+API S8 str_alloc(Arena* arena, mms size);
+API S8 str_copy(Arena* arena, S8 sourceStr);
 
-API Str8 str_copyNullTerminated(Arena* arena, Str8 str);
+API S8 str_copyNullTerminated(Arena* arena, S8 str);
 
 
-API void str_toLowerAscii(Str8 str);
-API void str_toUpperAscii(Str8 str);
-API Str8 str_subStr(Str8 str, u64 start, u64 size);
-API Str8 str_from(Str8 str, u64 from);
-API Str8 str_to(Str8 str, u64 to);
+API void str_toLowerAscii(S8 str);
+API void str_toUpperAscii(S8 str);
+API S8 str_subStr(S8 str, u64 start, u64 size);
+API S8 str_from(S8 str, u64 from);
+API S8 str_to(S8 str, u64 to);
 
 // returns the ut8 length of the string
-API u64  str_length(Str8 str);
+API u64  str_length(S8 str);
 
-API f32  str_parseF32 (Str8 str);
-API u64  str_parseF32N(Str8 str, f32* f32);
-API i64  str_parseS64 (Str8 str);
-API u64  str_parseS64N(Str8 str, i64* i64);
-API u32  str_parseU32 (Str8 str);
-API u64  str_parseU32N(Str8 str, u32* u32);
-API Str8 str_parseQuotedStr(Str8 str);
+API f32  str_parseF32 (S8 str);
+API u64  str_parseF32N(S8 str, f32* f32);
+API i64  str_parseS64 (S8 str);
+API u64  str_parseS64N(S8 str, i64* i64);
+API u32  str_parseU32 (S8 str);
+API u64  str_parseU32N(S8 str, u32* u32);
+API S8 str_parseQuotedStr(S8 str);
 
 
-API i64  str_find(Str8 str, Str8 findExp);
-API i64  str_findChar(Str8 str, char c);
-API i64  str_lastIndexOfChar(Str8 str, char c);
-API bx str_hasPrefix(Str8 str, Str8 prefix);
-API bx   str_hasSuffix(Str8 str, Str8 endsWith);
-API bool str_startsWithChar(Str8 str, char startChar);
-API bool str_isEqual(Str8 left, Str8 right);
-API bool str_isWhiteSpace(Str8 str);
-API i64  str_firstNonWhiteSpace(Str8 str);
-API Str8 str_skipWhiteSpace(Str8 str);
+API i64  str_find(S8 str, S8 findExp);
+API i64  str_findChar(S8 str, char c);
+API i64  str_lastIndexOfChar(S8 str, char c);
+API bx str_hasPrefix(S8 str, S8 prefix);
+API bx   str_hasSuffix(S8 str, S8 endsWith);
+API bool str_startsWithChar(S8 str, char startChar);
+API bool str_isEqual(S8 left, S8 right);
+API bool str_isWhiteSpace(S8 str);
+API i64  str_firstNonWhiteSpace(S8 str);
+API S8 str_skipWhiteSpace(S8 str);
 
 API bool str_isWhitespaceChar(char c);
 
@@ -97,13 +97,13 @@ API bool str_isEndOfLineChar(char c);
 
 #pragma mark - String manipulation
 
-API u64 str_containsSubStringCount(Str8 str, Str8 findStr);
-API u64 str_findFirst(Str8 str, Str8 findStr, u64 offset);
-API Str8 str_replaceAll(Arena* arena, Str8 str, Str8 replaceStr, Str8 replacement);
+API u64 str_containsSubStringCount(S8 str, S8 findStr);
+API u64 str_findFirst(S8 str, S8 findStr, u64 offset);
+API S8 str_replaceAll(Arena* arena, S8 str, S8 replaceStr, S8 replacement);
 
 #pragma mark - UTF-8 functions
 
-API u64 str_utf8Count(Str8 str);
+API u64 str_utf8Count(S8 str);
 
 typedef struct str_StringDecode {
     u32 codepoint;
@@ -114,24 +114,24 @@ API str_StringDecode str_decodeUtf8(u8* str, u64 cap);
 
 // limited to 15 fraction digits
 // Store value needs to b at least 15+fracDigits+2 in size
-API Str8 str_floatToStr(f64 value, Str8 storeStr, i32* decimalPos, i32 fracDigits);
-API Str8 str_u32ToHex(Arena* arena, u32 value);
+API S8 str_floatToStr(f64 value, S8 storeStr, i32* decimalPos, i32 fracDigits);
+API S8 str_u32ToHex(Arena* arena, u32 value);
 
-API Str8  str_fromCharPtr(u8* str, u64 size);
-API Str8  str_fromNullTerminatedCharPtr(char* str);
+API S8  str_fromCharPtr(u8* str, u64 size);
+API S8  str_fromNullTerminatedCharPtr(char* str);
 
 
 #pragma mark - Utf8 to Utf16
 
-API S16 str_toS16(Arena* arena, Str8 str);
-API S32 str_toS32(Arena *arena, Str8 str);
-API Str8  str_fromS16(Arena* arena, S16 str);
+API S16 str_toS16(Arena* arena, S8 str);
+API S32 str_toS32(Arena *arena, S8 str);
+API S8  str_fromS16(Arena* arena, S16 str);
 
 
 #pragma mark - hash
 
-API u32 str_hash32(Str8 str);
-API u64 str_hash64(Str8 str);
+API u32 str_hash32(S8 str);
+API u64 str_hash64(S8 str);
 
 ////////////////////////////
 // NOTE(pjako): fmt parser... do we need that?
@@ -143,11 +143,11 @@ typedef enum str_FmtToken {
 } str_FmtToken;
 
 typedef struct str_FmtParser {
-    Str8         str;
+    S8         str;
     u32          offset;
     str_FmtToken currentToken;
-    Str8         key;
-    Str8         value;
+    S8         key;
+    S8         value;
     u32          blockIndex;
 } str_FmtParser;
 
@@ -168,13 +168,13 @@ typedef enum str_argType {
 
 typedef struct str_CustomVal {
     void* usrPtr;
-    Str8 (*buildStrFn)(Arena* recordArena, Str8 fmtInfo, void* userPtr);
+    S8 (*buildStrFn)(Arena* recordArena, S8 fmtInfo, void* userPtr);
 } str_CustomVal;
 
 typedef struct str_Value {
     str_argType type;
     union {
-        Str8 strVal;
+        S8 strVal;
         char charVal;
         f32 f32Val;
         f64 f64Val;
@@ -187,13 +187,13 @@ typedef struct str_Value {
 } str_Value;
 
 typedef struct str_KeyValue {
-    Str8 key;
+    S8 key;
     str_Value value;
 } str_KeyValue;
 
 #define str_keyValue(KEY, VALUE) str_kv(KEY, VALUE)
 #define str_kv(KEY, VALUE) str__keyValue(str__convertToKey(KEY), str__convertToValue(VALUE))
-INLINE str_KeyValue str__keyValue(Str8 key, str_Value value) {
+INLINE str_KeyValue str__keyValue(S8 key, str_Value value) {
     str_KeyValue kv;
     kv.key = key;
     kv.value = value;
@@ -209,10 +209,10 @@ INLINE str_KeyValue str__keyValue(Str8 key, str_Value value) {
 
 #define str_join(ARENA, ...) STR_ARG_OVER_UNDER_FLOW_CHECKER(str_joinRaw, STR_AT_LEAST_TWO_ARGS, __VA_ARGS__)(ARENA, STR_ARR_MACRO_CHOOSER(__VA_ARGS__)(str_KeyVakue, str__convertToValue, __VA_ARGS__))
 
-API Str8 str_joinRaw(Arena* arena, u32 argCount, ...);
-API Str8 str_joinVargs(Arena* arena, u32 argCount, va_list list);
-API Str8 str_fmtRaw(Arena* arena, Str8 fmt, u32 argCount, ...);
-API Str8 str_fmtVargs(Arena* arena, Str8 fmt, u32 argCount, va_list list);
+API S8 str_joinRaw(Arena* arena, u32 argCount, ...);
+API S8 str_joinVargs(Arena* arena, u32 argCount, va_list list);
+API S8 str_fmtRaw(Arena* arena, S8 fmt, u32 argCount, ...);
+API S8 str_fmtVargs(Arena* arena, S8 fmt, u32 argCount, va_list list);
 
 
 #define str_record(STR, ARENA) for (u64 startIdx = mem_getArenaMemOffsetPos(ARENA) + 1;startIdx != 0; (( (startIdx - 1) < mem_getArenaMemOffsetPos(ARENA) ? (STR.content = &(ARENA)->memory[startIdx - 1], STR.size = (mem_getArenaMemOffsetPos(ARENA) - (startIdx - 1))) : (STR.content = NULL, STR.size = 0)  ), startIdx = 0))
@@ -244,7 +244,7 @@ API Str8 str_fmtVargs(Arena* arena, Str8 fmt, u32 argCount, va_list list);
 #define STR_TOKV(TYPE) str__##TYPE##ToKeyVal
 #define str__convertToKeyValue(V) _Generic(V, \
     str_KeyValue: STR_TOKV(kv), \
-    Str8: STR_TOKV(str8), \
+    S8: STR_TOKV(str8), \
     char: STR_TOKV(char), \
     u8: STR_TOKV(uchar), \
     str_CustomVal: STR_TOKV(custom), \
@@ -259,7 +259,7 @@ API Str8 str_fmtVargs(Arena* arena, Str8 fmt, u32 argCount, va_list list);
 
 #define STR_TOKEY(TYPE) str__##TYPE##ToKey
 #define str__convertToKey(V) _Generic(V, \
-    Str8: STR_TOKEY(str8), \
+    S8: STR_TOKEY(str8), \
     default: STR_TOKEY(str8)  \
 )((V), sizeof(V), STR(V), sizeof(STR(V)))
 
@@ -267,7 +267,7 @@ API Str8 str_fmtVargs(Arena* arena, Str8 fmt, u32 argCount, va_list list);
 // Never change V to anything more then a single letter since this cause bugs when this expression is passed: " "
 
 #define str___convertToValue(V) _Generic(V, \
-    Str8: STR_TOFN(str8), \
+    S8: STR_TOFN(str8), \
     char: STR_TOFN(char), \
     u8: STR_TOFN(uchar), \
     str_CustomVal: STR_TOFN(custom), \
@@ -296,7 +296,7 @@ INLINE bx str__readNumExpression(str_Value* out, const char* strExpression, u32 
     if ((strExpression[0] < '0' ||  strExpression[0] > '9') && strExpression[0] != '-') return false;
     if (strExpression[1] == '\0') {
         // single digit
-        Str8 str;
+        S8 str;
         str.size = 1;
         str.content = (u8*) strExpression;
         out->type = str_argType_str;
@@ -314,7 +314,7 @@ INLINE bx str__readNumExpression(str_Value* out, const char* strExpression, u32 
 
     // remove the ending of the number 23u  23uul ect.
 
-    Str8 str;
+    S8 str;
     str.size = idx;
     str.content = (u8*) strExpression;
     out->type = str_argType_str;
@@ -350,7 +350,7 @@ INLINE str_Value STR_TOFN(uchar)(unsigned char c, u32 size, const char* strExpre
     return value;
 }
 
-INLINE str_Value STR_TOFN(str8)(Str8 str, u32 size, const char* strExpression, u32 strExpressionSize) {
+INLINE str_Value STR_TOFN(str8)(S8 str, u32 size, const char* strExpression, u32 strExpressionSize) {
     str_Value value;
     value.type = str_argType_str;
     value.strVal = str;
@@ -376,7 +376,7 @@ INLINE str_Value STR_TOFN(f64)(f64 floatVal, u32 size, const char* strExpression
         }
         if (simpleFloat) {
             // pass simple float expression as string
-            Str8 str;
+            S8 str;
             str.size = strExpressionSize - 1;
             str.content = (u8*) strExpression;
             value.type = str_argType_str;
@@ -429,14 +429,14 @@ INLINE str_Value STR_TOFN(i64)(i64 i64Val, u32 size, const char* strExpression, 
 
 
 ////////////////////////////
-// NOTE(pjako): Convert char* (and Str8) to Str8 to
+// NOTE(pjako): Convert char* (and S8) to S8 to
 
-INLINE Str8 STR_TOKEY(str8)(Str8 str, u32 size, const char* strExpression, u32 strExpressionSize) {
+INLINE S8 STR_TOKEY(str8)(S8 str, u32 size, const char* strExpression, u32 strExpressionSize) {
     return str;
 }
 
-INLINE Str8 STR_TOKEY(charConst)(const char* val, u32 size, const char* strExpression, u32 strExpressionSize) {
-    Str8 str;
+INLINE S8 STR_TOKEY(charConst)(const char* val, u32 size, const char* strExpression, u32 strExpressionSize) {
+    S8 str;
     if (strExpression[0] == '"') { // if expression starts with '"' it is a string literal
         // its a string literal
         str.size = size - 1;
@@ -470,7 +470,7 @@ INLINE str_KeyValue STR_TOKV(kv)(str_KeyValue kv, u32 size, const char* strExpre
 }
 
 INLINE str_KeyValue STR_TOKV(charConst)(const char* val, u32 size, const char* strExpression, u32 strExpressionSize) {
-    Str8 str;
+    S8 str;
     if (strExpression[0] == '"') { // if expression starts with '"' it is a string literal
         // its a string literal
         str.size = size - 1;
@@ -511,7 +511,7 @@ INLINE str_KeyValue STR_TOKV(uchar)(unsigned char c, u32 size, const char* strEx
     return STR_TOKV(value)(value);
 }
 
-INLINE str_KeyValue STR_TOKV(str8)(Str8 str, u32 size, const char* strExpression, u32 strExpressionSize) {
+INLINE str_KeyValue STR_TOKV(str8)(S8 str, u32 size, const char* strExpression, u32 strExpressionSize) {
     str_Value value;
     value.type = str_argType_str;
     value.strVal = str;
@@ -537,7 +537,7 @@ INLINE str_KeyValue STR_TOKV(f64)(f64 floatVal, u32 size, const char* strExpress
         }
         if (simpleFloat) {
             // pass simple float expression as string
-            Str8 str;
+            S8 str;
             str.size = strExpressionSize - 1;
             str.content = (u8*) strExpression;
             value.type = str_argType_str;

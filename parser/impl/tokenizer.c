@@ -5,7 +5,7 @@
 #include "parser/tokenizer.h"
 
 
-Str8 tn_getTokenTypeName(tn_tokenType type) {
+S8 tn_getTokenTypeName(tn_tokenType type) {
     switch(type) {
         case tn_tokenType_openParen: {return(str_lit("open parentheses"));}
         case tn_tokenType_closeParen: {return(str_lit("close parentheses"));}
@@ -89,7 +89,7 @@ void tn_refill(tn_Tokenizer *tokenizer) {
     }
 }
 
-static char* tn_advance(Str8 *Buffer, uint64_t Count) {
+static char* tn_advance(S8 *Buffer, uint64_t Count) {
     char *Result = 0;
     
     if (Buffer->size >= Count) {
@@ -110,7 +110,7 @@ void tn_advanceChars(tn_Tokenizer *tokenizer, uint32_t Count) {
     tn_refill(tokenizer);
 }
 
-bool tn_stringsAreEqual(Str8 str, char *B) {
+bool tn_stringsAreEqual(S8 str, char *B) {
     char* A = (char*) str.content;
     bool result = (A == B);
     
@@ -362,7 +362,7 @@ bool tn_optionalToken(tn_Tokenizer* tokenizer, tn_tokenType desiredType) {
     return(result);
 }
 
-tn_Tokenizer tn_createTokenize(Str8 Input, Str8 FileName) {
+tn_Tokenizer tn_createTokenize(S8 Input, S8 FileName) {
     tn_Tokenizer result = {0};
     
     result.fileName = FileName;

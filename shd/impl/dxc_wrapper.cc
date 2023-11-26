@@ -56,7 +56,7 @@ public:
         mem_scoped(mem, arena) {
             //execPath = s8(""); // os_execPath(mem.arena);
             
-            Str8 paths[] = {
+            S8 paths[] = {
                 s8("/Users/peterjakobs/pjako/base_kit/bin_tools/libdxcompiler.dylib"),
                 s8("/Users/peterjakobs/pjako/base_kit/bin_tools/dxcompiler.dll"),
                 s8("/Users/peterjakobs/pjako/base_kit/bin_tools/libdxcompiler.so"),
@@ -117,7 +117,7 @@ public:
 #if 0
 class ScIncludeHandler : public IDxcIncludeHandler {
 public:
-    explicit ScIncludeHandler(DxCompiler* dxCompiler, Arena* tmpArena, Str8 (*loadIncludeCallback)(Str8 includeName, void* userPtr), void* userPtr) :
+    explicit ScIncludeHandler(DxCompiler* dxCompiler, Arena* tmpArena, S8 (*loadIncludeCallback)(S8 includeName, void* userPtr), void* userPtr) :
         m_dxCompiler(dxCompiler), m_tmpArena(tmpArena), m_loadIncludeCallback(loadIncludeCallback), m_userPtr(userPtr) {
         
     }
@@ -131,10 +131,10 @@ public:
         S16 fileNameU16;
         fileNameU16.size = wcslen(fileName);
         fileNameU16.content = (u16*) fileName;
-        Str8 fileNameU8 = str_fromS16(this->m_tmpArena, fileNameU16);
+        S8 fileNameU8 = str_fromS16(this->m_tmpArena, fileNameU16);
         std::string utf8FileName;
 
-        Str8 fileContent = m_loadIncludeCallback(fileNameU8, this->m_userPtr);
+        S8 fileContent = m_loadIncludeCallback(fileNameU8, this->m_userPtr);
 
         *includeSource = nullptr;
         return this->m_dxCompiler->m_utils->CreateBlobWithEncodingOnHeapCopy(fileContent.content, fileContent.size, CP_UTF8,
@@ -181,7 +181,7 @@ public:
 private:
     DxCompiler* m_dxCompiler = nullptr;
     Arena* m_tmpArena = nullptr;
-    Str8 (*m_loadIncludeCallback)(Str8 includeName, void* userPtr) = nullptr;
+    S8 (*m_loadIncludeCallback)(S8 includeName, void* userPtr) = nullptr;
     void* m_userPtr = nullptr;
     std::atomic<ULONG> m_ref = 0;
 };
@@ -281,7 +281,7 @@ dxc_CompileResult dxc_compileHlslToSpv(Arena* arena, dxc_CompileDesc* desc) {
             major = options.shaderModel.major;
         }
 
-        Str8 targetProfile = [desc]() {
+        S8 targetProfile = [desc]() {
             switch (desc->type) {
                 case dxc_shaderType_vertex:     return s8("vs");
                 case dxc_shaderType_pixel:      return s8("ps");

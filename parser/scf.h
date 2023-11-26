@@ -18,23 +18,23 @@ typedef enum scf_Type {
 } scf_Type;
 
 typedef struct scf_Global {
-    Str8     fileName;
-    Str8     str;
+    S8     fileName;
+    S8     str;
     u64      line;
     u64      column;
 
     u64      needle;
     u64      nextOffset;
 
-    Str8     category;
-    Str8     key;
+    S8     category;
+    S8     key;
     scf_Type valueType;
-    Str8     valueStr;
+    S8     valueStr;
 } scf_Global;
 
 API bool scf_next(scf_Global* scfGlobal);
 
-API scf_Global scf_parse(Str8 scfStr, Str8 fileName);
+API scf_Global scf_parse(S8 scfStr, S8 fileName);
 
 #ifdef __cplusplus
 } /* extern "C" */

@@ -10,7 +10,7 @@ arg_Ctx arg_makeCtx(arg_Opt* opts, u32 optsCount, char** inputOpts, u32 inputOpt
     return ctx;
 }
 
-Str8 arg_createHelpText(Arena* arena, arg_Ctx* ctx) {
+S8 arg_createHelpText(Arena* arena, arg_Ctx* ctx) {
     for (u64 idx = 0; idx < ctx->optCount; idx++) {
         arg_Opt* opt = ctx->opts + idx;
         str_join(arena, s8("argument:"), opt->name, s8(" or "), opt->shortName, s8("\n"));
@@ -21,9 +21,9 @@ Str8 arg_createHelpText(Arena* arena, arg_Ctx* ctx) {
 i32 arg_nextOpt(arg_Ctx* ctx) {
     while (ctx->nextIdx < ctx->inputOptsCount) {
         char* charOpt = ctx->inputOpts[ctx->nextIdx];
-        Str8 key = str_fromNullTerminatedCharPtr(charOpt);
+        S8 key = str_fromNullTerminatedCharPtr(charOpt);
         //i64 firstSpace = str_findChar(opt, ' ');
-        //Str8 key;
+        //S8 key;
         bx longName = false;
         if (str_hasPrefix(key, str8("--"))) {
             longName = true;
@@ -39,7 +39,7 @@ i32 arg_nextOpt(arg_Ctx* ctx) {
             ctx->nextIdx++;
             continue;
         }
-        Str8 value = STR_EMPTY;
+        S8 value = STR_EMPTY;
         if ((ctx->nextIdx + 1) < ctx->inputOptsCount) {
             char* charOpt = ctx->inputOpts[ctx->nextIdx + 1];
             if (charOpt[0] != '-') {

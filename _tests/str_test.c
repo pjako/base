@@ -12,7 +12,7 @@ i32 main(i32 argc, char* argv[]) {
 
 
 
-    Str8 str1 = str_fmt(arena, s8("{} {} {}"), 1, 2, 3);
+    S8 str1 = str_fmt(arena, s8("{} {} {}"), 1, 2, 3);
 
     os_log(str1);
 

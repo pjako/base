@@ -14,7 +14,7 @@ typedef enum shd_variation {
 } shd_variation;
 typedef flags32 shd_variationFlags;
 
-API void shd_generateShader(Arena* storeMem, Str8 shdFilePath, Str8 shdFileContent, shd_variationFlags variationFlags);
+API void shd_generateShader(Arena* storeMem, S8 shdFilePath, S8 shdFileContent, shd_variationFlags variationFlags);
 
 
 #ifdef __cplusplus
