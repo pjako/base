@@ -26,15 +26,23 @@ typedef struct g_State {
     rx_resGroupLayout resGroupLayout;
     rx_renderPipeline renderPipeline;
     rx_resGroup resGroup;
+    Arena* uniformCpuArena;
+    rx_buffer uniformBuffer;
+    rx_bumpAllocator uniformGpuArena;
+    struct {
+        rx_buffer buffer;
+        Arena* cpuArena;
+        rx_bumpAllocator gpuArena;
+        rx_resGroup resGroup;
+    } streamingUniforms;
 } g_State;
 
 void g_init(void) {
     BaseMemory baseMem = os_getBaseMemory();
     Arena* mainArena = mem_makeArena(&baseMem, MEGABYTE(1));
-
     g_State* state = mem_arenaPushStruct(mainArena, g_State);
-    state->arena = mainArena;
     app_setUserData(state);
+    state->arena = mainArena;
 
     state->window = app_makeWindow(&(app_WindowDesc) {
         .title  = s8("Sample texture"),
@@ -45,6 +53,35 @@ void g_init(void) {
     rx_setup(&(rx_SetupDesc) {
         .context.gl.appleCaOpenGlLayer = app_getGraphicsHandle(state->window),
         .sampleCount = 1
+    });
+
+    // uniform buffer
+
+    {
+        u32 streamingUniformSize = MEGABYTE(1);
+        state->streamingUniforms.buffer = rx_makeBuffer(&(rx_BufferDesc) {
+            .usage = rx_bufferUsage_uniform,
+            .size = streamingUniformSize
+        });
+        state->streamingUniforms.cpuArena = mem_makeArena(&baseMem, streamingUniformSize + KILOBYTE(1));
+        state->streamingUniforms.gpuArena = rx_makeArena(&(rx_BumpAllocatorDesc) {
+            .arena = state->streamingUniforms.cpuArena,
+            .gpuBuffer = state->streamingUniforms.buffer
+        });
+        state->streamingUniforms.resGroup = rx_makeDynamicBufferResGroup(state->streamingUniforms.buffer, state->streamingUniforms.buffer);
+    }
+
+    u32 uniformSize = MEGABYTE(6);
+
+    state->uniformCpuArena = mem_makeArena(&baseMem, uniformSize + KILOBYTE(1));
+    state->uniformBuffer = rx_makeBuffer(&(rx_BufferDesc) {
+        .usage = rx_bufferUsage_uniform,
+        .size = uniformSize
+    });
+
+    state->uniformGpuArena = rx_makeArena(&(rx_BumpAllocatorDesc) {
+        .arena = state->uniformCpuArena,
+        .gpuBuffer = state->uniformBuffer
     });
 
     // buffers
@@ -77,7 +114,7 @@ void g_init(void) {
         .size = sizeOf(indexData)
     });
 
-    rx_updateBuffer(state->vertexBuffer, 0, (rx_Range) {
+    rx_updateBuffer(state->indexBuffer, 0, (rx_Range) {
         .size = sizeOf(indexData),
         .content = indexData
     });
@@ -101,24 +138,7 @@ void g_init(void) {
         }
     });
 
-#if 0
-    rx_uploadToTexture(state->texture, &(rx_TextureUploadDesc) {
-            .layout = {
-                .bytesPerRow = sizeof(uint32_t) * 2,
-                .rowsPerTexture = 2,
-            },
-            .extend = {
-                .width = 2,
-                .height = 2,
-                .depth = 0,
-            }
-        },
-        &textureDataRGBA[0],
-        sizeof(textureDataRGBA)
-    );
-#endif
-
-    // state
+    // sampler state
 
     state->sampler = rx_makeSampler(&(rx_SamplerDesc) {
         .mipmapMode = rx_mipmapMode_nearest,
@@ -130,77 +150,6 @@ void g_init(void) {
 
     rx_RenderShaderDesc texShaderDesc = SampleTextureProgramShaderDesc(rx_queryBackend());
     rx_renderShader sampleShader = rx_makeRenderShader(&texShaderDesc);
-
-    #if 0
-    rx_renderShader triangleShader = rx_makeRenderShader(&(rx_RenderShaderDesc) {
-        .label = s8("TriangleShader"),
-        .vs = {
-            .byteCode = {},
-            .source = {},
-            .entry = "entry",
-            .textureSamplerPairs = {
-                {
-                    .glslName = "foo",
-                    .imageSlot = 0,
-                    .samplerSlot = 0,
-                    .used = true
-                }
-            },
-            .resGroups = {
-            {
-                .bindSlot = 0,
-                .buffers = {
-
-                },
-                .name = "NAME",
-                .samplers = {
-                    {
-                        .used = true
-                    }
-                },
-                // should we calculate this per backend?
-                .size = 0,
-                .textures = {
-                    {
-                        .used = true,
-                        .multisampled = false,
-                        .sampleType = rx_samplerType_foo,
-                    }
-                },
-                .uniforms = {
-                    {
-                        .arrayCount = 1,
-                        .name = "Fooog",
-                        .type = rx_uniformType_f32x2
-                    }
-                }
-            },
-        }
-        .vs.source =
-            s8(
-            "#version 330\n"
-            "layout(location=0) in vec4 position;\n"
-            "layout(location=1) in vec2 texcoords0;\n"
-            "out vec4 color;\n"
-            "out vec2 uvs;\n"
-            "layout (std140) uniform resGroup1 { float offset; };"
-            "void main() {\n"
-            "  gl_Position = position + vec4(offset, 0, 0, 0);\n"
-            "  color = color0;\n"
-            "}\n"
-            ),
-        .fs.source =
-            s8(
-            "#version 330\n"
-            "in vec4 color;\n"
-            "in vec2 uvs;\n"
-            "out vec4 frag_color;\n"
-            "void main() {\n"
-            "  frag_color = color;\n"
-            "}\n"
-            )
-    });
-    #endif
 
     // ResGroupLayout
     state->resGroupLayout = rx_makeResGroupLayout(&(rx_ResGroupLayoutDesc) {
@@ -215,7 +164,7 @@ void g_init(void) {
     // pipeline
 
     state->renderPipeline = rx_makeRenderPipeline(&(rx_RenderPipelineDesc) {
-        .label = s8("TriangleShader"),
+        .label = s8("SamplerShader"),
         .program.shader = sampleShader,
         .rasterizer.cullMode = rx_cullMode_back,
         .primitiveTopology = rx_primitiveTopology_triangleList,
@@ -229,14 +178,19 @@ void g_init(void) {
         },
     });
 
+    // dynamic state
+
     f32 offset = 0;
     state->resGroup = rx_makeResGroup(&(rx_ResGroupDesc) {
         .layout = state->resGroupLayout,
-        .usage  = rx_resGroupUsage_streaming,
+        .usage  = rx_resGroupUsage_dynamic,
         .initalContent = {
-            .uniformContent = {
-                .size = sizeOf(offset),
-                .content = &offset
+            .storeArena = state->uniformGpuArena,
+            .resources[0] = {
+                .sampler = state->sampler
+            },
+            .resources[1] = {
+                .texture = state->texture
             }
         }
     });
@@ -260,7 +214,6 @@ void g_update(void) {
     rx_texture texture = rx_getCurrentSwapTexture();
 
 
-
     rx_renderPass renderPass = rx_makeRenderPass(&(rx_RenderPassDesc) {
         .colorTargets[0].target = texture,
         .colorTargets[0].clearColor = rgba_red,
@@ -271,12 +224,6 @@ void g_update(void) {
 
 
     static f32 offset;
-    rx_updateResGroup(state->resGroup, &(rx_ResGroupUpdateDesc) {
-        .uniformContent = {
-            .content = &offset,
-            .size = sizeOf(offset)
-        }
-    });
 
     mem_scoped(tmpMem, state->arena) {
         rx_RenderCmdBuilder cmdBuilder;
@@ -284,9 +231,15 @@ void g_update(void) {
         rx_renderCmdBuilderSetPipeline(&cmdBuilder, state->renderPipeline);
         rx_renderCmdBuilderSetVertexBuffer0(&cmdBuilder, state->vertexBuffer);
         rx_renderCmdBuilderSetResGroup1(&cmdBuilder, state->resGroup);
+        u64 offset = rx_bumpAllocatorPushData(state->streamingUniforms.gpuArena, (rx_Range) {
+            .content = &offset,
+            .size = sizeOf(offset)
+        });
+        rx_renderCmdBuilderSetDynResGroup0(&cmdBuilder, offset);
         rx_renderCmdBuilderDraw(&cmdBuilder, 0, 6, 0, 0);
 
         rx_DrawArea arenas = {
+            .resGroupDynamicOffsetBuffers = state->streamingUniforms.resGroup,
             .drawCount = 1
         };
 

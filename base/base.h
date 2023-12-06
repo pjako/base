@@ -42,24 +42,31 @@
 #ifdef _WIN32
 #undef OS_WIN
 #define OS_WIN 1
+#define OS_SHORT "win"
 #elif defined(__ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__)
 #undef OS_OSX
 #define OS_OSX 1
+#define OS_SHORT "osx"
 #elif defined(__ENVIRONMENT_IPHONE_OS_VERSION_MIN_REQUIRED__) || defined(__ENVIRONMENT_TV_OS_VERSION_MIN_REQUIRED__)
 #undef OS_IOS
 #define OS_IOS 1
+#define OS_SHORT "ios"
 #elif __ANDROID__
 #undef OS_ANDROID
 #define OS_ANDROID 1
+#define OS_SHORT "an"
 #elif __linux__
 #undef OS_LINUX
 #define OS_LINUX 1
+#define OS_SHORT "linux"
 #elif __unix__
 #undef OS_UNIX
 #define OS_UNIX 1
+#define OS_SHORT "unix"
 #elif __EMSCRIPTEN__
 #undef OS_EMSCRIPTEN
 #define OS_EMSCRIPTEN 1
+#define OS_SHORT "ems"
 #else
 #error "Unknown Operation System"
 #endif

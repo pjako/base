@@ -99,6 +99,7 @@ API bool str_isEndOfLineChar(char c);
 
 API u64 str_containsSubStringCount(S8 str, S8 findStr);
 API u64 str_findFirst(S8 str, S8 findStr, u64 offset);
+API u64 str_findLast(S8 str, S8 findStr, u64 offset);
 API S8 str_replaceAll(Arena* arena, S8 str, S8 replaceStr, S8 replacement);
 
 #pragma mark - UTF-8 functions

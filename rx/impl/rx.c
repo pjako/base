@@ -2,6 +2,7 @@
 #include "base/base.h"
 #include "base/base_types.h"
 #include "base/base_mem.h"
+#include "base/base_atomic.h"
 #include "base/base_math.h"
 #include "base/base_str.h"
 
@@ -157,12 +158,23 @@ typedef struct rx_Buffer {
         } gl;
 #endif
     };
-    u32                 gen : 16;
-    u64                 alignment;
-    u64                 allocatedSize;
-    u64                 size;
+    u32 gen : 16;
+    u64 alignment;
+    u64 allocatedSize;
+    u64 size;
     rx_bufferUsageFlags usage;
 } rx_Buffer;
+
+typedef struct rx_BumpAllocator {
+    rx_buffer targetBuffer;
+    u32 bufferCapacity;
+    a64_MpscRing ring;
+    u8* stagingPtr;
+    u32 currentSize;
+    u32 alignment;
+    u32 lastPushedSize;
+    u32 gen : 16;
+} rx_BumpAllocator;
 
 typedef struct rx_Sampler {
     union {
@@ -268,6 +280,7 @@ typedef struct rx_RenderPipeline {
 
 typedef enum rx__resType {
     rx__resType_none,
+    rx__resType_buffer,
     rx__resType_texture,
     rx__resType_sampler,
 } rx__resType;
@@ -275,6 +288,7 @@ typedef enum rx__resType {
 typedef struct rx_ResGroupRes {
     union {
         u32 id;
+        rx_buffer buffer;
         rx_texture texture;
         rx_sampler sampler;
     };
@@ -290,7 +304,7 @@ typedef struct rx_ResGroup {
         #endif
         #if RX_VULKAN
         struct {
-            VkDescriptorSet bindGroup;
+            VkDescriptorSet bindGroup[RX_MAX_INFLIGHT_FRAMES];
         } vk;
         #endif
     };
@@ -302,6 +316,7 @@ typedef struct rx_ResGroup {
     u64 lastUpdateFrameIdx;
     flags64 passDepFlags;
     flags64 writtenInPassesFlags;
+    bx isDynamicBufferResGroup;
     u32 gen : 16;
 } rx_ResGroup;
 
@@ -316,7 +331,7 @@ typedef struct rx_ResGroupLayout {
 } rx_ResGroupLayout;
 
 typedef struct rx_SwapChain {
-    rx_texture textures[RX_MAX_SWAP_TEXTURES];
+    rx_texture textures[RX_MAX_INFLIGHT_FRAMES];
     u32 textureCount : 2;
     u32 gen : 16;
 } rx_SwapChain;
@@ -512,6 +527,7 @@ typedef struct rx_Ctx {
     rx_Features features;
     rx_Limits limits;
     rx__poolDef(rx_Buffer) buffers;
+    rx__poolDef(rx_BumpAllocator) bumpAllocators;
     rx__poolDef(rx_Texture) textures;
     rx__poolDef(rx_Sampler) samplers;
     rx__poolDef(rx_RenderShader) renderShaders;
@@ -523,6 +539,8 @@ typedef struct rx_Ctx {
 
     rx_swapChain defaultSwapChain;
     rx_resGroupLayout  defaultResGroupDynamicOffsetBuffers;
+    rx_buffer uniformBuffer;
+    rx_resGroup defaultDynResGroup;
     
     
     rx_arrDef(rx_Pass) passes;
@@ -1357,6 +1375,40 @@ LOCAL void rx__log(rx_Ctx* ctx, S8 msg) {
     os_log(msg);
 }
 
+LOCAL rx_buffer rx__allocBuffer(rx_Ctx* ctx) {
+    u32 idx = rx__queuePull(&ctx->buffers.freeIndicies);
+    ASSERT(idx != RX__INVALID_INDEX && "No free textures available");
+    if (idx == RX__INVALID_INDEX) {
+        return (rx_buffer) {0};
+    }
+
+    rx_Buffer* arena = &ctx->buffers.elements[idx];
+    arena->gen = maxVal(1, (arena->gen + 1) % u16_max);
+
+    rx_buffer handle = {0};
+    handle.idx = idx;
+    handle.gen = arena->gen;
+
+    return handle;
+}
+
+LOCAL rx_bumpAllocator rx__allocBumpAllocator(rx_Ctx* ctx) {
+    u32 idx = rx__queuePull(&ctx->bumpAllocators.freeIndicies);
+    ASSERT(idx != RX__INVALID_INDEX && "No free bump allocator available");
+    if (idx == RX__INVALID_INDEX) {
+        return (rx_bumpAllocator) {0};
+    }
+
+    rx_BumpAllocator* arena = &ctx->bumpAllocators.elements[idx];
+    arena->gen = maxVal(1, (arena->gen + 1) % u16_max);
+
+    rx_bumpAllocator handle = {0};
+    handle.idx = idx;
+    handle.gen = arena->gen;
+
+    return handle;
+}
+
 LOCAL rx_texture rx__allocTexture(rx_Ctx* ctx) {
     u32 idx = rx__queuePull(&ctx->textures.freeIndicies);
     ASSERT(idx != RX__INVALID_INDEX && "No free textures available");
@@ -1417,8 +1469,6 @@ LOCAL rx_resGroup rx__allocResGroup(rx_Ctx* ctx) {
     return handle;
 }
 
-
-
 LOCAL rx_swapChain rx__allocSwapChain(rx_Ctx* ctx) {
     ASSERT(ctx);
     u32 idx = rx__queuePull(&ctx->swapChains.freeIndicies);
@@ -1445,6 +1495,26 @@ LOCAL rx_Buffer* rx__getBuffer(rx_Ctx* ctx, rx_buffer bufferHandle) {
     rx_Buffer* buffer = &ctx->buffers.elements[bufferHandle.idx];
     ASSERT(buffer->gen == bufferHandle.gen);
     return buffer;
+}
+
+LOCAL rx_BumpAllocator* rx__getBumpAllocator(rx_Ctx* ctx, rx_bumpAllocator bumpAllocatorHadle) {
+    ASSERT(ctx);
+    ASSERT(bumpAllocatorHadle.id != 0);
+    ASSERT(bumpAllocatorHadle.idx < ctx->bumpAllocators.capacity);
+
+    rx_BumpAllocator* arena = &ctx->bumpAllocators.elements[bumpAllocatorHadle.idx];
+    ASSERT(arena->gen == bumpAllocatorHadle.gen);
+    return arena;
+}
+
+LOCAL rx_Sampler* rx__getSampler(rx_Ctx* ctx, rx_sampler samplerHandler) {
+    ASSERT(ctx);
+    ASSERT(samplerHandler.id != 0);
+
+    rx_Sampler* sampler = &ctx->samplers.elements[samplerHandler.idx];
+    ASSERT(sampler->gen == samplerHandler.gen);
+
+    return sampler;
 }
 
 LOCAL rx_Texture* rx__getTexture(rx_Ctx* ctx, rx_texture textureHandle) {
@@ -2343,6 +2413,9 @@ typedef struct rx_OpenGlCtx {
         rx_GlCachedTextureSamplerBindSlot textureSamplers[RX_COUNT_SHADER_STAGES *  RX_MAX_SHADERSTAGE_TEXTURE_SAMPLER_PAIRS];
     } cache;
 
+
+    a32_MPSCIndexQueue activeBumpAllocators;
+
     struct {
         struct {
             rx_buffer buffer;
@@ -2610,6 +2683,8 @@ LOCAL void rx__setupBackend(rx_Ctx* baseCtx, const rx_SetupDesc* desc) {
         .usage = rx_bufferUsage_uniform | rx_bufferUsage_dynamic,
         .size = desc->dynamicUniformSize
     });
+
+    a32_mpscInit(&ctx->activeBumpAllocators, baseCtx->arena, baseCtx->bumpAllocators.capacity + 1);
 }
 
 LOCAL rx_Ctx* rx__create(Arena* arena, rx_SetupDesc* desc) {
@@ -2794,6 +2869,19 @@ LOCAL bx rx__glMakeBuffer(rx_Ctx* baseCtx, rx_Buffer* buffer, rx_BufferDesc* des
     //rx__oglCheckErrors();
 
     return true;
+}
+
+
+LOCAL bx rx__glMakeArena(rx_Ctx* baseCtx, rx_BumpAllocator* arena, rx_BumpAllocatorDesc* desc) {
+    ASSERT(baseCtx && arena && desc);
+    u32 bufferSize;
+    rx_Range mappedStagingBuffer;
+    // size
+    u32 stagingSize = arena->bufferCapacity;
+    arena->stagingPtr = mem_arenaPush(desc->arena, stagingSize);
+    ASSERT(arena->stagingPtr);
+    
+    return arena->stagingPtr != NULL;
 }
 
 typedef enum ogl_error {
@@ -3497,35 +3585,10 @@ LOCAL void rx__glUpdateResGroup(rx_Ctx* baseCtx, rx_ResGroup* resGroup, const rx
     if (resGroup->uniformSize) {
         u32 size = resGroup->uniformSize;
         u32 offset = resGroup->targetOffset;
-        rx_buffer target = desc->target;
-        if (target.id == 0) {
-            switch (resGroup->usage) {
-                case rx_resGroupUsage_dynamic: {
-                    target = ctx->uniform.dynamic.buffer;
-                    ASSERT(!"ALLOC uniform space");
-                    //offset = ctx->uniform.dynamic.currentOffset;
-                    //ctx->uniform.dynamic.currentOffset += size;
-                } break;
-                case rx_resGroupUsage_streaming: {
-                    target = ctx->uniform.streaming.buffer;
-                    if (!isNew && resGroup->lastUpdateFrameIdx == baseCtx->frameIdx) {
-                        // updating a res group twice a frame, just reused the existing slot
-                        offset = resGroup->targetOffset;
-                    } else {
-                        offset = ctx->uniform.streaming.currentOffset;
-                        offset = alignUp(ctx->uniform.streaming.currentOffset, baseCtx->limits.uniformBufferAlignment);
+        rx_bumpAllocator arena = desc->storeArena;
 
-                        ctx->uniform.streaming.currentOffset = offset + size;
-                    }
-
-                } break;
-                default: ASSERT(!"Unknown usage type");
-            }
-        }
-        resGroup->targetOffset = offset;
-        resGroup->target = target;
-        rx_Buffer* uniformBuffer = rx__getBuffer(baseCtx, target);
-        rx__glUpdateBuffer(baseCtx, uniformBuffer, offset, desc->uniformContent);
+        resGroup->target = rx__getBumpAllocator(baseCtx, arena)->targetBuffer;
+        resGroup->targetOffset = rx_bumpAllocatorPushData(arena, desc->uniformContent);
     }
     flags64 dependencies = 0;
     for (u32 idx = 0; idx < countOf(resGroup->gl.resources); idx++) {
@@ -3538,6 +3601,9 @@ LOCAL void rx__glUpdateResGroup(rx_Ctx* baseCtx, rx_ResGroup* resGroup, const rx
         } else if (desc->resources[idx].sampler.id != 0) {
             resGroup->gl.resources[idx].sampler = desc->resources[idx].sampler;
             resGroup->gl.resources[idx].type    = rx__resType_sampler;
+        } else if (desc->resources[idx].buffer.id != 0) {
+            resGroup->gl.resources[idx].buffer = desc->resources[idx].buffer;
+            resGroup->gl.resources[idx].type    = rx__resType_buffer;
         } else {
             resGroup->gl.resources[idx].type    = rx__resType_none;
         }
@@ -3552,7 +3618,18 @@ LOCAL void rx__glMakeResGroup(rx_Ctx* baseCtx, rx_ResGroup* resGroup, const rx_R
     rx_ResGroupLayout* resGroupLayout = rx__getResGroupLayout(baseCtx, resGroup->layout);
     resGroup->uniformSize = resGroupLayout->uniformSize;
     resGroup->usage = desc->usage;
-    rx__glUpdateResGroup(baseCtx, resGroup, &desc->initalContent, true);
+    //rx__glUpdateResGroup(baseCtx, resGroup, &desc->initalContent, true);
+}
+
+
+LOCAL void rx__glMakeDynamicBufferResGroup(rx_Ctx* baseCtx, rx_ResGroup* resGroup, rx_buffer dynBuffer0, rx_buffer dynBuffer1) {
+    resGroup->gl.resources[0].buffer = dynBuffer0;
+    resGroup->gl.resources[0].type   = rx__resType_buffer;
+
+    resGroup->gl.resources[1].buffer = dynBuffer0;
+    resGroup->gl.resources[1].type   = rx__resType_buffer;
+
+    resGroup->isDynamicBufferResGroup = true;
 }
 
 LOCAL GLenum rx__glVertexformatType(rx_vertexFormat fmt) {
@@ -4183,6 +4260,37 @@ LOCAL void rx__glApplyRenderPipeline(rx_OpenGlCtx* ctx, rx_RenderPipeline* rende
     rx__oglCheckErrors();
 }
 
+
+LOCAL void rx__applyResGroup(rx_OpenGlCtx* ctx, rx_GlStateCache* glStateCache, rx_RenderShader* shader, rx_ResGroup* resGroup, u32 resGroupSlot) {
+    // Apply res group
+    rx__oglCheckErrors();
+
+    if (resGroup->uniformSize > 0) {
+        rx_Buffer* targetBuffer = rx__getBuffer(&ctx->base, resGroup->target);
+        glBindBufferRange(
+            GL_UNIFORM_BUFFER,
+            resGroupSlot,
+            targetBuffer->gl.handle,
+            resGroup->targetOffset,
+            resGroup->uniformSize
+        );
+        rx__oglCheckErrors();
+    }
+
+#if 0
+    // rx_ResGroupRes resources
+    for (u32 idx = 0; idx < countOf(resGroup->gl.resources); idx++) {
+        rx_ResGroupRes* resource = &resGroup->gl.resources[idx];
+        switch (resource->type) {
+            case rx__resType_buffer: {
+
+            } break;
+
+        }
+    }
+#endif
+}
+
 #pragma region --GLExcuteDrawList
 
 LOCAL void rx__glExcuteDrawList(rx_OpenGlCtx* ctx, rx_GlStateCache* glStateCache, rx_DrawArea* drawAreas, u32 drawAreasCount, rx_DrawList* drawList, u32 maxWidth, u32 maxHeight) {
@@ -4220,9 +4328,21 @@ LOCAL void rx__glExcuteDrawList(rx_OpenGlCtx* ctx, rx_GlStateCache* glStateCache
     bool viewport = false;
     bool scissor = false;
 
+
+    rx_resGroup resGroup0Handle = {0};
+    rx_ResGroup* resGroup0 = NULL;
+
+
+    rx_resGroup dynResGroupHandle = {0};
+    rx_ResGroup* dynResGroup = NULL;
+
     for (uint32_t drawAreaIdx = 0; drawAreaIdx < drawAreasCount; drawAreaIdx++) {
         rx_DrawArea* drawArea = drawAreas + drawAreaIdx;
         uint32_t endCount = drawArea->drawOffset + drawArea->drawCount;
+
+
+        bx dirtyResGroups[5] = {true, true, true, true, true};
+        bx samplersNeedUpdate = true;
 
         // set viewport if it changed
         if (drawArea->viewPort.x != currentViewPort.x || drawArea->viewPort.y != currentViewPort.y || drawArea->viewPort.width != currentViewPort.width || drawArea->viewPort.height != currentViewPort.height) {
@@ -4266,28 +4386,58 @@ LOCAL void rx__glExcuteDrawList(rx_OpenGlCtx* ctx, rx_GlStateCache* glStateCache
             pushIndicies[0] = 0;
         }
 #endif
-
-        rx_ResGroup* resGroup0 = NULL;
-        rx_ResGroup* resGroupDynamicOffsetBuffers = NULL;
+        rx_ResGroup* resGroups[4] = {0};
 
         rx_Buffer* uniformBuffers[2] = {0};
 
-        if (drawArea->resGroupDynamicOffsetBuffers.id == 0) {
-            // use default
-            resGroupDynamicOffsetBuffers = rx__getResGroup(&ctx->base, drawArea->resGroupDynamicOffsetBuffers);
-
+        // handle ResGroup0
+        bx resGroup0Applied = false;
+        if (drawArea->resGroup0.id == 0) {
+            resGroup0 = NULL;
+            resGroup0Applied = true;
+            resGroups[0] = NULL;
+        } else if (resGroup0Handle.id != drawArea->resGroup0.id) {
+            resGroup0 = rx__getResGroup(&ctx->base, drawArea->resGroup0);
+            resGroups[0] = resGroup0;
         } else {
-            resGroupDynamicOffsetBuffers = rx__getResGroup(&ctx->base, drawArea->resGroupDynamicOffsetBuffers);
-            ASSERT(resGroupDynamicOffsetBuffers->layout.id == ctx->base.defaultResGroupDynamicOffsetBuffers.id);
+            resGroup0Applied = true;
+        }
+        resGroup0Handle = drawArea->resGroup0;
+
+
+        // DynResGroup (ResGroup3)
+        rx_buffer dynBuffer0 = {0};
+        rx_buffer dynBuffer1 = {0};
+        {
+            rx_resGroup nextDynResGroup = drawArea->resGroupDynamicOffsetBuffers;
+
+            if (nextDynResGroup.id == 0) {
+                nextDynResGroup = ctx->base.defaultDynResGroup;
+            }
+
+            if (nextDynResGroup.id != dynResGroupHandle.id) {
+                dynResGroupHandle = nextDynResGroup;
+                dynResGroup = rx__getResGroup(&ctx->base, dynResGroupHandle);
+                resGroups[3] = dynResGroup;
+                dynBuffer0 = dynResGroup->gl.resources[0].buffer;
+                dynBuffer1 = dynResGroup->gl.resources[1].buffer;
+            }
+        }
+        
+        if (resGroup0Handle.id != drawArea->resGroup0.id) {
+            resGroup0 = rx__getResGroup(&ctx->base, drawArea->resGroup0);
+
         }
 
-
-
-    rx_resGroup resGroup0;
-    rx_resGroup resGroupDynamicOffsetBuffers;
+        //} else {
+            // resGroupDynamicOffsetBuffers = rx__getResGroup(&ctx->base, drawArea->resGroupDynamicOffsetBuffers);
+            // ASSERT(resGroupDynamicOffsetBuffers->layout.id == ctx->base.defaultResGroupDynamicOffsetBuffers.id);
+        //}
 
         uint32_t instanceOffset = 0;
         uint32_t instanceCount  = 0;
+        rx_renderShader currentShaderHandle = {0};
+        rx_RenderShader* currentShader = NULL;
         rx_RenderPipeline* renderPipeline = NULL;
         uint32_t lastVertexOffset = 0;
         for (uint32_t currentOffset = drawArea->drawOffset, currDrawCount = 0; currDrawCount < drawArea->drawCount; currDrawCount++) {
@@ -4303,27 +4453,22 @@ LOCAL void rx__glExcuteDrawList(rx_OpenGlCtx* ctx, rx_GlStateCache* glStateCache
                         currentPipeline.id = id;
                         renderPipeline = rx__getRenderPipeline(&ctx->base, currentPipeline);
 
+                        if (currentShaderHandle.id != renderPipeline->gl.shader.id) {
+                            currentShaderHandle = renderPipeline->gl.shader;
+                            currentShader = rx__getRenderShader(&ctx->base, currentShaderHandle);
+
+                        }
+
                         rx__oglCheckErrors();
                         rx__glApplyRenderPipeline(ctx, renderPipeline, glStateCache);
                         rx__oglCheckErrors();
-                        
-                        //ctx->halApi.cmdSetRenderPipeline(halRenderPass, &renderPipeline->halRenderPipeline);
 
-
-
-                        //_sg_gl_apply_pipeline
-
-                        // update depth state
-
-                        // update stencile state
-
-                        // apply color attachment states
-
-                        // update rasterizer state
-
-
-
-                        // currentViewPort.minDepth, currentViewPort.maxDepth
+                        if (!resGroup0Applied) {
+                            resGroup0Applied = true;
+                            rx__applyResGroup(ctx, glStateCache, currentShader, resGroup0, 0);
+                            dirtyResGroups[0] = true;
+                            samplersNeedUpdate = true;
+                        }
                     }
                 }
 
@@ -4354,33 +4499,26 @@ LOCAL void rx__glExcuteDrawList(rx_OpenGlCtx* ctx, rx_GlStateCache* glStateCache
                 }
                 // TODO(PJ): ResGroups
 
-                if ((flags & (rx_renderCmd_resGroup1 | rx_renderCmd_resGroup2 | rx_renderCmd_dynResGroup0 | rx_renderCmd_dynResGroup1)) != 0) {
-                    static const u32 resFlags[] = {rx_renderCmd_resGroup1, rx_renderCmd_resGroup2};
-                    static const u32 resSlots[] = {1, 2, 3};
-                    for (u32 idx = 0; idx < countOf(resFlags); idx++) {
+                if ((flags & (rx_renderCmd_resGroup1 | rx_renderCmd_resGroup2)) != 0) {
+                    for (u32 idx = 0; idx < 2; idx++) {
+                        static const u32 resFlags[] = {rx_renderCmd_resGroup1, rx_renderCmd_resGroup2};
+                        static const u32 resSlots[] = {1, 2};
                         if ((flags & resFlags[idx]) != 0) {
                             uint32_t id = drawList->commands[currentOffset++];
                             rx_resGroup resGroup = {id};
                             rx_ResGroup* resourceGroup = rx__getResGroup(&ctx->base, resGroup);
-                            if (resourceGroup->target.id != 0) {
-                                rx__oglCheckErrors();
-                                rx_Buffer* targetBuffer = rx__getBuffer(&ctx->base, resourceGroup->target);
-                                glBindBufferRange(
-                                    GL_UNIFORM_BUFFER,
-                                    resSlots[idx],
-                                    targetBuffer->gl.handle,
-                                    resourceGroup->targetOffset,
-                                    resourceGroup->uniformSize
-                                );
 
-                                ogl_error error = (ogl_error) glGetError();
-                                ASSERT(error == 0);
-                                rx__oglCheckErrors();
-                            }
+                            resGroups[resSlots[idx]] = resourceGroup;
+                            dirtyResGroups[resSlots[idx]] = true;
+                            samplersNeedUpdate = true;
+
+                            rx__applyResGroup(ctx, glStateCache, currentShader, resourceGroup, 0);
                         }
                     }
-                    const u32 dynResFlags[] = {rx_renderCmd_dynResGroup0, rx_renderCmd_dynResGroup1};
-                    for (u32 idx = 0; idx < countOf(dynResFlags); idx++) {
+                    
+                    for (u32 idx = 0; idx < 2; idx++) {
+                        const u32 dynResFlags[] = {rx_renderCmd_dynResGroup0, rx_renderCmd_dynResGroup1};
+                        static const u32 resSlots[] = {3, 4};
                         if ((flags & dynResFlags[idx]) != 0) {
                             ASSERT(dynamicSlots[idx] != -1);
                             ASSERT(dynamicSlotUniformSize[idx] > 0);
@@ -4389,13 +4527,17 @@ LOCAL void rx__glExcuteDrawList(rx_OpenGlCtx* ctx, rx_GlStateCache* glStateCache
                             
                             glBindBufferRange(
                                 GL_UNIFORM_BUFFER,
-                                dynResFlags[idx],
+                                resSlots[idx],
                                 dynamicUniformBufferHandle,
                                 offset,
                                 dynamicSlotUniformSize[idx]
                             );
                         }
                     }
+                }
+
+                if ((flags & (rx_renderCmd_dynResGroup0 | rx_renderCmd_dynResGroup1)) != 0) {
+
                 }
 
                 if ((flags & rx_renderCmd_instanceOffset) != 0) {
@@ -4413,6 +4555,30 @@ LOCAL void rx__glExcuteDrawList(rx_OpenGlCtx* ctx, rx_GlStateCache* glStateCache
             ASSERT(indexCount > 0);
             uint32_t vertexOffset = drawList->commands[currentOffset++];
             uint32_t vertexCount  = drawList->commands[currentOffset++];
+
+            if (samplersNeedUpdate) {
+                for (u32 idx = 0, count = currentShader->gl.samperMappingCount; idx < count; idx++) {
+                    rx__glSampler* samplerMapping = &currentShader->gl.samplerMapping[idx];
+                   
+                    if (dirtyResGroups[samplerMapping->textResGroupIdx] == true || dirtyResGroups[samplerMapping->samplerResGroupIdx]) {
+                        // update sampler
+
+                        rx_texture textureHandle = resGroups[samplerMapping->textResGroupIdx]->gl.resources[samplerMapping->textResIdx].texture;
+                        rx_sampler samplerHandler = resGroups[samplerMapping->samplerResGroupIdx]->gl.resources[samplerMapping->samplerResIdx].sampler;
+                        ASSERT(textureHandle.id != 0 && samplerHandler.id != 0);
+                        rx_Texture* texture = rx__getTexture(&ctx->base, textureHandle);
+                        rx_Sampler* sampler = rx__getSampler(&ctx->base, samplerHandler);
+
+                        rx__glCacheBindTextureSampler(ctx, idx, texture->gl.target, texture->gl.handle, sampler->gl.handle);
+                        // LOCAL void rx__glCacheBindTextureSampler(rx_OpenGlCtx* ctx, int slotIndex, GLenum target, GLuint texture, GLuint sampler) {
+
+                    }
+                    
+                }
+                for (u32 idx = 0; idx < countOf(dirtyResGroups); idx++) {
+                    dirtyResGroups[idx] = false;
+                }
+            }
             
 
             if (needsToRebindVertexAttributes || vertexOffset != lastVertexOffset) {
@@ -4460,18 +4626,7 @@ LOCAL void rx__glExcuteDrawList(rx_OpenGlCtx* ctx, rx_GlStateCache* glStateCache
                         cachedAttribute->vbIndex = -1;
                         glDisableVertexAttribArray(attributeIdx);
                     }
-/*
-typedef struct rx__GlVertexAttribute {
-    i8 vbIndex;        // -1 if attr is not enabled
-    i8 divisor;         // -1 if not initialized
-    i8 stride;
-    i8 size;
-    bx normalized : 1;
-    i32 offset;
-    GLenum type;
-} rx__GlVertexAttribute;
 
-*/
                     if (attribute->vbIndex == -1) {
                         glDisableVertexAttribArray(attributeIdx);
                         continue;
@@ -4688,6 +4843,43 @@ LOCAL void rx__glExcuteGraph(rx_Ctx* baseCtx, rx_FrameGraph* frameGraph) {
     ASSERT(baseCtx);
     ASSERT(frameGraph);
     rx_OpenGlCtx* ctx = (rx_OpenGlCtx*) baseCtx;
+
+    // Upload BumpAllocator content
+
+    a32_mpscForEach(&ctx->activeBumpAllocators, queueIndex) {
+        u32 handleId = a32_mpscGetAtIndex(&ctx->activeBumpAllocators, queueIndex);
+        if (handleId == 0) {
+            // bump allocator handle was not pushed yet by producer, skip it, it should not contain anything necessary to build
+            // the frame
+            continue;
+        }
+        rx_bumpAllocator bumpAllocatorHandle;
+        bumpAllocatorHandle.id = handleId;
+        rx_BumpAllocator* allocator = rx__getBumpAllocator(baseCtx, bumpAllocatorHandle);
+        rx_Buffer* buffer = rx__getBuffer(baseCtx, allocator->targetBuffer);
+
+        u64 currentSize = allocator->currentSize;
+        if (allocator->lastPushedSize == allocator->currentSize) {
+            continue;
+        }
+        
+        u64 size = currentSize - allocator->lastPushedSize;
+        u64 sizeToEnd = (minVal(allocator->bufferCapacity, allocator->lastPushedSize) - allocator->lastPushedSize);
+
+        rx__glUpdateBuffer(baseCtx, buffer, allocator->lastPushedSize, (rx_Range) {
+            .content = &allocator->stagingPtr[allocator->lastPushedSize],
+            .size = sizeToEnd
+        });
+
+        if (sizeToEnd < size) {
+            rx__glUpdateBuffer(baseCtx, buffer, 0, (rx_Range) {
+                .content = &allocator->stagingPtr[0],
+                .size = size - sizeToEnd
+            });
+        }
+
+        allocator->lastPushedSize = currentSize;
+    }
 
     // Assume external changes to the gl state so everything needs to set again
     rx_GlStateCache glStateCache = {0};
@@ -4962,7 +5154,7 @@ typedef struct rx_MtlCtx {
 
 static rx_Ctx* rx__ctx;
 
-#pragma region setup
+#pragma region Setup
 void rx_setup(rx_SetupDesc* desc) {
     ASSERT(!rx__ctx);
     ASSERT(desc);
@@ -4970,6 +5162,7 @@ void rx_setup(rx_SetupDesc* desc) {
     // set defaults
     rx_SetupDesc descWithDefaults = *desc;
     descWithDefaults.maxRenderShaders = rx_valueOrDefault(descWithDefaults.maxRenderShaders, RX_DEFAULT_MAX_RENDER_SHADERS);
+    descWithDefaults.maxBumpAllocators = rx_valueOrDefault(descWithDefaults.maxBumpAllocators, RX_DEFAULT_MAX_BUMP_ALLOCATORS);
     descWithDefaults.maxBuffers = rx_valueOrDefault(descWithDefaults.maxBuffers, RX_DEFAULT_MAX_BUFFERS);
     descWithDefaults.maxSamplers = rx_valueOrDefault(descWithDefaults.maxBuffers, RX_DEFAULT_MAX_SAMPLERS);
     descWithDefaults.maxTextures = rx_valueOrDefault(descWithDefaults.maxTextures, RX_DEFAULT_MAX_TEXTURES);
@@ -4992,6 +5185,9 @@ void rx_setup(rx_SetupDesc* desc) {
     ctx->arena = arena;
 
     rx__poolInit(ctx->arena, &ctx->buffers, descWithDefaults.maxBuffers);
+    rx__poolInit(ctx->arena, &ctx->bumpAllocators, descWithDefaults.maxBumpAllocators);
+
+    
     rx__poolInit(ctx->arena, &ctx->samplers, descWithDefaults.maxSamplers);
     rx__poolInit(ctx->arena, &ctx->textures, descWithDefaults.maxTextures);
     rx__poolInit(ctx->arena, &ctx->renderShaders, descWithDefaults.maxRenderShaders);
@@ -5018,6 +5214,8 @@ void rx_setup(rx_SetupDesc* desc) {
 
     rx__setupBackend(ctx, &descWithDefaults);
 
+    // shared dynymic ResGroupLayout
+
     ctx->defaultResGroupDynamicOffsetBuffers = rx_makeResGroupLayout(&(rx_ResGroupLayoutDesc) {
         .resources[0] = {
             .type = rx_resType_dynUniformBuffer,
@@ -5026,6 +5224,7 @@ void rx_setup(rx_SetupDesc* desc) {
             .type = rx_resType_dynUniformBuffer,
         },
     });
+    
 #if 0
     arrMake(ctx->arena, &ctx->buffers, descWithDefaults.maxBuffers);
     arrMake(ctx->arena, &ctx->textures, descWithDefaults.maxTextures);
@@ -5035,7 +5234,9 @@ void rx_setup(rx_SetupDesc* desc) {
 #endif
 
 }
+
 #pragma endregion
+
 
 void rx_shutdown(void) {
     ASSERT(rx__ctx);
@@ -5080,34 +5281,6 @@ rx_buffer rx_makeBuffer(const rx_BufferDesc* desc) {
     };
 
     return bufferHandle;
-    #if 0
-
-    ASSERT(rx__ctx);
-    ASSERT(desc);
-    // get free index
-    u32 idx   = rx__queuePull(&rx__ctx->textures.freeIndicies);
-    ASSERT(idx != RX__INVALID_INDEX && "No free buffer available");
-    if (idx == RX__INVALID_INDEX) {
-        return (rx_buffer) {0};
-    }
-    rx_buffer   handle = {rx_makeHandle(idx, 0)};
-    rx__Buffer* buffer = rx__getBuffer(rx__ctx, handle);
-    rx__pushGeneration(&buffer->info);
-    // create hal buffer
-    rx__ctx->halApi.makeBuffer(&buffer->halBuffer, &(rx_HalBufferDesc) {
-        .label      = desc->label,
-        .device     = &rx__ctx->halDevice,
-        .usage      = desc->usage | rx_bufferUsage_copyDst,
-        .size       = desc->size,
-    });
-    // we do alloc in a specific upload phase
-    // for legacy APIs if there is data we would upload it right away
-    buffer->allocHandle.id = 0;
-
-    // should we really do it like this? maybe we should have more specific buffers
-    // for specific usecases like the legacy APIs
-    rx_allocForBuffer(&buffer->halBuffer, &rx__ctx->bufferMem);
-    #endif
 }
 
 void rx_updateBuffer(rx_buffer buffer, mms offset, rx_Range range) {
@@ -5121,6 +5294,68 @@ void rx_updateBuffer(rx_buffer buffer, mms offset, rx_Range range) {
     ASSERT(bufferContent->size >= (offset + range.size) && "upload size does not fit in the buffer");
     rx_callBknFn(UpdateBuffer, ctx, bufferContent, offset, range);
 }
+
+rx_bumpAllocator rx_makeArena(const rx_BumpAllocatorDesc* desc) {
+    ASSERT(rx__ctx);
+    ASSERT(desc);
+    ASSERT(desc->gpuBuffer.id);
+    rx_Ctx* ctx = rx__ctx;
+
+    rx_bumpAllocator bumpAllocatorHadle = rx__allocBumpAllocator(ctx);
+
+    if (bumpAllocatorHadle.id == 0) {
+        return (rx_bumpAllocator) {0};
+    }
+
+    rx_Buffer* buffer = rx__getBuffer(ctx, desc->gpuBuffer);
+
+    rx_BumpAllocatorDesc desWithDefaults = *desc;
+
+    if (desWithDefaults.alignment == 0) {
+        if ((buffer->usage & rx_bufferUsage_uniform)) {
+            desWithDefaults.alignment = ctx->limits.uniformBufferAlignment;
+        }
+    }
+
+    rx_BumpAllocator* bumpAllocator = rx__getBumpAllocator(ctx, bumpAllocatorHadle);
+    bumpAllocator->bufferCapacity = buffer->size;
+    a64_mpscRingInit(&bumpAllocator->ring, buffer->size);
+
+    rx_callBknFn(MakeArena, ctx, bumpAllocator, &desWithDefaults);
+
+    return bumpAllocatorHadle;
+}
+
+u64 rx_bumpAllocatorPushData(rx_bumpAllocator bumpAllocatorHadle, rx_Range data) {
+    ASSERT(rx__ctx);
+    ASSERT(bumpAllocatorHadle.id);
+    ASSERT(data.content && "upload ptr is NULL");
+    ASSERT(data.size > 0 && "upload size is zero");
+    rx_Ctx* ctx = rx__ctx;
+
+    rx_BumpAllocator* bumpAllocator = rx__getBumpAllocator(ctx, bumpAllocatorHadle);
+    // align size so next allocation is aligned as well
+    u64 alignedSize = alignDown(data.size, bumpAllocator->alignment);
+    ASSERT(bumpAllocator);
+    i64 idx = a64_mpscRingPush(&bumpAllocator->ring, alignedSize);
+    if (idx < 0) {
+        return 0;
+    }
+    u64 offset = idx % bumpAllocator->ring.size;
+    return offset;
+}
+
+void rx_bumpAllocatorReset(rx_bumpAllocator bumpAllocatorHadle) {
+    ASSERT(rx__ctx);
+    ASSERT(bumpAllocatorHadle.id);
+    rx_Ctx* ctx = rx__ctx;
+
+    rx_BumpAllocator* bumpAllocator = rx__getBumpAllocator(ctx, bumpAllocatorHadle);
+    ASSERT(bumpAllocator);
+    bumpAllocator->currentSize = 0;
+    bumpAllocator->lastPushedSize = 0;
+}
+
 
 LOCAL rx_SamplerDesc rx__samplerDescDefaults(const rx_SamplerDesc* desc) {
     rx_SamplerDesc outDesc = *desc;
@@ -5315,6 +5550,9 @@ rx_resGroup rx_makeResGroup(rx_ResGroupDesc* desc) {
     resGroup->layout = desc->layout;
 
     rx_callBknFn(MakeResGroup, ctx, resGroup, desc);
+    if (desc->initalContent.storeArena.id != 0) {
+        rx_updateResGroup(resGroupHandle, &desc->initalContent);
+    }
 
     return resGroupHandle;
 }
@@ -5322,12 +5560,32 @@ rx_resGroup rx_makeResGroup(rx_ResGroupDesc* desc) {
 void rx_updateResGroup(rx_resGroup handle, rx_ResGroupUpdateDesc* desc) {
     ASSERT(rx__ctx);
     ASSERT(desc);
+    ASSERT(desc->storeArena.id != 0);
     ASSERT(handle.id);
     rx_Ctx* ctx = rx__ctx;
 
     rx_ResGroup* resGroup = rx__getResGroup(ctx, handle);
 
     rx_callBknFn(UpdateResGroup, ctx, resGroup, desc, false);
+}
+
+rx_resGroup rx_makeDynamicBufferResGroup(rx_buffer dynBuffer0, rx_buffer dynBuffer1) {
+    ASSERT(rx__ctx);
+    ASSERT(dynBuffer0.id != 0);
+    ASSERT(dynBuffer1.id != 0);
+    rx_Ctx* ctx = rx__ctx;
+
+    rx_resGroup resGroupHandle = rx__allocResGroup(ctx);
+
+    if (resGroupHandle.id == 0) {
+        return resGroupHandle;
+    }
+
+    rx_ResGroup* resGroup = rx__getResGroup(ctx, resGroupHandle);
+
+    rx_callBknFn(MakeDynamicBufferResGroup, ctx, resGroup, dynBuffer0, dynBuffer1);
+
+    return resGroupHandle;
 }
 
 flags64 rx_getResGroupPassDepFlags(rx_resGroup resGroupHandle) {
@@ -5341,7 +5599,6 @@ flags64 rx_getResGroupPassDepFlags(rx_resGroup resGroupHandle) {
     
     return resGroup->passDepFlags;
 }
-
 
 LOCAL rx_RenderPipelineDesc rx__renderPipelineDescDefaults(const rx_RenderPipelineDesc* desc) {
     rx_RenderPipelineDesc descWithDefaults = *desc;
@@ -5563,14 +5820,8 @@ void rx_setRenderPassDrawList(rx_renderPass renderPass, rx_DrawArea* arenas, u32
     pass->renderPass.areas = arenas;
     pass->renderPass.areaCount = areaCount;
     pass->renderPass.drawList = drawList;
-
+    // For render pass all of these are read only dependencies
     ctx->frameGraph.dependencies.elements[renderPass.idx].passReadDeps |= drawList->passIdxDepFlags;
-}
-
-LOCAL void rx__excuteGraph(rx_Ctx* ctx, rx_FrameGraph* frameGraph) {
-    ASSERT(ctx);
-    ASSERT(frameGraph);
-
 }
 
 LOCAL void rx__buildAndPresent(rx_Ctx* ctx) {
@@ -5580,7 +5831,7 @@ LOCAL void rx__buildAndPresent(rx_Ctx* ctx) {
         return;
     }
     rx__passGraphBuild(&ctx->frameGraph, ctx->passes.count);
-
+    // TODO(pjako): rename Execute Graph to something more generic since depending on the backend other things like uploads can happen here as well
     rx_callBknFn(ExcuteGraph, ctx, &ctx->frameGraph);
 }
 

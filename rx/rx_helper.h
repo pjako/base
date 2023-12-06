@@ -1,3 +1,10 @@
+typedef struct rx_TmpBuffer {
+    rx_buffer buffer;
+    mms offset;
+    mms size;
+} rx_TmpBuffer;
+
+
 typedef struct rx_RenderCmdBuilder {
     Arena* arena;
     u32 drawCount;
@@ -12,7 +19,7 @@ typedef struct rx_RenderCmdBuilder {
     rx_buffer indexBuffer;
     rx_resGroup resGroup1;
     rx_resGroup resGroup2;
-    rx_resGroup resGroup3;
+    //rx_resGroup resGroup3;
     // resGroup3 is internal for dynamic data
     u32 dynResGroup0;
     u32 dynResGroup1;
