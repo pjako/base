@@ -243,23 +243,6 @@ typedef union Mat43 {
 #endif
 } Mat43;
 
-typedef union Rgba8 {
-    struct {
-        u8 red;
-        u8 green;
-        u8 blue;
-        u8 alpha;
-    };
-    u32 uRgba;
-    f32 fRgba;
-    u8 store[4];
-#if CPP_ENV
-    inline u8 &operator[](const int &index) {
-        return store[index];
-    }
-#endif
-} Rgba8;
-
 typedef union Rgb8 {
     struct {
         u8 red;
@@ -273,6 +256,27 @@ typedef union Rgb8 {
     }
 #endif
 } Rgb8;
+
+typedef union Rgba8 {
+    struct {
+        u8 red;
+        u8 green;
+        u8 blue;
+        u8 alpha;
+    };
+    struct {
+        Rgb8 rgb;
+        u8 ___unusedAlpha;
+    };
+    u32 uRgba;
+    f32 fRgba;
+    u8 store[4];
+#if CPP_ENV
+    inline u8 &operator[](const int &index) {
+        return store[index];
+    }
+#endif
+} Rgba8;
 
 typedef union Rgba {
     struct {

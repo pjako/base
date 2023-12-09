@@ -295,6 +295,8 @@ API void*       app_getGraphicsHandle(app_window window);
 
 API Vec2i       app_getWindowSize(app_window window);
 API Vec2        app_getWindowSizeF32(app_window window);
+// this includes dpi scale
+API Vec2        app_getWindowFrameBufferSizeF32(app_window window);
 
 API void        app_lockMouse(bx lock);
 API bx          app_isMouseLocked(void);
