@@ -232,7 +232,6 @@ typedef struct app_AppEvent {
 
 typedef struct app_ApplicationDesc {
     void* user;
-    bx highDpi;
     mms appMemoryBudget;
     void (*init) (void);
     void (*update) (void);
@@ -262,14 +261,21 @@ typedef enum app_windowGfxApi {
     //app_windowGfxApi_metal,
 } app_windowGfxApi;
 
+typedef enum app_windowDpi {
+    app_windowDpi_systemDefault = 0,
+    app_windowDpi_low,
+    app_windowDpi_high
+} app_windowDpi;
+
 typedef struct app_WindowDesc {
     S8 title;
     app_windowGfxApi gfxApi;
+    app_windowDpi dpi;
+    u32 width;
+    u32 height;
     u32 sampleCount;
     u32 x;
     u32 y;
-    u32 width;
-    u32 height;
 } app_WindowDesc;
 
 API void*       app_getUserData(void);
