@@ -232,6 +232,7 @@ typedef struct rx_RenderShader {
             rx__glSampler samplerMapping[24];
             u8 samperMappingCount;
             u8 activeResGroups[6];
+            u16 groupSizes[6];
         } gl;
 #endif
     };
@@ -1497,13 +1498,13 @@ LOCAL rx_Buffer* rx__getBuffer(rx_Ctx* ctx, rx_buffer bufferHandle) {
     return buffer;
 }
 
-LOCAL rx_BumpAllocator* rx__getBumpAllocator(rx_Ctx* ctx, rx_bumpAllocator bumpAllocatorHadle) {
+LOCAL rx_BumpAllocator* rx__getBumpAllocator(rx_Ctx* ctx, rx_bumpAllocator bumpAllocatorHandle) {
     ASSERT(ctx);
-    ASSERT(bumpAllocatorHadle.id != 0);
-    ASSERT(bumpAllocatorHadle.idx < ctx->bumpAllocators.capacity);
+    ASSERT(bumpAllocatorHandle.id != 0);
+    ASSERT(bumpAllocatorHandle.idx < ctx->bumpAllocators.capacity);
 
-    rx_BumpAllocator* arena = &ctx->bumpAllocators.elements[bumpAllocatorHadle.idx];
-    ASSERT(arena->gen == bumpAllocatorHadle.gen);
+    rx_BumpAllocator* arena = &ctx->bumpAllocators.elements[bumpAllocatorHandle.idx];
+    ASSERT(arena->gen == bumpAllocatorHandle.gen);
     return arena;
 }
 
@@ -1912,7 +1913,6 @@ typedef struct rx_VulkanCtx {
 #endif
 
 #pragma region - OPENGL -
-#pragma endregion
 #if RX_OGL
 #define rx__oglCheckErrors() { ASSERT(glGetError() == GL_NO_ERROR); }
 
@@ -2415,7 +2415,6 @@ typedef struct rx_OpenGlCtx {
 
 
     a32_MPSCIndexQueue activeBumpAllocators;
-
     struct {
         struct {
             rx_buffer buffer;
@@ -2861,9 +2860,16 @@ LOCAL bx rx__glMakeBuffer(rx_Ctx* baseCtx, rx_Buffer* buffer, rx_BufferDesc* des
     buffer->gl.usage = desc->usage;
     rx__oglCheckErrors();
 
+    buffer->alignment = 8;
+    if ((desc->usage & rx_bufferUsage_uniform) != 0) {
+        buffer->alignment = baseCtx->limits.uniformBufferAlignment;
+    }
+    u64 alignedSize = alignUp(desc->size, buffer->alignment);
+    buffer->size = alignedSize;
+
     rx__glCacheStoreBufferBinding(ctx, glTarget);
     rx__glCacheBindBuffer(ctx, glTarget, glBuffer);
-    glBufferData(glTarget, desc->size, 0, glUsage);
+    glBufferData(glTarget, alignedSize, 0, glUsage);
     rx__oglCheckErrors();
     //_sg_gl_cache_restore_buffer_binding(gl_target);
     //rx__oglCheckErrors();
@@ -2872,14 +2878,18 @@ LOCAL bx rx__glMakeBuffer(rx_Ctx* baseCtx, rx_Buffer* buffer, rx_BufferDesc* des
 }
 
 
-LOCAL bx rx__glMakeArena(rx_Ctx* baseCtx, rx_BumpAllocator* arena, rx_BumpAllocatorDesc* desc) {
+LOCAL bx rx__glMakeBumpAllocator(rx_Ctx* baseCtx, rx_bumpAllocator handle, rx_BumpAllocator* arena, rx_BumpAllocatorDesc* desc) {
     ASSERT(baseCtx && arena && desc);
+    rx_OpenGlCtx* ctx = (rx_OpenGlCtx*) baseCtx;
+
     u32 bufferSize;
     rx_Range mappedStagingBuffer;
     // size
     u32 stagingSize = arena->bufferCapacity;
     arena->stagingPtr = mem_arenaPush(desc->arena, stagingSize);
     ASSERT(arena->stagingPtr);
+
+    a32_mpscEnqeue(&ctx->activeBumpAllocators, handle.id);
     
     return arena->stagingPtr != NULL;
 }
@@ -3492,20 +3502,28 @@ LOCAL bx rx__glMakeRenderShader(rx_Ctx* baseCtx, rx_RenderShader* renderShader, 
     renderShader->gl.handle = glProgram;
 
 
-    GLuint resGroupIndex[4];
+    GLuint resGroupIndex[6];
 
     // resolve uniforms
-    resGroupIndex[0] = glGetUniformBlockIndex(glProgram, "resGroup0");
-    resGroupIndex[1] = glGetUniformBlockIndex(glProgram, "resGroup1");
-    resGroupIndex[2] = glGetUniformBlockIndex(glProgram, "resGroup2");
-    resGroupIndex[3] = glGetUniformBlockIndex(glProgram, "resGroup3");
-
-
+    resGroupIndex[0] = glGetUniformBlockIndex(glProgram, "type_rx_resGroup0");
+    resGroupIndex[1] = glGetUniformBlockIndex(glProgram, "type_rx_resGroup1");
+    resGroupIndex[2] = glGetUniformBlockIndex(glProgram, "type_rx_resGroup2");
+    resGroupIndex[3] = glGetUniformBlockIndex(glProgram, "type_rx_resGroup3");
+    // dynamic groups
+    resGroupIndex[4] = glGetUniformBlockIndex(glProgram, "type_rx_resGroup4");
+    resGroupIndex[5] = glGetUniformBlockIndex(glProgram, "type_rx_resGroup5");
 
     for (u32 idx = 0; idx < countOf(resGroupIndex); idx++) {
+        GLint blockSize = 0;
         if (resGroupIndex[idx] != GL_INVALID_INDEX) {
             glUniformBlockBinding(glProgram, resGroupIndex[idx], idx);
+
+            glGetActiveUniformBlockiv(glProgram, resGroupIndex[idx], GL_UNIFORM_BLOCK_DATA_SIZE, &blockSize);
+            if (blockSize == GL_INVALID_OPERATION) {
+                blockSize = 0;
+            }
         }
+        renderShader->gl.groupSizes[idx] = blockSize;
     }
 
     // resolve combined image samplers
@@ -3528,7 +3546,7 @@ LOCAL bx rx__glMakeRenderShader(rx_Ctx* baseCtx, rx_RenderShader* renderShader, 
             if (!samplerDesc->used) {
                 continue;
             }
-            ASSERT(samplerDesc->glslName && "Mussing glslName");
+            ASSERT(samplerDesc->glslName && "Missing glslName");
             
             GLint glLoc = glGetUniformLocation(glProgram, samplerDesc->glslName);
             if (glLoc == GL_INVALID_VALUE) {
@@ -3618,7 +3636,10 @@ LOCAL void rx__glMakeResGroup(rx_Ctx* baseCtx, rx_ResGroup* resGroup, const rx_R
     rx_ResGroupLayout* resGroupLayout = rx__getResGroupLayout(baseCtx, resGroup->layout);
     resGroup->uniformSize = resGroupLayout->uniformSize;
     resGroup->usage = desc->usage;
-    //rx__glUpdateResGroup(baseCtx, resGroup, &desc->initalContent, true);
+
+    if (desc->initalContent.storeArena.id != 0) {
+        rx__glUpdateResGroup(baseCtx, resGroup, &desc->initalContent, true);
+    }
 }
 
 
@@ -4240,7 +4261,7 @@ LOCAL void rx__glApplyRenderPipeline(rx_OpenGlCtx* ctx, rx_RenderPipeline* rende
             glDisable(GL_SAMPLE_ALPHA_TO_COVERAGE);
         }
     }
-    #ifdef SOKOL_GLCORE33
+    #ifdef RX_GLCORE33
     if (renderPipeline->gl.sampleCount != stateCache->sampleCount) {
         stateCache->sampleCount = renderPipeline->gl.sampleCount;
         if (renderPipeline->gl.sampleCount > 1) {
@@ -4291,7 +4312,7 @@ LOCAL void rx__applyResGroup(rx_OpenGlCtx* ctx, rx_GlStateCache* glStateCache, r
 #endif
 }
 
-#pragma region --GLExcuteDrawList
+#pragma region GLExcuteDrawList
 
 LOCAL void rx__glExcuteDrawList(rx_OpenGlCtx* ctx, rx_GlStateCache* glStateCache, rx_DrawArea* drawAreas, u32 drawAreasCount, rx_DrawList* drawList, u32 maxWidth, u32 maxHeight) {
     ASSERT(ctx);
@@ -4406,8 +4427,8 @@ LOCAL void rx__glExcuteDrawList(rx_OpenGlCtx* ctx, rx_GlStateCache* glStateCache
 
 
         // DynResGroup (ResGroup3)
-        rx_buffer dynBuffer0 = {0};
-        rx_buffer dynBuffer1 = {0};
+        rx_buffer dynBuffers[2] = {{0}};
+        GLuint dynGlBuffers[2] = {0};
         {
             rx_resGroup nextDynResGroup = drawArea->resGroupDynamicOffsetBuffers;
 
@@ -4419,8 +4440,13 @@ LOCAL void rx__glExcuteDrawList(rx_OpenGlCtx* ctx, rx_GlStateCache* glStateCache
                 dynResGroupHandle = nextDynResGroup;
                 dynResGroup = rx__getResGroup(&ctx->base, dynResGroupHandle);
                 resGroups[3] = dynResGroup;
-                dynBuffer0 = dynResGroup->gl.resources[0].buffer;
-                dynBuffer1 = dynResGroup->gl.resources[1].buffer;
+                dynBuffers[0] = dynResGroup->gl.resources[0].buffer;
+                dynBuffers[1] = dynResGroup->gl.resources[1].buffer;
+                for (u32 idx = 0; idx < countOf(dynBuffers); idx++) {
+                    if (dynBuffers[idx].id != 0) {
+                        dynGlBuffers[idx] = rx__getBuffer(&ctx->base, dynBuffers[idx])->gl.handle;
+                    }
+                }
             }
         }
         
@@ -4436,17 +4462,15 @@ LOCAL void rx__glExcuteDrawList(rx_OpenGlCtx* ctx, rx_GlStateCache* glStateCache
 
         uint32_t instanceOffset = 0;
         uint32_t instanceCount  = 0;
-        rx_renderShader currentShaderHandle = {0};
         rx_RenderShader* currentShader = NULL;
+        rx_renderShader currentShaderHandle = {0};
         rx_RenderPipeline* renderPipeline = NULL;
         uint32_t lastVertexOffset = 0;
         for (uint32_t currentOffset = drawArea->drawOffset, currDrawCount = 0; currDrawCount < drawArea->drawCount; currDrawCount++) {
             uint32_t flags = drawList->commands[currentOffset++];
             bx needsToRebindVertexAttributes = false;
             if (flags != 0) {
-                i32 dynamicSlots[2] = {-1, -1};
-                u32 dynamicSlotUniformSize[2] = {0, 0};
-                GLuint dynamicUniformBufferHandle = 0;
+                //i32 dynamicSlots[2] = {-1, -1};
                 if ((flags & rx_renderCmd_pipeline) != 0) {
                     uint32_t id = drawList->commands[currentOffset++];
                     if (id != currentPipeline.id) {
@@ -4456,7 +4480,6 @@ LOCAL void rx__glExcuteDrawList(rx_OpenGlCtx* ctx, rx_GlStateCache* glStateCache
                         if (currentShaderHandle.id != renderPipeline->gl.shader.id) {
                             currentShaderHandle = renderPipeline->gl.shader;
                             currentShader = rx__getRenderShader(&ctx->base, currentShaderHandle);
-
                         }
 
                         rx__oglCheckErrors();
@@ -4512,26 +4535,29 @@ LOCAL void rx__glExcuteDrawList(rx_OpenGlCtx* ctx, rx_GlStateCache* glStateCache
                             dirtyResGroups[resSlots[idx]] = true;
                             samplersNeedUpdate = true;
 
-                            rx__applyResGroup(ctx, glStateCache, currentShader, resourceGroup, 0);
+                            rx__applyResGroup(ctx, glStateCache, currentShader, resourceGroup, resSlots[idx]);
                         }
                     }
                     
                     for (u32 idx = 0; idx < 2; idx++) {
                         const u32 dynResFlags[] = {rx_renderCmd_dynResGroup0, rx_renderCmd_dynResGroup1};
-                        static const u32 resSlots[] = {3, 4};
+                        static const u32 resSlots[] = {4, 5};
                         if ((flags & dynResFlags[idx]) != 0) {
-                            ASSERT(dynamicSlots[idx] != -1);
-                            ASSERT(dynamicSlotUniformSize[idx] > 0);
-                            ASSERT(!"Implement me");
                             uint32_t offset = drawList->commands[currentOffset++];
-                            
+
+                            u32 slot = resSlots[idx];
+                            u32 size = currentShader->gl.groupSizes[slot];
+                            ASSERT(size > 0);
+                            rx_buffer dynBuffer = dynBuffers[idx];
+                            GLint glDynBufferHandle = dynGlBuffers[idx];
                             glBindBufferRange(
                                 GL_UNIFORM_BUFFER,
-                                resSlots[idx],
-                                dynamicUniformBufferHandle,
+                                slot,
+                                glDynBufferHandle,
                                 offset,
-                                dynamicSlotUniformSize[idx]
+                                size
                             );
+                            rx__oglCheckErrors();
                         }
                     }
                 }
@@ -4655,20 +4681,27 @@ LOCAL void rx__glExcuteDrawList(rx_OpenGlCtx* ctx, rx_GlStateCache* glStateCache
             const GLenum indexType = renderPipeline->gl.indexType;
             const GLenum primitiveTopology = renderPipeline->gl.primitiveTopology;
 
+            ASSERT(indexCount > 0);
+
             u32 baseElement = 0;
             if (indexType != 0) {
                 // indexed rendering
                 const i32 indexSize = (indexType == GL_UNSIGNED_SHORT) ? 2 : 4;
                 const GLvoid* indices = (const GLvoid*)(GLintptr)(baseElement * indexSize + indexOffset);
-                if (renderPipeline->gl.useInstancedDraw) {
+                if (renderPipeline->gl.useInstancedDraw && instanceCount > 0) {
                     if (instanceOffset == 0) {
                         glDrawElementsInstanced(primitiveTopology, indexCount, indexType, indices, instanceCount);
+                    rx__oglCheckErrors();
                     } else {
                         ASSERT(!"Instance offset currently not supported in OpenGL backend.");
                         // glDrawElementsInstancedBaseInstance(primitiveTopology, indexCount, indexType, indices, instanceCount, instanceOffset);
+                    rx__oglCheckErrors();
                     }
                 } else {
-                    glDrawElements(primitiveTopology, indexCount, indexType, indices);
+                    GLsizei COUNT = indexCount;
+                    glDrawElements(primitiveTopology, COUNT, indexType, indices);
+                    // ogl_error error = glGetError();
+                    // rx__oglCheckErrors();
                 }
             } else {
                 // non-indexed rendering
@@ -4678,6 +4711,7 @@ LOCAL void rx__glExcuteDrawList(rx_OpenGlCtx* ctx, rx_GlStateCache* glStateCache
                     } else {
                         ASSERT(!"Instance offset currently not supported in OpenGL backend.");
                         // glDrawArraysInstancedBaseInstance(primitiveTopology, baseElement, indexCount, instanceCount, instanceOffset);
+                    rx__oglCheckErrors();
                     }
                 } else {
                     glDrawArrays(primitiveTopology, baseElement, indexCount);
@@ -4839,6 +4873,9 @@ LOCAL void rx__glCreateRenderPass(rx_RenderPass* pass) {
 #endif
 }
 
+
+#pragma region GLExcuteGraph
+
 LOCAL void rx__glExcuteGraph(rx_Ctx* baseCtx, rx_FrameGraph* frameGraph) {
     ASSERT(baseCtx);
     ASSERT(frameGraph);
@@ -4849,7 +4886,7 @@ LOCAL void rx__glExcuteGraph(rx_Ctx* baseCtx, rx_FrameGraph* frameGraph) {
     a32_mpscForEach(&ctx->activeBumpAllocators, queueIndex) {
         u32 handleId = a32_mpscGetAtIndex(&ctx->activeBumpAllocators, queueIndex);
         if (handleId == 0) {
-            // bump allocator handle was not pushed yet by producer, skip it, it should not contain anything necessary to build
+            // bump allocator handle was not pushed yet by producer, skip it, it should not contain anything nec1essary to build
             // the frame
             continue;
         }
@@ -4858,23 +4895,26 @@ LOCAL void rx__glExcuteGraph(rx_Ctx* baseCtx, rx_FrameGraph* frameGraph) {
         rx_BumpAllocator* allocator = rx__getBumpAllocator(baseCtx, bumpAllocatorHandle);
         rx_Buffer* buffer = rx__getBuffer(baseCtx, allocator->targetBuffer);
 
-        u64 currentSize = allocator->currentSize;
-        if (allocator->lastPushedSize == allocator->currentSize) {
+        u64 currentSize = a64_loadAcquire(&allocator->ring.front);
+        
+        if (allocator->lastPushedSize >= currentSize) {
             continue;
         }
         
-        u64 size = currentSize - allocator->lastPushedSize;
-        u64 sizeToEnd = (minVal(allocator->bufferCapacity, allocator->lastPushedSize) - allocator->lastPushedSize);
+        // u64 size = currentSize - allocator->lastPushedSize;
+        u64 offsetBegin = allocator->lastPushedSize % allocator->bufferCapacity;
+        u64 offsetEnd = (currentSize % allocator->bufferCapacity);
 
-        rx__glUpdateBuffer(baseCtx, buffer, allocator->lastPushedSize, (rx_Range) {
-            .content = &allocator->stagingPtr[allocator->lastPushedSize],
-            .size = sizeToEnd
+        u64 sizeUpload = offsetEnd == 0 ? (allocator->bufferCapacity - offsetBegin) : (minVal(offsetEnd, allocator->bufferCapacity) - offsetBegin);
+        rx__glUpdateBuffer(baseCtx, buffer, offsetBegin, (rx_Range) {
+            .content = &allocator->stagingPtr[offsetBegin],
+            .size = sizeUpload
         });
 
-        if (sizeToEnd < size) {
+        if (offsetEnd < offsetBegin && offsetEnd > 0) {
             rx__glUpdateBuffer(baseCtx, buffer, 0, (rx_Range) {
                 .content = &allocator->stagingPtr[0],
-                .size = size - sizeToEnd
+                .size = offsetEnd
             });
         }
 
@@ -5101,6 +5141,7 @@ LOCAL void rx__glExcuteGraph(rx_Ctx* baseCtx, rx_FrameGraph* frameGraph) {
 
     glFlush();
 }
+#pragma endregion
 
 LOCAL void rx__glNextFrame(rx_Ctx* baseCtx) {
     ASSERT(baseCtx);
@@ -5139,15 +5180,16 @@ LOCAL void rx__glCommit(rx_Ctx* baseCtx) {
 #endif
 
 #endif
+#pragma endregion
 
 #pragma region - METAL -
-#pragma endregion
 #if RX_METAL
 typedef struct rx_MtlCtx {
     rx_Ctx base;
 } rx_MtlCtx;
 
 #endif
+#pragma endregion
 
 #define rx__valueOrDefault(VAL, DEFAULT) ((VAL) == 0 ? (DEFAULT) : (VAL))
 #define rx_callBknFn(FNNAME,...) rx__gl##FNNAME(__VA_ARGS__)
@@ -5295,15 +5337,15 @@ void rx_updateBuffer(rx_buffer buffer, mms offset, rx_Range range) {
     rx_callBknFn(UpdateBuffer, ctx, bufferContent, offset, range);
 }
 
-rx_bumpAllocator rx_makeArena(const rx_BumpAllocatorDesc* desc) {
+rx_bumpAllocator rx_makeBumpAllocator(const rx_BumpAllocatorDesc* desc) {
     ASSERT(rx__ctx);
     ASSERT(desc);
     ASSERT(desc->gpuBuffer.id);
     rx_Ctx* ctx = rx__ctx;
 
-    rx_bumpAllocator bumpAllocatorHadle = rx__allocBumpAllocator(ctx);
+    rx_bumpAllocator bumpAllocatorHandle = rx__allocBumpAllocator(ctx);
 
-    if (bumpAllocatorHadle.id == 0) {
+    if (bumpAllocatorHandle.id == 0) {
         return (rx_bumpAllocator) {0};
     }
 
@@ -5314,43 +5356,49 @@ rx_bumpAllocator rx_makeArena(const rx_BumpAllocatorDesc* desc) {
     if (desWithDefaults.alignment == 0) {
         if ((buffer->usage & rx_bufferUsage_uniform)) {
             desWithDefaults.alignment = ctx->limits.uniformBufferAlignment;
+        } else {
+            desWithDefaults.alignment = 8;
         }
     }
 
-    rx_BumpAllocator* bumpAllocator = rx__getBumpAllocator(ctx, bumpAllocatorHadle);
+    rx_BumpAllocator* bumpAllocator = rx__getBumpAllocator(ctx, bumpAllocatorHandle);
+    bumpAllocator->alignment = desWithDefaults.alignment;
+    bumpAllocator->targetBuffer = desc->gpuBuffer;
     bumpAllocator->bufferCapacity = buffer->size;
     a64_mpscRingInit(&bumpAllocator->ring, buffer->size);
 
-    rx_callBknFn(MakeArena, ctx, bumpAllocator, &desWithDefaults);
+    rx_callBknFn(MakeBumpAllocator, ctx, bumpAllocatorHandle, bumpAllocator, &desWithDefaults);
 
-    return bumpAllocatorHadle;
+    return bumpAllocatorHandle;
 }
 
-u64 rx_bumpAllocatorPushData(rx_bumpAllocator bumpAllocatorHadle, rx_Range data) {
+u64 rx_bumpAllocatorPushData(rx_bumpAllocator bumpAllocatorHandle, rx_Range data) {
     ASSERT(rx__ctx);
-    ASSERT(bumpAllocatorHadle.id);
+    ASSERT(bumpAllocatorHandle.id);
     ASSERT(data.content && "upload ptr is NULL");
     ASSERT(data.size > 0 && "upload size is zero");
     rx_Ctx* ctx = rx__ctx;
 
-    rx_BumpAllocator* bumpAllocator = rx__getBumpAllocator(ctx, bumpAllocatorHadle);
+    rx_BumpAllocator* bumpAllocator = rx__getBumpAllocator(ctx, bumpAllocatorHandle);
     // align size so next allocation is aligned as well
-    u64 alignedSize = alignDown(data.size, bumpAllocator->alignment);
+    u64 alignedSize = alignUp(data.size, bumpAllocator->alignment);
     ASSERT(bumpAllocator);
     i64 idx = a64_mpscRingPush(&bumpAllocator->ring, alignedSize);
+    ASSERT(idx >= 0);
     if (idx < 0) {
         return 0;
     }
     u64 offset = idx % bumpAllocator->ring.size;
+    mem_copy(&bumpAllocator->stagingPtr[offset], data.content, data.size);
     return offset;
 }
 
-void rx_bumpAllocatorReset(rx_bumpAllocator bumpAllocatorHadle) {
+void rx_bumpAllocatorReset(rx_bumpAllocator bumpAllocatorHandle) {
     ASSERT(rx__ctx);
-    ASSERT(bumpAllocatorHadle.id);
+    ASSERT(bumpAllocatorHandle.id);
     rx_Ctx* ctx = rx__ctx;
 
-    rx_BumpAllocator* bumpAllocator = rx__getBumpAllocator(ctx, bumpAllocatorHadle);
+    rx_BumpAllocator* bumpAllocator = rx__getBumpAllocator(ctx, bumpAllocatorHandle);
     ASSERT(bumpAllocator);
     bumpAllocator->currentSize = 0;
     bumpAllocator->lastPushedSize = 0;
@@ -5550,9 +5598,6 @@ rx_resGroup rx_makeResGroup(rx_ResGroupDesc* desc) {
     resGroup->layout = desc->layout;
 
     rx_callBknFn(MakeResGroup, ctx, resGroup, desc);
-    if (desc->initalContent.storeArena.id != 0) {
-        rx_updateResGroup(resGroupHandle, &desc->initalContent);
-    }
 
     return resGroupHandle;
 }

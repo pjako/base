@@ -163,6 +163,7 @@ typedef enum shd_resType {
 struct ResInfo {
     S8 name;
     S8 typeName;
+    u32  slot;
     u32  type;
     u32  byteSize;
 };
@@ -557,17 +558,12 @@ void shd_parseSpirvShaderDetails(Arena* arena, shd_Shader* shader, CompilerRefle
             compiler.set_name(resAttr.id, outputStdString);
 
             outputs->name = newOutputName;
-            log_debug(arena, newOutputName);
             //outputs->shortName = newInputName;
             auto type = compiler.get_type(resAttr.type_id);
             auto decorationStr = compiler.get_decoration_string(resAttr.id, spv::DecorationLocation);
         } else {
             outputs->name = str_copy(arena, outputName);
-            
         }
-
-
-
 
         auto type = compiler.get_type(resAttr.type_id);
         auto decorationStr = compiler.get_decoration_string(resAttr.id, spv::DecorationLocation);
@@ -884,6 +880,7 @@ void shd_generateHeaderProgramVariant(Arena* arena, S8 prefix, S8 name, shd_Rend
 
             i32 texResGroupSlot = -1;
             i32 texResIdx = -1;
+            i32 texSlotRes = 0;
             S8 rawImageName = str_from(ts->imageName, 3);
             for (u32 resGroupIdx = 0; resGroupIdx < countOf(codeInfo->resGroups); resGroupIdx++) {
                 ResGroupInfo* resGroup = &codeInfo->resGroups[resGroupIdx];
@@ -893,6 +890,7 @@ void shd_generateHeaderProgramVariant(Arena* arena, S8 prefix, S8 name, shd_Rend
                     if (str_isEqual(rawImageName, resInfo->name)) {
                         texResGroupSlot = resGroupIdx;
                         texResIdx = resIdx;
+                        texSlotRes = resInfo->slot;
                         goto exitTextureSearch;
                     }
                 }
@@ -901,6 +899,7 @@ void shd_generateHeaderProgramVariant(Arena* arena, S8 prefix, S8 name, shd_Rend
 
             i32 samplerResGroupSlot = -1;
             i32 samplerResIdx = -1;
+            i32 samplerSlotRes = 0;
 
             S8 rawSamplerName = str_from(ts->samplerName, 3);
             for (u32 resGroupIdx = 0; resGroupIdx < countOf(codeInfo->resGroups); resGroupIdx++) {
@@ -911,13 +910,14 @@ void shd_generateHeaderProgramVariant(Arena* arena, S8 prefix, S8 name, shd_Rend
                     if (str_isEqual(rawSamplerName, resInfo->name)) {
                         samplerResGroupSlot = resGroupIdx;
                         samplerResIdx = resIdx;
+                        samplerSlotRes = resInfo->slot;
                         goto exitSamplerSearch;
                     }
                 }
             }
             exitSamplerSearch:
 
-            str_fmt(arena, s8("      {{true, {}, {}, {}, {}, {}, \"{}\"}},\n"), ts->slot, texResGroupSlot, texResIdx, samplerResGroupSlot, samplerResIdx, ts->name);
+            str_fmt(arena, s8("      {{true, {}, {}, {}, {}, {}, \"{}\"}},\n"), ts->slot, texResGroupSlot, texSlotRes, samplerResGroupSlot, samplerSlotRes, ts->name);
         }
         str_join(arena, s8("    },\n"));
         str_join(arena, s8("  },\n"));
@@ -1684,7 +1684,7 @@ bx shd_parseFromFile(Arena* arena, ShaderFileInfo* outFileInfo, S8 shaderFileNam
             arrInit(arena, &resGroup->info.resTypes[resourceType_constant], 8);
             arrInit(arena, &resGroup->info.resTypes[resourceType_texture], 8);
             arrInit(arena, &resGroup->info.resTypes[resourceType_sampler], 8);
-
+            u32 resSlot = 0;
             for (running = scf_next(&scf); running && scf.valueType != scf_type_category; running = scf_next(&scf)) {
                 if (str_isEqual(scf.key, str8("name"))) {
                     resGroup->name = scf.valueStr;
@@ -1709,6 +1709,7 @@ bx shd_parseFromFile(Arena* arena, ShaderFileInfo* outFileInfo, S8 shaderFileNam
                             resInfo->byteSize = constTypeByteSize[type];
                         } break;
                         default: {
+                            resInfo->slot = resSlot++;
                             resInfo->byteSize = 4;
                             
                         } break;
@@ -2366,15 +2367,16 @@ void shd__generateShaderGenLegacy(Arena* arena, ShaderFileInfo* shaderFileInfo, 
             }
         }
 
-        for (u32 resTypeIdx = resourceType_texture; resTypeIdx < resourceType__count; resTypeIdx++) {
+        for (u32 resTypeIdx = resourceType_texture, slot = 0; resTypeIdx < resourceType__count; resTypeIdx++) {
             ResArr* resArr = &resGroupInfo->resTypes[resTypeIdx];
             ResArr* namedResArr = &namedResGroup->resTypes[resTypeIdx];
             for (u32 idx = 0; idx < namedResArr->count; idx++) {
                 ResInfo* namedResInfo = namedResArr->elements + idx;
 
                 // check which properties from the block were used and generate a getter for it
-                for (u32 i = 0; i < resArr->count; i++) {
+                for (u32 i = 0; i < resArr->count; i++, slot++) {
                     ResInfo* resInfo = resArr->elements + i;
+                    resInfo->slot = slot;
                     if (str_isEqual(namedResInfo->name, resInfo->name)) {
                         if (!str_isEqual(namedResInfo->typeName, resInfo->typeName)) {
                             ASSERT(!"Error type of named res group must be the same");

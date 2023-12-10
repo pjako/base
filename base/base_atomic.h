@@ -120,10 +120,10 @@ INLINE i64 a64_mpscRingPush(a64_MpscRing* ring, u64 amount) {
         a64 backValue = a64_loadAcquire(&ring->back);
         a64 startVal = a64_loadAcquire(&ring->front);
 
-        if (((startVal + amount) % ring->size) >= (backValue % ring->size)) {
-            // amount does not fit in the ring buffer
-            return -1;
-        }
+        //if (((startVal + amount) % ring->size) >= (backValue % ring->size)) {
+        //    // amount does not fit in the ring buffer
+        //    return -1;
+        //}
         
         u64 actualStartVal = a64_compareAndSwap(&ring->front, startVal, startVal + amount);
 

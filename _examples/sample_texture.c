@@ -1,6 +1,7 @@
 #include "base/base.h"
 #include "base/base_types.h"
 #include "base/base_mem.h"
+#include "base/base_math.h"
 #include "base/base_str.h"
 #include "base/base_color.h"
 #include "os/os.h"
@@ -64,7 +65,7 @@ void g_init(void) {
             .size = streamingUniformSize
         });
         state->streamingUniforms.cpuArena = mem_makeArena(&baseMem, streamingUniformSize + KILOBYTE(1));
-        state->streamingUniforms.gpuArena = rx_makeArena(&(rx_BumpAllocatorDesc) {
+        state->streamingUniforms.gpuArena = rx_makeBumpAllocator(&(rx_BumpAllocatorDesc) {
             .arena = state->streamingUniforms.cpuArena,
             .gpuBuffer = state->streamingUniforms.buffer
         });
@@ -79,7 +80,7 @@ void g_init(void) {
         .size = uniformSize
     });
 
-    state->uniformGpuArena = rx_makeArena(&(rx_BumpAllocatorDesc) {
+    state->uniformGpuArena = rx_makeBumpAllocator(&(rx_BumpAllocatorDesc) {
         .arena = state->uniformCpuArena,
         .gpuBuffer = state->uniformBuffer
     });
@@ -223,7 +224,8 @@ void g_update(void) {
     }, NULL);
 
 
-    static f32 offset;
+    static f32 offsets[2];
+    static f32 dir = 1;
 
     mem_scoped(tmpMem, state->arena) {
         rx_RenderCmdBuilder cmdBuilder;
@@ -232,26 +234,30 @@ void g_update(void) {
         rx_renderCmdBuilderSetVertexBuffer0(&cmdBuilder, state->vertexBuffer);
         rx_renderCmdBuilderSetIndexBuffer(&cmdBuilder, state->indexBuffer);
         rx_renderCmdBuilderSetResGroup1(&cmdBuilder, state->resGroup);
+        // check if uploading works
         u64 offset = rx_bumpAllocatorPushData(state->streamingUniforms.gpuArena, (rx_Range) {
-            .content = &offset,
-            .size = sizeOf(offset)
+            .content = &offsets[0],
+            .size = sizeOf(offsets)
         });
         rx_renderCmdBuilderSetDynResGroup0(&cmdBuilder, offset);
         rx_renderCmdBuilderDraw(&cmdBuilder, 0, 6, 0, 0);
 
-        rx_DrawArea arenas = {
+        rx_DrawArea areas = {
             .resGroupDynamicOffsetBuffers = state->streamingUniforms.resGroup,
             .drawCount = 1
         };
 
         // set cmds to render pass
-        rx_setRenderPassDrawList(renderPass, &arenas, 1, cmdBuilder.drawList);
+        rx_setRenderPassDrawList(renderPass, &areas, 1, cmdBuilder.drawList);
         
         // finish the frame
         rx_commit();
     }
 
-    offset += 0.015;
+    offsets[0] += 0.015f * dir;
+    if (f32_abs(offsets[0]) >= 1.0f) {
+        dir *= -1.0f;
+    }
 }
 
 void g_cleanup(void) {
@@ -263,6 +269,10 @@ void g_cleanup(void) {
 }
 
 i32 app_main(i32 argCount, char* args[]) {
+
+    u32 first  = alignUp(1, 256);
+    u32 second = alignUp(first + 1, 256);
+    u32 third  = alignUp(second + 1, 256);
 
     app_initApplication(&(app_ApplicationDesc) {
         .init    = g_init,
