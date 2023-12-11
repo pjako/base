@@ -289,6 +289,39 @@ INLINE f32 f32_mad(f32 a, f32 b, f32 c) {
     return a * b + c;
 }
 
+
+INLINE i32 i32_random(i32 min, i32 max, u32* seed) {
+    ASSERT(seed);
+    if (min > max) {
+        i32 temp = min;
+        min = max;
+        max = temp;
+    }
+
+    u32 range = max - min + 1;
+    *seed ^= (*seed << 13);
+    *seed ^= (*seed >> 17);
+    *seed ^= (*seed << 5);
+    return min + (i32)(*seed % range);
+}
+
+INLINE f32 f32_random(f32 min, f32 max, u32* seed) {
+    ASSERT(seed);
+    if (min > max) {
+        f32 temp = min;
+        min = max;
+        max = temp;
+    }
+
+    *seed ^= (*seed << 13);
+    *seed ^= (*seed >> 17);
+    *seed ^= (*seed << 5);
+    f32 randomValue = (f32) (*seed);
+    f32 normalizedValue = randomValue / f32_cast(u32_max);
+
+    return min + normalizedValue * (max - min);
+}
+
 #define u32_and(A, B)    u32_cast(u32_cast(A) & u32_cast(B))
 #define u32_or(A, B)     u32_cast(u32_cast(A) | u32_cast(B))
 #define u32_sra(A, STR)  u32_cast(i32_cast(A) >> (STR))
