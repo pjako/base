@@ -28,6 +28,7 @@ static const f32 f32_max        = 3.402823e+38f;
 static const f16 f16_infinity = {0x7C00};
 static const union { u32 __valU32; f32 value; } f32__infinity = { 255 << 23 };//{0x7f800000};
 #define f32_infinity (f32__infinity.value)
+#define f32_infinityNegative (-f32__infinity.value)
 
 FORCE_INLINE f16 f16_fromF32(f32 input) {
     f16 o = { 0 };
@@ -77,7 +78,13 @@ FORCE_INLINE bx f16_isInfinity(f16 input) {
     return input.exponent == f16_infinity.exponent && input.mantissa == f16_infinity.mantissa;
 }
 
+
 #ifdef SIMD_USE_SSE
+
+#ifndef USE_SIMD
+#define USE_SIMD 1
+#endif
+
 
 // SSE SIMD (x86)
 
@@ -96,6 +103,12 @@ FORCE_INLINE f32x4 f32x4_add(f32x4 left, f32x4 right) {
 FORCE_INLINE f32x4 f32x4_sub(f32x4 left, f32x4 right) {
     f32x4 result;
     result.simd = _mm_sub_ps(left, right);
+    return result;
+}
+
+FORCE_INLINE f32x4 f32x4_cos(f32x4 in) {
+    float32x4_t result;
+    result.simd = _mm_cos_ps(in.simd);
     return result;
 }
 
@@ -138,6 +151,10 @@ FORCE_INLINE f16x4 f16x4_fromF32x4(f32x4 from) {
 
 #elif defined(SIMD_USE_NEON)
 
+#ifndef USE_SIMD
+#define USE_SIMD 1
+#endif
+
 // Neon SIMD (Arm)
 
 FORCE_INLINE f32x4 f32x4_make(f32 x, f32 y, f32 z, f32 w) {
@@ -165,7 +182,17 @@ FORCE_INLINE f16x4 f16x4_fromF32x4(f32x4 from) {
     return result;
 }
 
+FORCE_INLINE f32x4 f32x4_cos(f32x4 in) {
+    float32x4_t result;
+    result.simd = vcosq_f32(in.simd);
+    return result;
+}
+
 #else
+
+#ifndef USE_SIMD
+#define USE_SIMD 0
+#endif
 
 // Fallback non simd version
 
@@ -204,6 +231,17 @@ FORCE_INLINE f16x4 f16x4_fromF32x4(f32x4 from) {
     result.values[3] = f16_fromF32(from.values[3]);
     return result;
 }
+
+#if 0
+FORCE_INLINE f32x4 f32x4_cos(f32x4 in) {
+    float32x4_t result;
+    result.values[0] = f32_cos(in.values[0]);
+    result.values[1] = f32_cos(in.values[1]);
+    result.values[2] = f32_cos(in.values[2]);
+    result.values[3] = f32_cos(in.values[3]);
+    return result;
+}
+#endif
 
 #endif
 
@@ -286,7 +324,7 @@ INLINE f32 f32_square(f32 a) {
 }
 
 INLINE f32 f32_mad(f32 a, f32 b, f32 c) {
-    return a * b + c;
+    return (a * b) + c;
 }
 
 
@@ -302,7 +340,7 @@ INLINE i32 i32_random(i32 min, i32 max, u32* seed) {
     *seed ^= (*seed << 13);
     *seed ^= (*seed >> 17);
     *seed ^= (*seed << 5);
-    return min + (i32)(*seed % range);
+    return min + (i32)(i32_cast(*seed) % range);
 }
 
 INLINE f32 f32_random(f32 min, f32 max, u32* seed) {
@@ -329,8 +367,8 @@ INLINE f32 f32_random(f32 min, f32 max, u32* seed) {
 #define u32_sll(A, SA)   u32_cast(u32_cast(A) << (SA))
 #define u32_srl(A, SA)   u32_cast(u32_cast(A) >> (SA))
 
-INLINE f32 f32_ldexp(f32 _a, i32 _b) {
-    const u32 ftob        = f32_toBits(_a);
+INLINE f32 f32_ldexp(f32 num, i32 _b) {
+    const u32 ftob        = f32_toBits(num);
     const u32 masked      = u32_or(ftob, u32_cast(0xff800000) );
     const u32 expsign0    = u32_sra(masked, 23);
     const u32 tmp         = u32_i32Add(expsign0, _b);
@@ -342,19 +380,19 @@ INLINE f32 f32_ldexp(f32 _a, i32 _b) {
     return result;
 }
 
-INLINE f32 f32_exp(f32 _a) {
+INLINE f32 f32_exp(f32 num) {
     static const f32 f32__expC0  =  1.66666666666666019037e-01f;
     static const f32 f32__expC1  = -2.77777777770155933842e-03f;
     static const f32 f32__expC2  =  6.61375632143793436117e-05f;
     static const f32 f32__expC3  = -1.65339022054652515390e-06f;
     static const f32 f32__expC4  =  4.13813679705723846039e-08f;
 
-    if (f32_abs(_a) <= f32_nearZero) {
-        return _a + 1.0f;
+    if (f32_abs(num) <= f32_nearZero) {
+        return num + 1.0f;
     }
 
-    const f32 kk     = f32_round(_a*f32_invLogNat2);
-    const f32 hi     = _a - kk*f32_logNat2Hi;
+    const f32 kk     = f32_round(num*f32_invLogNat2);
+    const f32 hi     = num - kk*f32_logNat2Hi;
     const f32 lo     =      kk*f32_logNat2Lo;
     const f32 hml    = hi - lo;
     const f32 hmlsq  = f32_square(hml);
@@ -370,8 +408,8 @@ INLINE f32 f32_exp(f32 _a) {
     return result;
 }
 
-INLINE f32 f32_frexp(f32 _a, i32* _outExp) {
-    const u32 ftob     = f32_toBits(_a);
+INLINE f32 f32_frexp(f32 num, i32* _outExp) {
+    const u32 ftob     = f32_toBits(num);
     const u32 masked0  = u32_and(ftob, u32_cast(0x7f800000) );
     const u32 exp0     = u32_srl(masked0, 23);
     const u32 masked1  = u32_and(ftob,   u32_cast(0x807fffff) );
@@ -383,7 +421,7 @@ INLINE f32 f32_frexp(f32 _a, i32* _outExp) {
     return result;
 }
 
-INLINE f32 f32_log(f32 _a) {
+INLINE f32 f32_log(f32 num) {
     static const f32 f32__logC0 = 6.666666666666735130e-01f;
     static const f32 f32__logC1 = 3.999999999940941908e-01f;
     static const f32 f32__logC2 = 2.857142874366239149e-01f;
@@ -393,7 +431,7 @@ INLINE f32 f32_log(f32 _a) {
     static const f32 f32__logC6 = 1.479819860511658591e-01f;
 
     int32_t exp;
-    f32 ff = f32_frexp(_a, &exp);
+    f32 ff = f32_frexp(num, &exp);
     if (ff < f32_sqrt2*0.5f) {
         ff *= 2.0f;
         --exp;
@@ -424,17 +462,17 @@ INLINE f32 f32_log(f32 _a) {
 }
 
 
-INLINE f32 f32_pow(f32 _a, f32 _b) {
-    return f32_exp(_b * f32_log(_a));
+INLINE f32 f32_pow(f32 num, f32 _b) {
+    return f32_exp(_b * f32_log(num));
 }
 
-INLINE f32 f32_sqrt(f32 _a) {
-#ifdef HANDMADE_MATH__USE_SSE
-    __m128 In = _mm_set_ss(_a);
+INLINE f32 f32_sqrt(f32 num) {
+#ifdef SIMD_USE_SSE
+    __m128 In = _mm_set_ss(num);
     __m128 Out = _mm_sqrt_ss(In);
-    return = _mm_cvtss_f32(Out);
+    return _mm_cvtss_f32(Out);
 #else
-    return f32_pow(_a, -0.5f);
+    return f32_pow(num, -0.5f);
 #endif
 }
 
@@ -442,7 +480,11 @@ INLINE f32 f32_mod(f32 a, f32 b) {
     return a - b * f32_floor(a / b); 
 }
 
-INLINE f32 f32_cos(f32 _a) {
+INLINE f32 f32_cos(f32 a) {
+#if USE_SIMD
+    f32x4 inx4 = f32x4_make(a, 0, 0, 0);
+    return f32x4_cos(inx4).x;
+#else
     static const f32 f32__sinC2  = -0.16666667163372039794921875f;
     static const f32 f32__sinC4  =  8.333347737789154052734375e-3f;
     static const f32 f32__sinC6  = -1.9842604524455964565277099609375e-4f;
@@ -455,10 +497,11 @@ INLINE f32 f32_cos(f32 _a) {
     static const f32 f32__cosC8  =  2.47562347794882953166961669921875e-5f;
     static const f32 f32__cosC10 = -2.59630184018533327616751194000244140625e-7f;
 
-    const f32 scaled = _a * 2.0f * f32_invPi;
+    const f32 scaled = a * 2.0f * f32_invPi;
     const f32 real   = f32_floor(scaled);
-    const f32 xx     = _a - real * f32_invPi;
-    const int32_t bits = i32_cast(real) & 3;
+    const f32 xx     = a - real * f32_piHalf;
+    const i32 reali  = i32_cast(real);
+    const i32 bits   = reali & 3;
 
     f32 c0, c2, c4, c6, c8, c10;
 
@@ -486,25 +529,34 @@ INLINE f32 f32_cos(f32 _a) {
     const f32 tmp4   = f32_mad(tmp3, xsq, 1.0);
     const f32 result = tmp4 * c0;
 
-    return bits == 1 || bits == 2 ? -result : result;
+    return (bits == 1 || bits == 2) ? -result : result;
+#endif
 }
 
-INLINE f32 f32_acos(f32 _a) {
+INLINE f32 f32_sin(f32 a) {
+    return f32_cos(a - f32_piHalf);
+}
+
+INLINE f32 f32_acos(f32 num) {
     static const f32 f32__aCosC0 =  1.5707288f;
     static const f32 f32__aCosC1 = -0.2121144f;
     static const f32 f32__aCosC2 =  0.0742610f;
     static const f32 f32__aCosC3 = -0.0187293f;
 
-    const f32 absa   = absVal(_a);
+    const f32 absa   = absVal(num);
     const f32 tmp0   = f32_mad(f32__aCosC3, absa, f32__aCosC2);
     const f32 tmp1   = f32_mad(tmp0,    absa, f32__aCosC1);
     const f32 tmp2   = f32_mad(tmp1,    absa, f32__aCosC0);
     const f32 tmp3   = tmp2 * f32_sqrt(1.0f - absa);
-    const f32 negate = f32_cast(_a < 0.0f);
+    const f32 negate = f32_cast(num < 0.0f);
     const f32 tmp4   = tmp3 - 2.0f*negate*tmp3;
     const f32 result = negate * f32_pi + tmp4;
 
     return result;
+}
+
+INLINE f32 f32_tan(f32 a) {
+    return f32_sin(a) / f32_cos(a);
 }
 
 INLINE f32 f32_atan2(f32 _y, f32 _x) {
@@ -534,9 +586,13 @@ INLINE f32 f32_atan2(f32 _y, f32 _x) {
     const f32 tmp5   = tmp4 * mxy;
     const f32 tmp6   = ay > ax   ? f32_piHalf - tmp5 : tmp5;
     const f32 tmp7   = _x < 0.0f ? f32_pi     - tmp6 : tmp6;
-    const f32 result = f32_sign(_y)*tmp7;
+    const f32 result = f32_sign(_y) * tmp7;
 
     return result;
+}
+
+INLINE f32 f32_toRadians(f32 degrees) {
+    return degrees * (f32_pi / 180.0f);
 }
 
 #define f32_invSqrt(VAL) (1.0f / f32_sqrt(f32Val))
@@ -659,7 +715,7 @@ INLINE Vec2 v2_div(Vec2 left, Vec2 right) {
 
 #pragma mark - Vec3
 
-INLINE Vec3 v3_make(f32 x, f32 y, f32 z) {
+INLINE Vec3 vec3_make(f32 x, f32 y, f32 z) {
     Vec3 result;
     result.x = x;
     result.y = y;
@@ -668,7 +724,7 @@ INLINE Vec3 v3_make(f32 x, f32 y, f32 z) {
     return result;
 }
 
-INLINE Vec3 v3_makeZero(void) {
+INLINE Vec3 vec3_zero(void) {
     Vec3 result;
     result.x = 0;
     result.y = 0;
@@ -677,11 +733,11 @@ INLINE Vec3 v3_makeZero(void) {
     return result;
 }
 
-INLINE f32 v3_leng(Vec3 left) {
+INLINE f32 vec3_length(Vec3 left) {
     return f32_sqrt(left.x * left.x + left.y * left.y + left.z * left.z);
 }
 
-INLINE Vec3 v3_add(Vec3  left, Vec3 right) {
+INLINE Vec3 vec3_add(Vec3  left, Vec3 right) {
     left.x += right.x;
     left.y += right.y;
     left.z += right.z;
@@ -689,7 +745,7 @@ INLINE Vec3 v3_add(Vec3  left, Vec3 right) {
     return left;
 }
 
-INLINE Vec3 v3_sub(Vec3 left, Vec3 right) {
+INLINE Vec3 vec3_subtract(Vec3 left, Vec3 right) {
     left.x -= right.x;
     left.y -= right.y;
     left.z -= right.z;
@@ -697,7 +753,7 @@ INLINE Vec3 v3_sub(Vec3 left, Vec3 right) {
     return left;
 }
 
-INLINE Vec3 v3_neg(Vec3 left) {
+INLINE Vec3 vec3_negative(Vec3 left) {
     left.x = -left.x;
     left.y = -left.y;
     left.z = -left.z;
@@ -705,12 +761,44 @@ INLINE Vec3 v3_neg(Vec3 left) {
     return left;
 }
 
-INLINE Vec3 v3_mult(Vec3 left, Vec3 right) {
+INLINE Vec3 vec3_multiply(Vec3 left, Vec3 right) {
     left.x *= right.x;
     left.y *= right.y;
     left.z *= right.z;
 
     return left;
+}
+
+INLINE Vec3 vec3_normalize(Vec3 A) {
+    Vec3 result = vec3_zero();
+
+    f32 vectorLength = vec3_length(A);
+
+    if (vectorLength != 0.0f) {
+        result.x = A.x * (1.0f / vectorLength);
+        result.y = A.y * (1.0f / vectorLength);
+        result.z = A.z * (1.0f / vectorLength);
+    }
+    
+    return result;
+}
+
+INLINE Vec3 vec3_cross(Vec3 vecOne, Vec3 vecTwo) {
+    Vec3 result = vec3_zero();
+
+    result.x = (vecOne.y * vecTwo.z) - (vecOne.z * vecTwo.y);
+    result.y = (vecOne.z * vecTwo.x) - (vecOne.x * vecTwo.z);
+    result.z = (vecOne.x * vecTwo.y) - (vecOne.y * vecTwo.x);
+
+    return result;
+}
+
+INLINE f32 vec3_dotVec3(Vec3 vecOne, Vec3 vecTwo) {
+    f32 result = 0.0f;
+
+    result = (vecOne.x * vecTwo.x) + (vecOne.y * vecTwo.y) + (vecOne.z * vecTwo.z);
+    
+    return result;
 }
 
 
@@ -753,6 +841,149 @@ INLINE Vec4 v4_sub(Vec4 left, Vec4 right) {
 
 
 #pragma mark - Mat4
+
+INLINE Mat4 mat4_zero(void) {
+    Mat4 result = {{0}};
+
+    return result;
+}
+
+INLINE Mat4 mat4_diag(f32 diagonal) {
+    Mat4 result = mat4_zero();
+
+    result.store4x4[0][0] = diagonal;
+    result.store4x4[1][1] = diagonal;
+    result.store4x4[2][2] = diagonal;
+    result.store4x4[3][3] = diagonal;
+
+    return result;
+}
+
+INLINE Mat4 mat4_multiply(Mat4 left, Mat4 right) {
+    Mat4 result = mat4_zero();
+
+#ifdef SIMD_USE_SSE
+#error "Not implemented"
+    for (int i = 0; i < 4; i++) {
+        // Load a row of matrix A into a SIMD register
+        __m128 rowA = _mm_loadu_ps(&A[i][0]);
+
+        for (int j = 0; j < 4; j++) {
+            // Load a column of matrix B into a SIMD register
+            __m128 colB = _mm_set_ps(B[0][j], B[1][j], B[2][j], B[3][j]);
+
+            // Multiply corresponding elements and accumulate
+            __m128 prod = _mm_mul_ps(rowA, colB);
+
+            // Horizontal addition of the four values in the SIMD register
+            // This results in the dot product of the row and column
+            __m128 sum = _mm_hadd_ps(prod, prod);
+            sum = _mm_hadd_ps(sum, sum);
+
+            // Store the result in the corresponding position in the result matrix
+            result.store4x4[i][j] = _mm_cvtss_f32(sum);
+        }
+    }
+#elif defined(SIMD_USE_NEON)
+#error "Not implemented"
+    for (int i = 0; i < 4; i++) {
+        float4 rowA = A->row[i];
+
+        for (int j = 0; j < 4; j++) {
+            float4 colB = {B->row[0][j], B->row[1][j], B->row[2][j], B->row[3][j]};
+
+            // Perform element-wise multiplication
+            float4 prod = vmulq_f32(rowA, colB);
+
+            // Perform horizontal addition
+            float32x2_t sum2 = vadd_f32(vget_low_f32(prod), vget_high_f32(prod));
+            float32x2_t sum = vpadd_f32(sum2, sum2);
+
+            // Store the result in the corresponding position in the result matrix
+            result->row[i][j] = vget_lane_f32(sum, 0);
+        }
+    }
+#else
+    int columns;
+    for (columns = 0; columns < 4; ++columns) {
+        int rows;
+        for (rows = 0; rows < 4; ++rows) {
+            f32 sum = 0;
+            int currentMatrice;
+            for (currentMatrice = 0; currentMatrice < 4; ++currentMatrice) {
+                sum += left.store4x4[currentMatrice][rows] * right.store4x4[columns][currentMatrice];
+            }
+            result.store4x4[columns][rows] = sum;
+        }
+    }
+#endif 
+    return result;
+}
+INLINE Mat4 mat4_perspective(f32 fov, f32 aspectRatio, float near, float far) {
+    Mat4 result = mat4_diag(1.0f);
+
+    f32 tanThetaOver2 = f32_tan(fov * (f32_pi / 360.0f));
+    
+    result.store4x4[0][0] = 1.0f / tanThetaOver2;
+    result.store4x4[1][1] = aspectRatio / tanThetaOver2;
+    result.store4x4[2][3] = -1.0f;
+    result.store4x4[2][2] = (near + far) / (near - far);
+    result.store4x4[3][2] = (2.0f * near * far) / (near - far);
+    result.store4x4[3][3] = 0.0f;
+
+    return result;
+}
+
+INLINE Mat4 mat4_lookAt(Vec3 eye, Vec3 center, Vec3 up) {
+    Mat4 result = mat4_zero();
+
+    Vec3 f = vec3_normalize(vec3_subtract(center, eye));
+    Vec3 s = vec3_normalize(vec3_cross(f, up));
+    Vec3 u = vec3_cross(s, f);
+
+    result.store4x4[0][0] =  s.x;
+    result.store4x4[0][1] =  u.x;
+    result.store4x4[0][2] = -f.x;
+
+    result.store4x4[1][0] =  s.y;
+    result.store4x4[1][1] =  u.y;
+    result.store4x4[1][2] = -f.y;
+
+    result.store4x4[2][0] =  s.z;
+    result.store4x4[2][1] =  u.z;
+    result.store4x4[2][2] = -f.z;
+
+    result.store4x4[3][0] = -vec3_dotVec3(s, eye);
+    result.store4x4[3][1] = -vec3_dotVec3(u, eye);
+    result.store4x4[3][2] =  vec3_dotVec3(f, eye);
+    result.store4x4[3][3] = 1.0f;
+
+    return result;
+}
+
+INLINE Mat4 mat4_rotate(f32 Angle, Vec3 axis) {
+    Mat4 result = mat4_diag(1.0f);
+    
+    axis = vec3_normalize(axis);
+    
+    f32 sinTheta = f32_sin(f32_toRadians(Angle));
+    f32 cosTheta = f32_cos(f32_toRadians(Angle));
+    f32 cosValue = 1.0f - cosTheta;
+    
+    result.store4x4[0][0] = (axis.x * axis.x * cosValue) + cosTheta;
+    result.store4x4[0][1] = (axis.x * axis.y * cosValue) + (axis.z * sinTheta);
+    result.store4x4[0][2] = (axis.x * axis.z * cosValue) - (axis.y * sinTheta);
+    
+    result.store4x4[1][0] = (axis.y * axis.x * cosValue) - (axis.z * sinTheta);
+    result.store4x4[1][1] = (axis.y * axis.y * cosValue) + cosTheta;
+    result.store4x4[1][2] = (axis.y * axis.z * cosValue) + (axis.x * sinTheta);
+    
+    result.store4x4[2][0] = (axis.z * axis.x * cosValue) + (axis.y * sinTheta);
+    result.store4x4[2][1] = (axis.z * axis.y * cosValue) - (axis.x * sinTheta);
+    result.store4x4[2][2] = (axis.z * axis.z * cosValue) + cosTheta;
+    
+    return result;
+}
 
 
 #ifdef __cplusplus
