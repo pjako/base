@@ -134,7 +134,7 @@ u64 tm_currentCount(void) {
 #elif OS_EMSCRIPTEN
 	freq.frequency = i64_val(1000000);
 #elif OS_APPLE
-    mach_timebase_info_data_t info;
+    mach_timebase_info_data_t info = {0};
     kern_return_t result = mach_timebase_info(&info);
     if (result == KERN_SUCCESS) {
         freq.numer = info.numer;
@@ -155,7 +155,7 @@ u64 tm_countToNanoseconds( tm_FrequencyInfo info, i64 count) {
 #if OS_WIN
     now = (u64) tm__i64Muldiv(count, 1000000000, info.frequency);
 #elif OS_APPLE
-    now = (u64) tm__i64Muldiv(count, (i64)info.numer, (i64)info.denom);
+    now = u64_cast(((count * i64_cast(info.numer))) / i64_cast(info.denom));
 #elif OS_EMSCRIPTEN
     f64 js_now = count;
     now = u64_cast(count * info.frequency) / 1000;
