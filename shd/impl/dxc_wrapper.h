@@ -27,7 +27,7 @@ typedef struct dxc_CompileOptions {
         u32 major;
     } shaderModel;
     dxc_binaryShader binaryShaderType;
-    u32 packMatricesInRowMajor;
+    bx packMatricesInRowMajor;
     bx  enable16bitTypes;
     bx  enableDebugInfo;
     u32 disableOptimizations;

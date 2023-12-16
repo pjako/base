@@ -98,6 +98,7 @@ enum constType {
     constType_f32x2,
     constType_f32x3,
     constType_f32x4,
+    constType_f32x4x4,
     constType_u32,
     constType__count,
     constType_invalid = -1,
@@ -115,6 +116,7 @@ static const S8 constTypeList[constType__count] = {
     str_lit("float2"),
     str_lit("float3"),
     str_lit("float4"),
+    str_lit("float4x4"),
     str_lit("uint"),
 };
 
@@ -2607,6 +2609,7 @@ bx shd_generateShaders(Arena* arena, DxCompiler* dxCompiler, ShaderFileInfo* sha
         compilerDesc.defines                   = &defs;
         compilerDesc.defineCount               = 0;
         compilerDesc.options.optimizationLevel = 3;
+        compilerDesc.options.packMatricesInRowMajor = true;
 
         compilerDesc.entryPoint               = program->vs.entry;
         compilerDesc.options.binaryShaderType = dxc_binaryShader_spirv;
@@ -2656,9 +2659,9 @@ i32 main(i32 argc, char* argv[]) {
 #if 0
     char* debugArgV[] = {
         (char*) "-s",
-        (char*) PROJECT_ROOT "/_examples/sample_texture.hlsl",
+        (char*) PROJECT_ROOT "/_examples/sample_instancing.hlsl",
         (char*) "-h",
-        (char*) PROJECT_ROOT "/_examples/sample_texture.hlsl.h"
+        (char*) PROJECT_ROOT "/_examples/sample_instancing.hlsl.h"
     };
     i32 debugArgc = countOf(debugArgV);
 
@@ -2761,6 +2764,7 @@ i32 main(i32 argc, char* argv[]) {
             {str8("float2"), str8("Vec2")},
             {str8("float3"), str8("Vec3")},
             {str8("float4"), str8("Vec4")},
+            {str8("float4x4"), str8("Mat4")},
             {str8("uint"), str8("u32")},
             {str8("uint"), str8("u32")},
             {str8("Texture2D"), str8("rx_texture")},
