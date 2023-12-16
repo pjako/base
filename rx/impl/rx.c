@@ -378,10 +378,12 @@ typedef struct rx_RenderPass {
     struct {
         bx enabled : 1;
         rx_loadOp loadOp : 2;
+        float clearValue;
     } depth;
     struct {
         bx enabled : 1;
         rx_loadOp loadOp : 2;
+        u8 clearValue;
     } stencil;
     rx_ColorTarget colorTargets[RX_MAX_COLOR_TARGETS];
     int width;
@@ -4322,7 +4324,7 @@ LOCAL void rx__glExcuteDrawList(rx_OpenGlCtx* ctx, rx_GlStateCache* glStateCache
 
     uint32_t indexOffset  = 0;
     uint32_t vertexOffset = 0;
-    uint32_t indexCount   = 0;
+    //uint32_t indexCount   = 0;
     rx_ViewPort currentViewPort;
     currentViewPort.x = f32_infinity;
     currentViewPort.y = f32_infinity;
@@ -4538,7 +4540,9 @@ LOCAL void rx__glExcuteDrawList(rx_OpenGlCtx* ctx, rx_GlStateCache* glStateCache
                             rx__applyResGroup(ctx, glStateCache, currentShader, resourceGroup, resSlots[idx]);
                         }
                     }
-                    
+                }
+
+                if ((flags & (rx_renderCmd_dynResGroup0 | rx_renderCmd_dynResGroup1)) != 0) {
                     for (u32 idx = 0; idx < 2; idx++) {
                         const u32 dynResFlags[] = {rx_renderCmd_dynResGroup0, rx_renderCmd_dynResGroup1};
                         static const u32 resSlots[] = {4, 5};
@@ -4560,10 +4564,6 @@ LOCAL void rx__glExcuteDrawList(rx_OpenGlCtx* ctx, rx_GlStateCache* glStateCache
                             rx__oglCheckErrors();
                         }
                     }
-                }
-
-                if ((flags & (rx_renderCmd_dynResGroup0 | rx_renderCmd_dynResGroup1)) != 0) {
-
                 }
 
                 if ((flags & rx_renderCmd_instanceOffset) != 0) {
@@ -4639,6 +4639,7 @@ LOCAL void rx__glExcuteDrawList(rx_OpenGlCtx* ctx, rx_GlStateCache* glStateCache
                             glVertexAttribPointer(attributeIdx, attribute->size, attribute->type, attribute->normalized, attribute->stride, (const GLvoid*) totalOffset);
 
                             rx__oglCheckErrors();
+                            // per instance "stride"
                             glVertexAttribDivisor(attributeIdx, (GLuint)attribute->divisor);
                             rx__oglCheckErrors();
                             glEnableVertexAttribArray(attributeIdx);
@@ -4653,6 +4654,8 @@ LOCAL void rx__glExcuteDrawList(rx_OpenGlCtx* ctx, rx_GlStateCache* glStateCache
                         glDisableVertexAttribArray(attributeIdx);
                     }
 
+                    #if 0
+                    // we already did this above
                     if (attribute->vbIndex == -1) {
                         glDisableVertexAttribArray(attributeIdx);
                         continue;
@@ -4672,6 +4675,7 @@ LOCAL void rx__glExcuteDrawList(rx_OpenGlCtx* ctx, rx_GlStateCache* glStateCache
                     glVertexAttribDivisor(attributeIdx, (GLuint)attribute->divisor);
                     rx__oglCheckErrors();
                     glEnableVertexAttribArray(attributeIdx);
+                    #endif
                 }
             }
 
@@ -4691,11 +4695,11 @@ LOCAL void rx__glExcuteDrawList(rx_OpenGlCtx* ctx, rx_GlStateCache* glStateCache
                 if (renderPipeline->gl.useInstancedDraw && instanceCount > 0) {
                     if (instanceOffset == 0) {
                         glDrawElementsInstanced(primitiveTopology, indexCount, indexType, indices, instanceCount);
-                    rx__oglCheckErrors();
+                        rx__oglCheckErrors();
                     } else {
                         ASSERT(!"Instance offset currently not supported in OpenGL backend.");
                         // glDrawElementsInstancedBaseInstance(primitiveTopology, indexCount, indexType, indices, instanceCount, instanceOffset);
-                    rx__oglCheckErrors();
+                        rx__oglCheckErrors();
                     }
                 } else {
                     GLsizei COUNT = indexCount;
@@ -5046,18 +5050,19 @@ LOCAL void rx__glExcuteGraph(rx_Ctx* baseCtx, rx_FrameGraph* frameGraph) {
                 }
             }
 
-#if 0
-            if ((pass == 0) || (pass->gl.ds_att.image)) {
+
+            if (1/*(pass == 0) || (pass->gl.ds_att.image)*/) {
                 if (clearDepth && clearStencil) {
-                    glClearBufferfi(GL_DEPTH_STENCIL, 0, action->depth.clear_value, action->stencil.clear_value);
+                    glClearBufferfi(GL_DEPTH_STENCIL, 0, renderPass->depth.clearValue, renderPass->stencil.clearValue);
                 } else if (clearDepth) {
-                    glClearBufferfv(GL_DEPTH, 0, &action->depth.clear_value);
+                    f32 val = renderPass->depth.clearValue;
+                    glClearBufferfv(GL_DEPTH, 0, &val);
                 } else if (clearStencil) {
-                    GLint val = (GLint) action->stencil.clear_value;
+                    GLint val = renderPass->stencil.clearValue;
                     glClearBufferiv(GL_STENCIL, 0, &val);
                 }
             }
-#endif
+
 
             // keep store actions for end-pass
             // for (int i = 0; i < countOf(renderPass->colorTargets); i++) {
@@ -5722,8 +5727,12 @@ LOCAL rx_RenderPipelineDesc rx__renderPipelineDescDefaults(const rx_RenderPipeli
     // compute vertex strides
     for (uint32_t idx = 0; idx < countOf(desc->layout.buffers); idx++) {
         rx_BufferLayoutDesc* bufferDesc = descWithDefaults.layout.buffers + idx;
+
         if (bufferDesc->stride == 0) {
             bufferDesc->stride = computedOffset[idx];
+            if (bufferDesc->stepFunc == rx_vertexStep_perInstance) {
+                bufferDesc->stepRate = computedOffset[idx];
+            }
         }
     }
 
@@ -5807,6 +5816,16 @@ rx_renderPass rx_makeRenderPass(rx_RenderPassDesc* renderPassDesc, rx_RenderPass
     renderPass->colorAttachmentCount = colorAttachmentCount;
     renderPass->width = width;
     renderPass->height = height;
+
+    renderPass->depth.enabled = renderPassDesc->depthStencil.active;
+    if (renderPassDesc->depthStencil.depthLoadOp == rx_loadOp__default) {
+        renderPass->depth.loadOp = rx_loadOp_clear;
+        renderPass->depth.clearValue = 1.0f;
+    }
+    if (renderPassDesc->depthStencil.stencilLoadOp == rx_loadOp__default) {
+        renderPass->stencil.loadOp = rx_loadOp_clear;
+        renderPass->stencil.clearValue = 0;
+    }
 
     ctx->frameGraph.dependencies.elements[passIdx].passReadDeps = readDependencies;
     ctx->frameGraph.dependencies.elements[passIdx].passWriteDeps = writeDependencies;

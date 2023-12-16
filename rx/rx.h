@@ -929,7 +929,6 @@ typedef enum rx_indexType {
 } rx_indexType;
 
 typedef enum rx_vertexStep {
-    rx_vertexStep_default,
     rx_vertexStep_perVertex,
     rx_vertexStep_perInstance,
     rx_vertexStep__count,
@@ -1148,7 +1147,9 @@ typedef struct rx_RenderPassDesc {
         bx               active;
         rx_textureFormat format;
         rx_loadOp        depthLoadOp;
+        f32              depthClearValue;
         rx_loadOp        stencilLoadOp;
+        u8               stencilClearValue;
     } depthStencil;
     rx_sampleCount sampleCount;
     // these can be left to zero unless you are using the default (system) pass running on a legacy Gfx API (OpenGL, WebGL)
