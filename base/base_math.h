@@ -3,7 +3,8 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-
+static const i16 i16_max        = 0xFFFF;
+static const u16 u16_max        = 0xFFFF;
 static const i32 i32_max        = 0x7FFFFFFF;
 static const u32 u32_max        = 0x7FFFFFFF;
 static const i64 i64_max        = 0xFFFFFFFFFFFFFFFF;
@@ -205,6 +206,10 @@ FORCE_INLINE f16x4 f16x4_fromF32x4(f32x4 from) {
 }
 
 #endif
+
+INLINE f32 f32_equal(f32 val, f32 cmp, f32 delta) {
+    return ((((val)-(cmp))> -(delta))&&(((val)-(cmp))<(delta)));
+}
 
 INLINE f32 f32_fromBits(u32 bits) {
     union { u32 u32; f32 f32;} result;

@@ -58,7 +58,7 @@ typedef u32      b32;
 #define b32_cast(B) ((b32)((B) != 0))
 
 typedef u32      flags32;
-typedef u64      flagi64;
+typedef u64      flags64;
 
 #define flag32(n) ((1u) << u32_cast(n))
 #define flag64(n) ((1ull) << u64_cast(n))
@@ -159,7 +159,7 @@ typedef union Vec2 {
 #endif
 } Vec2;
 
-typedef union SVec2 {
+typedef union Vec2i {
     struct {
         i32 x, y;
     };
@@ -169,7 +169,7 @@ typedef union SVec2 {
         return store[maxVal(0, minVal(index, countOf(store)))];
     }
 #endif
-} SVec2;
+} Vec2i;
 
 typedef union Vec3 {
     struct {

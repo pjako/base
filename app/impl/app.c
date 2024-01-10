@@ -8,7 +8,51 @@
 #include "log/log.h"
 #include "app/app.h"
 
-#if os_DlL_HOST
+#define GFX_BACKEND_OGL 1
+
+#if GFX_BACKEND_OGL == 1 || defined(GFX_BACKEND_OGL)
+    #undef GFX_BACKEND_OGL
+    #define GFX_BACKEND_OGL 1
+#else
+    #define GFX_BACKEND_OGL 0
+#endif
+
+#if GFX_BACKEND_MTL == 1 || defined(GFX_BACKEND_MTL)
+    #undef GFX_BACKEND_MTL
+    #define GFX_BACKEND_MTL 1
+#else
+    #if OS_APPLE && GFX_BACKEND_OGL == 0
+        // default to Metal if OGL is not defined
+        #define GFX_BACKEND_MTL 1
+    #else
+        #define GFX_BACKEND_MTL 0
+    #endif
+#endif
+
+#if GFX_BACKEND_DX12 == 1 || defined(GFX_BACKEND_DX12)
+    #undef GFX_BACKEND_DX12
+    #define GFX_BACKEND_DX12 1
+#else
+    #define GFX_BACKEND_DX12 0
+#endif
+
+#if GFX_BACKEND_VK == 1 || defined(GFX_BACKEND_VK)
+    #undef GFX_BACKEND_VK
+    #define GFX_BACKEND_VK 1
+#else
+    #define GFX_BACKEND_VK 0
+#endif
+
+
+// There seems to be no good way to support windows withs OGL on MacOS with a single callback
+// iOS and MacOS have only a single window as well
+#if (OS_OSX && GFX_BACKEND_OGL) || OS_IOS || OS_ANDROID
+#define OS_MAX_WINDOWS 1
+#else
+#define OS_MAX_WINDOWS 100
+#endif
+
+#if OS_DLL_HOST
 Str8 app__useDll(void) {
     return str8(OS_DLL_PATH);
 }
@@ -31,26 +75,25 @@ LOCAL void app__uninitApp(app__Ctx* ctx, app_ApplicationDesc* appDesc) {
 }
 
 #if OS_APPLE
-#if OS_OSX
-#ifndef GL_SILENCE_DEPRECATION
-#define GL_SILENCE_DEPRECATION
+    #if OS_OSX
+        #ifndef GL_SILENCE_DEPRECATION
+            #define GL_SILENCE_DEPRECATION
+        #endif
+            #import <Cocoa/Cocoa.h>
+            #import <QuartzCore/QuartzCore.h>
+        #else
+            #import <UIKit/UIKit.h>
+        #endif
+    #endif
+    #import <QuartzCore/CAMetalLayer.h>
+    #ifdef OS_DLLHOST
+        #include "app__dllhost.h"
+        #define DMON_IMPL
+        #include "dmon.h"
+    #endif
 #endif
-#import <Cocoa/Cocoa.h>
-#import <QuartzCore/QuartzCore.h>
-#else
-#import <UIKit/UIKit.h>
-#endif
 
-#import <QuartzCore/CAMetalLayer.h>
-
-
-#ifdef OS_DLLHOST
-#include "app__dllhost.h"
-
-#define DMON_IMPL
-#include "dmon.h"
-
-#endif
+#if OS_APPLE
 
 #if __has_feature(objc_arc)
 #define OS_OBJC_RELESE(obj) { obj = nil; }
@@ -76,16 +119,36 @@ LOCAL void app__uninitApp(app__Ctx* ctx, app_ApplicationDesc* appDesc) {
 
 @class AppleWindow;
 
-@interface AppView : NSView
+
+#if GFX_BACKEND_OGL
+    #if OS_IOS
+        #define GfxView GLKView
+        #else
+        #define GfxView NSOpenGLView
+    #endif
+#else
+    #if OS_IOS
+        #define GfxView UIView
+        #else
+        #define GfxView NSView
+    #endif
+#endif // GFX_BACKEND_OGL
+
+@interface AppView : GfxView
+
+#if OS_OSX && GFX_BACKEND_OGL
+@property (strong) NSTimer* timer;
+#endif // OS_OSX && GFX_BACKEND_OGL
+
+
+#if GFX_BACKEND_MTL
 -(CALayer*) makeBackingLayer;
 @property(nonatomic, strong) CALayer* caLayer;
+#endif // GFX_BACKEND_MTL
+
+#if OS_OSX
 @property(nonatomic, strong) NSTrackingArea* trackingArea;
-@end
-
-@interface MetalAppView : AppView
-@end
-
-@interface GlAppView : AppView
+#endif // OS_OSX
 @end
 
 
@@ -114,6 +177,7 @@ typedef struct app__AppleCtx {
     Arena* mainArena;
     void (*rx__appleCallBeforeDone)(void);
     bx started;
+    bx mainCalled;
     bx initCalled;
     bx cleanupCalled;
     bx eventConsumed;
@@ -653,7 +717,7 @@ LOCAL void app__updateDimesion(AppWindow* appleWindow) {
     app__appleCtx->windowHeight = appleWindow.windowHeight;
 
 
-    const CGSize fb_size = appleWindow.gfxView.caLayer.frame.size;
+    const CGSize fb_size = appleWindow.gfxView.frame.size;
     const i32 cur_fb_width = (int)roundf(fb_size.width);
     const i32 cur_fb_height = (int)roundf(fb_size.height);
     const bx dim_changed = (appleWindow.frameBufferWidth != cur_fb_width) || (appleWindow.frameBufferHeight != cur_fb_height);
@@ -813,32 +877,126 @@ static CVReturn app__appleDisplayLinkCallback(CVDisplayLinkRef displayLink,
                                     CVOptionFlags* flagsOut,
                                     void* target);
 
+@implementation AppWindow
+
+- (void)windowDidResize:(NSNotification*)notification {
+    unusedVars(notification);
+    app__updateDimesion(self);
+}
+
+- (void)windowDidChangeScreen:(NSNotification*)notification {
+    unusedVars(notification);
+    //_sapp_timing_reset(&_sapp.timing);
+    app__updateDimesion(self);
+}
+
+- (void)windowDidMiniaturize:(NSNotification*)notification {
+    unusedVars(notification);
+    app__initEvent(app_appEventType_iconified);
+    app__appleCtx->event.window.id = self.windowId;
+    app__callEvent(&app__appleCtx->event);
+}
+
+- (void)windowDidDeminiaturize:(NSNotification*)notification {
+    unusedVars(notification);
+    app__initEvent(app_appEventType_restored);
+    app__appleCtx->event.window.id = self.windowId;
+    app__callEvent(&app__appleCtx->event);
+}
+
+- (void)windowDidBecomeKey:(NSNotification*)notification {
+    unusedVars(notification);
+    app__appleCtx->focusedWindow.id = self.windowId;
+    app__initEvent(app_appEventType_focused);
+    app__callEvent(&app__appleCtx->event);
+}
+
+- (void)windowDidResignKey:(NSNotification*)notification {
+    unusedVars(notification);
+    if (app__appleCtx->focusedWindow.id == self.windowId) {
+        app__appleCtx->focusedWindow.id = 0;
+    }
+    app__initEvent(app_appEventType_unfocused);
+    app__appleCtx->event.window.id = self.windowId;
+    app__callEvent(&app__appleCtx->event);
+}
+
+- (void)windowDidEnterFullScreen:(NSNotification*)notification {
+    unusedVars(notification);
+    self.fullscreen = true;
+}
+
+- (void)windowDidExitFullScreen:(NSNotification*)notification {
+    unusedVars(notification);
+    self.fullscreen = false;
+}
+
+@end
 
 
 @implementation AppView
 
-- (CALayer *)makeBackingLayer {
-    ASSERT(!"Overwrite makeBackingLayer!");
-    return nil;
-}
+#if OS_OSX && GFX_BACKEND_OGL
+- (id)init {
+    NSOpenGLPixelFormatAttribute attrs[32];
+    int i = 0;
+    attrs[i++] = NSOpenGLPFAAccelerated;
+    attrs[i++] = NSOpenGLPFADoubleBuffer;
+    attrs[i++] = NSOpenGLPFAOpenGLProfile;
+    const int glVersion = 41; //_sapp.desc.gl_major_version * 10 + _sapp.desc.gl_minor_version;
+    //switch(glVersion) {
+    //    case 10: attrs[i++] = NSOpenGLProfileVersionLegacy;  break;
+    //    case 32: attrs[i++] = NSOpenGLProfileVersion3_2Core; break;
+    //    case 41: attrs[i++] = NSOpenGLProfileVersion4_1Core; break;
+    //    default: ASSERT(!"MACOS_INVALID_NSOPENGL_PROFILE");//_SAPP_PANIC(MACOS_INVALID_NSOPENGL_PROFILE);
+    //}
+    attrs[i++] = NSOpenGLProfileVersion4_1Core;
+
+    attrs[i++] = NSOpenGLPFAColorSize; attrs[i++] = 24;
+    attrs[i++] = NSOpenGLPFAAlphaSize; attrs[i++] = 8;
+    attrs[i++] = NSOpenGLPFADepthSize; attrs[i++] = 24;
+    attrs[i++] = NSOpenGLPFAStencilSize; attrs[i++] = 8;
+
+    //if (desc->sampleCount > 1) {
+    //    attrs[i++] = NSOpenGLPFAMultisample;
+    //    attrs[i++] = NSOpenGLPFASampleBuffers; attrs[i++] = 1;
+    //    attrs[i++] = NSOpenGLPFASamples; attrs[i++] = (NSOpenGLPixelFormatAttribute) desc->sampleCount;
+    //}
+    //else {
+        attrs[i++] = NSOpenGLPFASampleBuffers; attrs[i++] = 0;
+    //}
+    attrs[i++] = 0;
+    NSOpenGLPixelFormat* glpixelformatObj = [[NSOpenGLPixelFormat alloc] initWithAttributes:attrs];
+    ASSERT(glpixelformatObj != nil);
+
+    self = [super initWithFrame:NSMakeRect(0, 0, 400, 600) pixelFormat:glpixelformatObj];
+    OS_OBJC_RELESE(glpixelformatObj);
+
+#if GFX_BACKEND_MTL
+    [self setLayer:[window.gfxView makeBackingLayer]];
+    [self setWantsLayer:YES];
+    [self.layer setContentsScale:[window backingScaleFactor]];
+#endif
+    [self prepareOpenGL];
+    [self.openGLContext makeCurrentContext];
     
-/** Indicates that the view wants to draw using the backing layer instead of using drawRect:.  */
--(BOOL) wantsUpdateLayer {
-    return YES;
+    if (self) {
+        NSTimer* timerObj = [NSTimer timerWithTimeInterval:0.001 target:self selector:@selector(timerFired:) userInfo:nil repeats:YES];
+        [[NSRunLoop currentRunLoop] addTimer:timerObj forMode:NSDefaultRunLoopMode];
+        self.timer = timerObj;
+    }
+    return self;
 }
-    
+
+- (void)timerFired:(id)sender {
+    [self setNeedsDisplay:YES];
+}
+
+#endif // OS_OSX && GFX_BACKEND_OGL
+
 - (BOOL) isOpaque {
     return YES;
 }
-
-#if OS_OSX
-
-#if 0
-- (void)reshape {
-    app__updateDimesion((AppWindow*) self.window);
-    [super reshape];
-}
-#endif
 
 - (BOOL)canBecomeKey {
     return YES;
@@ -848,6 +1006,36 @@ static CVReturn app__appleDisplayLinkCallback(CVDisplayLinkRef displayLink,
     return YES;
 }
 
+
+#if GFX_BACKEND_OGL
+    #if OS_IOS
+- (void)drawRect:(CGRect)rect {
+    ASSERT(app__appleCtx);
+    ASSERT(app__appleCtx->desc.update);
+    if (!app__appleCtx->mainCalled) {
+        return;
+    }
+    @autoreleasepool {
+        app__appleCtx->desc.update();
+    }
+}
+    #else
+- (void)drawRect:(NSRect)rect {
+    [self.openGLContext makeCurrentContext];
+    ASSERT(app__appleCtx);
+    ASSERT(app__appleCtx->desc.update);
+    if (!app__appleCtx->mainCalled) {
+        return;
+    }
+    @autoreleasepool {
+        app__appleCtx->desc.update();
+    }
+    [self.openGLContext flushBuffer];
+}
+    #endif // OS_IOS
+#endif // GFX_BACKEND_OGL
+#if OS_IOS
+#else
 - (void)updateTrackingAreas {
     if (self.trackingArea != nil) {
         [self removeTrackingArea:self.trackingArea];
@@ -1051,110 +1239,11 @@ static CVReturn app__appleDisplayLinkCallback(CVDisplayLinkRef displayLink,
             app__inputMods(event));
     }
 }
-
-#endif // OS_OSX
-
-@end
-
-@implementation MetalAppView
-+ (Class) layerClass {
-    return [CAMetalLayer class];
-}
-
--(CALayer*) makeBackingLayer {
-    if (self.caLayer) {
-        return self.caLayer;
-    }
-    CALayer* layer = [self.class.layerClass layer];
-    CGSize viewScale = [self convertSizeToBacking: CGSizeMake(1.0, 1.0)];
-    layer.contentsScale = minVal(viewScale.width, viewScale.height);
-    self.caLayer = layer;
-    return layer;
-}
-
-@end
-@implementation GlAppView
-#if OS_OSX
-// OpenGLLayer
-#define AppGLLayer NSOpenGLLayer
-#else
-#define AppGLLayer CAEAGLLayer
 #endif
-+ (Class) layerClass {
-    // IOS: CAEAGLLayer
-    return [AppGLLayer class];
-}
-- (CALayer *)makeBackingLayer {
-    if (self.caLayer) {
-        return self.caLayer;
-    }
-    AppGLLayer* glLayer = [[AppGLLayer alloc] init];
-    [glLayer setAsynchronous:YES];
-    self.caLayer = glLayer;
-    CGSize viewScale = [self convertSizeToBacking: CGSizeMake(1.0, 1.0)];
-    self.caLayer.contentsScale = minVal(viewScale.width, viewScale.height);
-    return self.caLayer;
-}
-
 @end
 
-@implementation AppWindow
-
-- (void)windowDidResize:(NSNotification*)notification {
-    unusedVars(notification);
-    app__updateDimesion(self);
-}
-
-- (void)windowDidChangeScreen:(NSNotification*)notification {
-    unusedVars(notification);
-    //_sapp_timing_reset(&_sapp.timing);
-    app__updateDimesion(self);
-}
-
-- (void)windowDidMiniaturize:(NSNotification*)notification {
-    unusedVars(notification);
-    app__initEvent(app_appEventType_iconified);
-    app__appleCtx->event.window.id = self.windowId;
-    app__callEvent(&app__appleCtx->event);
-}
-
-- (void)windowDidDeminiaturize:(NSNotification*)notification {
-    unusedVars(notification);
-    app__initEvent(app_appEventType_restored);
-    app__appleCtx->event.window.id = self.windowId;
-    app__callEvent(&app__appleCtx->event);
-}
-
-- (void)windowDidBecomeKey:(NSNotification*)notification {
-    unusedVars(notification);
-    app__appleCtx->focusedWindow.id = self.windowId;
-    app__initEvent(app_appEventType_focused);
-    app__callEvent(&app__appleCtx->event);
-}
-
-- (void)windowDidResignKey:(NSNotification*)notification {
-    unusedVars(notification);
-    if (app__appleCtx->focusedWindow.id == self.windowId) {
-        app__appleCtx->focusedWindow.id = 0;
-    }
-    app__initEvent(app_appEventType_unfocused);
-    app__appleCtx->event.window.id = self.windowId;
-    app__callEvent(&app__appleCtx->event);
-}
-
-- (void)windowDidEnterFullScreen:(NSNotification*)notification {
-    unusedVars(notification);
-    self.fullscreen = true;
-}
-
-- (void)windowDidExitFullScreen:(NSNotification*)notification {
-    unusedVars(notification);
-    self.fullscreen = false;
-}
-
-@end
-
-#if OS_OSX
+#if OS_IOS
+#else
 //------------------------------------------------------------------------------
 @implementation OsApp
 // From http://cocoadev.com/index.pl?GameKeyboardHandlingAlmost
@@ -1168,9 +1257,6 @@ static CVReturn app__appleDisplayLinkCallback(CVDisplayLinkRef displayLink,
     }
 }
 @end
-
-#else
-
 #endif
 
 @implementation OsAppDelegate
@@ -1206,14 +1292,19 @@ static CVReturn app__appleDisplayLinkCallback(CVDisplayLinkRef displayLink,
     
     app_appInitThread();
 
+#if GFX_BACKEND_MTL
     CVDisplayLinkCreateWithActiveCGDisplays(&app__appleCtx->displayLink);
     CVDisplayLinkSetOutputCallback(app__appleCtx->displayLink, &app__appleDisplayLinkCallback, nil);
     CVDisplayLinkStart(app__appleCtx->displayLink);
+#endif
+
 #if OS_OSX
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(appWillResignActive:) name:NSApplicationWillResignActiveNotification object:nil];
     //[[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(applicationDidBecomeActive:) name:NSApplicationDidBecomeActive object:nil];
 #endif
     //[[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(appWillTerminate:) name:UIApplicationWillTerminateNotification object:nil];
+
+    app__appleCtx->mainCalled = true;
 #if OS_IOS
     return YES;
 #endif
@@ -1230,7 +1321,7 @@ static CVReturn app__appleDisplayLinkCallback(CVDisplayLinkRef displayLink,
 
 #if OS_IOS
 - (void)applicationWillResignActive:(UIApplication *)application {
-#elif OS_OSX
+#else
 -(void)appWillResignActive:(NSNotification*)note {
 #endif
     if (!app__appleCtx->suspended) {
@@ -1277,7 +1368,10 @@ CVReturn app__appleDisplayLinkCallback(CVDisplayLinkRef displayLink,
                 dllMainFn(app__appleCtx);
             }
         }
+        //dispatch_async(dispatch_get_main_queue(), ^{
         app__appleCtx->desc.update();
+        //});
+        
     }
     app_appNextFrameThread();
     app__appleCtx->frameCount++;
@@ -1379,21 +1473,17 @@ static uint32_t app__appleCreateWindow(app_WindowDesc* desc) {
     }
 #endif
 
-    if (desc->gfxApi == app_windowGfxApi_openGl) {
-        window.gfxView = [[GlAppView alloc] init];
-    } else {
-        window.gfxView = [[MetalAppView alloc] init];
-    }
+    window.gfxView = [[AppView alloc] init];
+    window.contentView = window.gfxView;
 
     [window layoutIfNeeded];
-    [window.gfxView setLayer:[window.gfxView makeBackingLayer]];
-    [window.gfxView setWantsLayer:YES];
-    [window.gfxView.layer setContentsScale:[window backingScaleFactor]];
+    window.gfxView.frame = NSMakeRect(0, 0, desc->width, desc->height);
     
     [window makeFirstResponder:window.contentView];
     app__appleSetWindowName(window, desc->title);
     [window makeKeyAndOrderFront:nil];
     [window layoutIfNeeded];
+    [window display];
     [app__appleCtx->windows addObject:window];
     app__updateDimesion(window);
 
@@ -1440,25 +1530,21 @@ void app_stopApplication (void) {
 }
 
 u32 app_maxWindows(void) {
-#if OS_IOS
-    return 1;
-#else
-    return 100;
-#endif
+    return OS_MAX_WINDOWS;
 }
 
 Vec2 app_getWindowSizeF32(app_window window) {
     AppWindow* osWindow = app__appleCtx->windows[window.id - 1];
     Vec2 size;
-    size.x = osWindow.frameBufferWidth;
-    size.y = osWindow.frameBufferHeight;
+    size.x = osWindow.contentView.frame.size.width; //osWindow.frameBufferWidth;
+    size.y = osWindow.contentView.frame.size.height;
 
     return size;
 }
 
-SVec2 app_getWindowSize(app_window window) {
+Vec2i app_getWindowSize(app_window window) {
     Vec2 fSize = app_getWindowSizeF32(window);
-    SVec2 size;
+    Vec2i size;
     size.x = (i32) f32_round(fSize.x);
     size.y = (i32) f32_round(fSize.y);
 
@@ -1521,7 +1607,11 @@ void* app_getGraphicsHandle(app_window window) {
     ASSERT(window.id);
     u32 windowIndex = window.id - 1;
     AppWindow* nsWindow = app__appleCtx->windows[windowIndex];
+#if GFX_BACKEND_OPENGL
+    return NULL;
+#else
     return (void*) [nsWindow.gfxView makeBackingLayer];
+#endif
 }
 
 Arena* app_frameArena(void) {
@@ -1550,9 +1640,6 @@ void app_appCleanupThread(void) {
         app__appThreadCtx.arenas[idx] = NULL;
     }
 }
-
-#elif OS_ANDROID
-#error "ANDROID no implemented"
 #elif OS_WIN
 
 #define WIN32_LEAN_AND_MEAN
@@ -1622,10 +1709,6 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 
     return retVal;
 }
-
-#ifndef OS_MAX_WINDOWS
-#define OS_MAX_WINDOWS 100
-#endif // OS_MAX_WINDOWS
 
 typedef struct app__Win32Window {
     HWND hWnd;
@@ -1769,8 +1852,8 @@ void* app_getGraphicsHandle(app_window window) {
     window.id -= 1;
     return (void*) &app__win32AppCtx->windows[window.id].hWnd;
 }
+#elif OS_ANDROID
+#error "ANDROID no implemented"
 #else
 #error "OS no implemented"
 #endif
-
-#endif // os_DlL_HOST

@@ -714,8 +714,7 @@ Str8 os_fileRead(Arena* arena, Str8 fileName) {
 
 bool os_fileWrite(Str8 fileName, Str8 data) {
     // max file length + max file path length + '\0'
-    u8 _memory[sizeof(Arena) + 1024 * sizeOf(u32)];
-    Arena* arena = mem_makeArenaPreAllocated(_memory, sizeOf(_memory));
+    mem_defineMakeStackArena(arena, 1024 * sizeOf(u32));
     
     bx result = false;
     Str16 fileMame16 = str_toStr16(arena, fileName);

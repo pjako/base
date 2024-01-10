@@ -153,15 +153,6 @@ void* mem_managedAlloc(ManagedAlloc* malloc, u64 size) {
     return &allocation->mem[0];
 }
 
-void* mem_managedRealloc(ManagedAlloc* malloc, u64 newSize, void* ptr) {
-
-}
-
-void mem_managedFree(ManagedAlloc* malloc, void* ptr) {
-    mem__MallocEntry* entry = (mem__MallocEntry*) &((u8*) ptr)[-sizeof(mem__MallocEntry)];
-    
-}
-
 Arena* mem_makeArena(BaseMemory* baseMem, u64 cap) {
     u32 arr = sizeOf(Arena);
     ASSERT(baseMem);

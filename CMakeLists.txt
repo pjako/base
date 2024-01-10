@@ -97,9 +97,9 @@ if(APPLE)
        # "-framework OpenGLES"
         "-framework OpenGL"
     )
-    else()
-    set_target_properties(app PROPERTIES LINKER_LANGUAGE C)
-    endif()
+else()
+set_target_properties(app PROPERTIES LINKER_LANGUAGE C)
+endif()
 
 # SHD
 
