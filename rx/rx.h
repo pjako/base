@@ -21,7 +21,7 @@ enum {
     RX_MAX_COLOR_TARGETS = 4,
     RX_MAX_RESGROUP_UNIFORM_MEMBERS = 12,
     RX_MAX_SHADERSTAGE_BINDING = 16,
-    RX_MAX_SHADERSTAGE_BUFFERS = 16,
+    RX_MAX_SHADERSTAGE_BUFFERS = 3,
     RX_MAX_VERTEX_ATTRIBUTES = 16,
     RX_MAX_INFLIGHT_FRAMES = 4,
     RX_MAX_RESOURCES_PER_RES_GROUP = 12,
@@ -847,11 +847,11 @@ typedef struct rx_StencilState {
 typedef struct rx_DepthStencilState {
     bool disabled;
     rx_textureFormat format;
+    bool depthWriteEnabled;
+    rx_compareFunc depthCompareFunc;
+    bool stencilEnabled;
     rx_StencilState stencilFront;
     rx_StencilState stencilBack;
-    rx_compareFunc depthCompareFunc;
-    bool depthWriteEnabled;
-    bool stencilEnabled;
     uint8_t stencilReadMask;
     uint8_t stencilWriteMask;
     uint8_t stencilRef;

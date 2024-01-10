@@ -127,6 +127,46 @@ function(app app_name)
     endif()
 endfunction()
 
+set(slang "spv")
+
+if (${CMAKE_HOST_SYSTEM_NAME} STREQUAL "Windows")
+    set(TOOLS_DIR "${PROJECT_SOURCE_DIR}/bin_tools/win32")
+elseif (${CMAKE_HOST_SYSTEM_NAME} STREQUAL "Darwin")
+set(TOOLS_DIR "${PROJECT_SOURCE_DIR}/bin_tools") #set(TOOLS_DIR "${PROJECT_SOURCE_DIR}/bin_tools/osx")
+elseif(${CMAKE_HOST_SYSTEM_NAME} STREQUAL "Linux")
+    set(TOOLS_DIR "${PROJECT_SOURCE_DIR}/bin_tools/linux")
+endif()
+
+set(SHD_BIN_PATH "${TOOLS_DIR}/shdc")
+
+function(shd_shader target_name target_header_path source_files)
+    message(STATUS "Found shd: ${SHD_BIN_PATH}")
+    #set(joined_files "")
+    foreach(file ${source_files})
+        list(APPEND shd_files "${PROJECT_SOURCE_DIR}/${file}")
+    endforeach()
+    list(JOIN shd_files "," joined_files)
+
+    set(output_header "${PROJECT_SOURCE_DIR}/${target_header_path}")
+    #foreach(source_file ${source_files})
+    #set (shd_output_file "${source_file}.h")
+    add_custom_command(
+        OUTPUT ${output_header}
+        COMMAND ${SHD_BIN_PATH}
+        ARGS -s ${joined_files} -h ${output_header}
+        DEPENDS ${source_files}
+        WORKING_DIRECTORY ${TOOLS_DIR}
+        COMMENT "Compiling: ${output_header}"
+        VERBATIM
+    )
+    if(APPLE)
+        target_sources(${target_name} PRIVATE ${target_header_path})
+    else()
+        target_sources(${target_name} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/${target_header_path}")
+    endif()
+    #endforeach()
+endfunction()
+
 
 # tests
 add_subdirectory(_tests)

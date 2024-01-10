@@ -2653,7 +2653,7 @@ bx shd_generateShaders(Arena* arena, DxCompiler* dxCompiler, ShaderFileInfo* sha
 i32 main(i32 argc, char* argv[]) {
 
 // enable for debug
-#if 1
+#if 0
     char* debugArgV[] = {
         (char*) "-s",
         (char*) PROJECT_ROOT "/_examples/sample_texture.hlsl",
