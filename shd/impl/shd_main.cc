@@ -22,6 +22,7 @@
 using namespace spirv_cross;
 
 #define arrDef(TYPE) struct {TYPE* elements; u32 count; u32 capacity;}
+#undef arrTypeDef
 #define arrTypeDef(TYPE) typedef struct TYPE##Array {TYPE* elements; u32 count; u32 capacity;} TYPE##Array
 #define arrVarDef(TYPE) TYPE##Array  
 #define arrInit(ARENA, ARR, CAPACITY) (ARR)->elements = (typeOf((ARR)->elements)) mem_arenaPush((ARENA), CAPACITY * sizeof((ARR)->elements[0])); (ARR)->capacity = (CAPACITY), (ARR)->count = 0
@@ -1419,7 +1420,438 @@ bx shd_parseFromFile(Arena* arena, ShaderFileInfo* outFileInfo, Str8 shaderFileN
     return true;
 }
 
-bx shd_generateShaders(Arena* arena, dxc_Instance* dxcInstance, ShaderFileInfo* shaderFileInfo, CodeInfo* codeInfo) {
+static void shd__toCombinedImageSamplers(CompilerGLSL& compiler) {
+    compiler.build_combined_image_samplers();
+    // give the combined samplers new names
+
+
+    mem_defineMakeStackArena(nameArena, 1024 * sizeof(u32));
+    uint32_t binding = 0;
+    for (auto& remap: compiler.get_combined_image_samplers()) {
+        const std::string img_name = compiler.get_name(remap.image_id);
+        const std::string smp_name = compiler.get_name(remap.sampler_id);
+        mem_scoped(scopedMem, nameArena) {
+            //Str8 imgName0 = str_makeViewSized((u8*) (img_name).c_str(), (img_name).size())
+            //Str8 imgName0 = str_fromCppStd(img_name);
+            Str8 name = str_join(scopedMem.arena, str_fromCppStd(img_name), s8("_"), str_fromCppStd(smp_name));
+            const std::string stdName((const char*) name.content, (size_t) name.size);
+            compiler.set_name(remap.combined_id, stdName);
+        }
+        compiler.set_decoration(remap.combined_id, spv::DecorationBinding, binding++);
+    }
+}
+
+static void std__fixBindSlots(Compiler& compiler) {
+    ShaderResources shader_resources = compiler.get_shader_resources();
+
+    // uniform buffers
+    {
+        uint32_t binding = 0;
+        for (const Resource& res: shader_resources.uniform_buffers) {
+            compiler.set_decoration(res.id, spv::DecorationDescriptorSet, 0);
+            compiler.set_decoration(res.id, spv::DecorationBinding, binding++);
+        }
+    }
+
+    // combined image samplers
+    {
+        uint32_t binding = 0;
+        for (const Resource& res: shader_resources.sampled_images) {
+            compiler.set_decoration(res.id, spv::DecorationDescriptorSet, 0);
+            compiler.set_decoration(res.id, spv::DecorationBinding, binding++);
+        }
+    }
+
+    // separate images
+    {
+        uint32_t binding = 0;
+        for (const Resource& res: shader_resources.separate_images) {
+            compiler.set_decoration(res.id, spv::DecorationDescriptorSet, 0);
+            compiler.set_decoration(res.id, spv::DecorationBinding, binding++);
+        }
+    }
+
+    // separate samplers
+    {
+        uint32_t binding = 0;
+        for (const Resource& res: shader_resources.separate_samplers) {
+            compiler.set_decoration(res.id, spv::DecorationDescriptorSet, 0);
+            compiler.set_decoration(res.id, spv::DecorationBinding, binding++);
+        }
+    }
+}
+
+static void shd__fixUbMatrixForceColmajor(Compiler& compiler) {
+    /* go though all uniform block matrixes and decorate them with
+        column-major, this is needed in the HLSL backend to fix the
+        multiplication order
+    */
+    ShaderResources res = compiler.get_shader_resources();
+    for (const Resource& ub_res: res.uniform_buffers) {
+        const SPIRType& ub_type = compiler.get_type(ub_res.base_type_id);
+        for (int m_index = 0; m_index < (int)ub_type.member_types.size(); m_index++) {
+            const SPIRType& m_type = compiler.get_type(ub_type.member_types[m_index]);
+            if ((m_type.basetype == SPIRType::Float) && (m_type.vecsize > 1) && (m_type.columns > 1)) {
+                compiler.set_member_decoration(ub_res.base_type_id, m_index, spv::DecorationColMajor);
+            }
+        }
+    }
+}
+#if 0
+static spirvcross_refl_t shd__parseReflection(Arena* arena, const Compiler& compiler, const snippet_t& snippet, slang_t::type_t slang) {
+    spirvcross_refl_t refl;
+
+    ShaderResources shd_resources = compiler.get_shader_resources();
+    // shader stage
+    switch (compiler.get_execution_model()) {
+        case spv::ExecutionModelVertex:   refl.stage = stage_t::VS; break;
+        case spv::ExecutionModelFragment: refl.stage = stage_t::FS; break;
+        default: refl.stage = stage_t::INVALID; break;
+    }
+
+    // find entry point
+    const auto entry_points = compiler.get_entry_points_and_stages();
+    for (const auto& item: entry_points) {
+        if (compiler.get_execution_model() == item.execution_model) {
+            refl.entry_point = item.name;
+            break;
+        }
+    }
+    // stage inputs and outputs
+    for (const Resource& res_attr: shd_resources.stage_inputs) {
+        attr_t refl_attr;
+        refl_attr.slot = compiler.get_decoration(res_attr.id, spv::DecorationLocation);
+        refl_attr.name = res_attr.name;
+        refl_attr.sem_name = "TEXCOORD";
+        refl_attr.sem_index = refl_attr.slot;
+        refl.inputs[refl_attr.slot] = refl_attr;
+    }
+    for (const Resource& res_attr: shd_resources.stage_outputs) {
+        attr_t refl_attr;
+        refl_attr.slot = compiler.get_decoration(res_attr.id, spv::DecorationLocation);
+        refl_attr.name = res_attr.name;
+        refl_attr.sem_name = "TEXCOORD";
+        refl_attr.sem_index = refl_attr.slot;
+        refl.outputs[refl_attr.slot] = refl_attr;
+    }
+    // uniform blocks
+    for (const Resource& ub_res: shd_resources.uniform_buffers) {
+        std::string n = compiler.get_name(ub_res.id);
+        uniform_block_t refl_ub;
+        const SPIRType& ub_type = compiler.get_type(ub_res.base_type_id);
+        refl_ub.slot = compiler.get_decoration(ub_res.id, spv::DecorationBinding);
+        refl_ub.size = (int) compiler.get_declared_struct_size(ub_type);
+        refl_ub.struct_name = ub_res.name;
+        refl_ub.inst_name = compiler.get_name(ub_res.id);
+        if (refl_ub.inst_name.empty()) {
+            refl_ub.inst_name = compiler.get_fallback_name(ub_res.id);
+        }
+        refl_ub.flattened = can_flatten_uniform_block(compiler, ub_res);
+        for (int m_index = 0; m_index < (int)ub_type.member_types.size(); m_index++) {
+            uniform_t refl_uniform;
+            refl_uniform.name = compiler.get_member_name(ub_res.base_type_id, m_index);
+            const SPIRType& m_type = compiler.get_type(ub_type.member_types[m_index]);
+            refl_uniform.type = spirtype_to_uniform_type(m_type);
+            if (m_type.array.size() > 0) {
+                refl_uniform.array_count = m_type.array[0];
+            }
+            refl_uniform.offset = compiler.type_struct_member_offset(ub_type, m_index);
+            refl_ub.uniforms.push_back(refl_uniform);
+        }
+        refl.uniform_blocks.push_back(refl_ub);
+    }
+    // (separate) images
+    for (const Resource& img_res: shd_resources.separate_images) {
+        image_t refl_img;
+        refl_img.slot = compiler.get_decoration(img_res.id, spv::DecorationBinding);
+        refl_img.name = img_res.name;
+        const SPIRType& img_type = compiler.get_type(img_res.type_id);
+        refl_img.type = spirtype_to_image_type(img_type);
+        if (((UnprotectedCompiler*)&compiler)->is_used_as_depth_texture(img_type, img_res.id)) {
+            refl_img.sample_type = image_sample_type_t::DEPTH;
+        } else {
+            refl_img.sample_type = spirtype_to_image_sample_type(compiler.get_type(img_type.image.type));
+        }
+        refl_img.multisampled = spirvtype_to_image_multisampled(img_type);
+        refl.images.push_back(refl_img);
+    }
+    // (separate) samplers
+    for (const Resource& smp_res: shd_resources.separate_samplers) {
+        const SPIRType& smp_type = compiler.get_type(smp_res.type_id);
+        sampler_t refl_smp;
+        refl_smp.slot = compiler.get_decoration(smp_res.id, spv::DecorationBinding);
+        refl_smp.name = smp_res.name;
+        // HACK ALERT!
+        if (((UnprotectedCompiler*)&compiler)->is_comparison_sampler(smp_type, smp_res.id)) {
+            refl_smp.type = sampler_type_t::COMPARISON;
+        } else {
+            refl_smp.type = sampler_type_t::FILTERING;
+        }
+        refl.samplers.push_back(refl_smp);
+    }
+    // combined image samplers
+    for (auto& img_smp_res: compiler.get_combined_image_samplers()) {
+        image_sampler_t refl_img_smp;
+        refl_img_smp.slot = compiler.get_decoration(img_smp_res.combined_id, spv::DecorationBinding);
+        refl_img_smp.name = compiler.get_name(img_smp_res.combined_id);
+        refl_img_smp.image_name = compiler.get_name(img_smp_res.image_id);
+        refl_img_smp.sampler_name = compiler.get_name(img_smp_res.sampler_id);
+        refl.image_samplers.push_back(refl_img_smp);
+    }
+    // patch textures with overridden image-sample-types
+    for (auto& img: refl.images) {
+        const auto* tag = snippet.lookup_image_sample_type_tag(img.name);
+        if (tag) {
+            img.sample_type = tag->type;
+        }
+    }
+    // patch samplers with overridden sampler-types
+    for (auto& smp: refl.samplers) {
+        const auto* tag = snippet.lookup_sampler_type_tag(smp.name);
+        if (tag) {
+            smp.type = tag->type;
+        }
+    }
+    return refl;
+}
+#endif
+
+typedef struct shd__CompiledShader {
+    Str8 sourceCode;
+} shd__CompiledShader;
+
+static shd__CompiledShader* shd_toGlsl(Arena* arena, Str8 spirvByteCode, uint32_t optMask) {
+    //CompilerGLSL compiler(blob.bytecode);
+    CompilerGLSL compiler((u32*) spirvByteCode.content, spirvByteCode.size / 4);
+    CompilerGLSL::Options options;
+    options.emit_line_directives = false;
+
+    options.version = 400;
+    options.es = false;
+    // For GLES3:
+    // options.version = 300;
+    // options.es = true;
+
+    options.vulkan_semantics = false;
+    options.enable_420pack_extension = false;
+    //options.emit_uniform_buffer_as_plain_uniforms = true;
+    options.emit_uniform_buffer_as_plain_uniforms = false;
+    // options.vertex.fixup_clipspace = (0 != (optMask & option_t::FIXUP_CLIPSPACE));
+    // options.vertex.flip_vert_y = (0 != (optMask & option_t::FLIP_VERT_Y));
+    compiler.set_common_options(options);
+    // flatten_uniform_blocks(compiler);
+    shd__toCombinedImageSamplers(compiler);
+    std__fixBindSlots(compiler);
+    shd__fixUbMatrixForceColmajor(compiler);
+    std::string src = compiler.compile();
+    if (src.empty()) {
+        return NULL;
+    }
+    shd__CompiledShader* compiledShader = mem_arenaPushStructZero(arena, shd__CompiledShader);
+    compiledShader->sourceCode.size = src.size();
+    compiledShader->sourceCode.content = (u8*) mem_arenaPush(arena, compiledShader->sourceCode.size);
+    mem_copy(compiledShader->sourceCode.content, src.c_str(), compiledShader->sourceCode.size);
+
+    return compiledShader;
+#if 0
+    spirvcross_source_t res;
+    res.snippet_index = blob.snippet_index;
+
+    if (!src.empty()) {
+        res.valid = true;
+        res.source_code = std::move(src);
+        res.refl = parse_reflection(compiler, snippet, slang);
+    }
+    return res;
+#endif
+}
+
+void shd__generateShaderGenLegacy(Arena* arena, ShaderFileInfo* shaderFileInfo, CodeInfo* codeInfo) {
+    u32 samplerIdx = 0;
+    u32 textureIdx = 0;
+    for (u32 resGroupIdx = 0; resGroupIdx < countOf(codeInfo->resGroups); resGroupIdx++) {
+        ResGroupInfo* resGroupInfo = &codeInfo->resGroups[resGroupIdx];
+        Str8 resGroupName = codeInfo->resGroupNames[resGroupIdx];
+        Str8 resBlockName = resGroupIdx >= dynGroup0 ? str8("rx_dynamicResBlocks") : str8("rx_staticResBlocks");
+        
+        // referenced group
+        ResGroupInfo* namedResGroup = resGroupInfo;
+        for (u32 idx = 0; idx < shaderFileInfo->resGroups.count; idx++) {
+            if (str_isEqual(resGroupName, shaderFileInfo->resGroups.elements[idx].name)) {
+                namedResGroup = &shaderFileInfo->resGroups.elements[idx].info;
+            }
+        }
+
+
+        {
+            // per ResGroup create one CBuffer for all uniforms
+            u32 resTypeIdx = resourceType_constant;
+            ResArr* resArr = &resGroupInfo->resTypes[resTypeIdx];
+            ResArr* namedResArr = &namedResGroup->resTypes[resTypeIdx];
+            if (namedResArr->count) { // cbuffer MVPBuffer : register(b0)
+                // write res groups
+                str_join(arena, str8("cbuffer "), str8("rx__resGroup"), resGroupIdx, s8(" : register(b0, space"), resGroupIdx, str8(") {\n"));
+                for (u32 idx = 0; idx < namedResArr->count; idx++) {
+                    ResInfo* namedResInfo = namedResArr->elements + idx;
+
+                    // check which properties from the block were used and generate a getter for it
+                    for (u32 i = 0; i < resArr->count; i++) {
+                        ResInfo* resInfo = resArr->elements + i;
+                        if (str_isEqual(namedResInfo->name, resInfo->name)) {
+                            if (!str_isEqual(namedResInfo->typeName, resInfo->typeName)) {
+                                ASSERT(!"Error type of named res group must be the same");
+                            }
+                            //u32 size = constTypeByteSize[namedResInfo->type];;
+                            switch ((resourceType)resTypeIdx) {
+                                case resourceType_constant: {
+                                    str_join(arena, s8("  "), namedResInfo->typeName, str8(" rx__"), namedResInfo->name, str8(";\n"));
+                                } break;
+                                default: ASSERT(!"Unreachable!");
+                            }
+                        }
+                    }
+                }
+                str_join(arena, str8("};\n"));
+
+                // write getter body
+                for (u32 idx = 0; idx < namedResArr->count; idx++) {
+                    ResInfo* namedResInfo = namedResArr->elements + idx;
+
+                    // check which properties from the block were used and generate a getter for it
+                    for (u32 i = 0; i < resArr->count; i++) {
+                        ResInfo* resInfo = resArr->elements + i;
+                        if (str_isEqual(namedResInfo->name, resInfo->name)) {
+                            if (!str_isEqual(namedResInfo->typeName, resInfo->typeName)) {
+                                ASSERT(!"Error type of named res group must be the same");
+                            }
+                            //u32 size = constTypeByteSize[namedResInfo->type];;
+                            switch ((resourceType)resTypeIdx) {
+                                case resourceType_constant: {
+                                    str_join(arena, namedResInfo->typeName, str8(" "), namedResInfo->name, str8("() {\n"));
+                                    str_join(arena, s8("  return "), str8("rx__"), namedResInfo->name, str8(";\n"));
+                                    str_join(arena, str8("}\n"));
+                                } break;
+                                default: ASSERT(!"Unreachable!");
+                            }
+                        }
+                    }
+                }
+
+
+            }
+        }
+
+        for (u32 resTypeIdx = resourceType_texture; resTypeIdx < resourceType__count; resTypeIdx++) {
+            ResArr* resArr = &resGroupInfo->resTypes[resTypeIdx];
+            ResArr* namedResArr = &namedResGroup->resTypes[resTypeIdx];
+            for (u32 idx = 0; idx < namedResArr->count; idx++) {
+                ResInfo* namedResInfo = namedResArr->elements + idx;
+
+                // check which properties from the block were used and generate a getter for it
+                for (u32 i = 0; i < resArr->count; i++) {
+                    ResInfo* resInfo = resArr->elements + i;
+                    if (str_isEqual(namedResInfo->name, resInfo->name)) {
+                        if (!str_isEqual(namedResInfo->typeName, resInfo->typeName)) {
+                            ASSERT(!"Error type of named res group must be the same");
+                        }
+                        //u32 size = constTypeByteSize[namedResInfo->type];;
+                        switch ((resourceType)resTypeIdx) {
+                            case resourceType_texture: {
+                                str_join(arena, namedResInfo->typeName, s8(" rx__"), namedResInfo->name, s8(": register(t"), samplerIdx, s8(", space"), resGroupIdx, s8(");\n"));
+                                textureIdx += 1;
+                                str_join(arena, namedResInfo->typeName, str8(" "), namedResInfo->name, str8("() {\n"));
+                                str_join(arena, s8("    return "), s8("rx__"), namedResInfo->name, s8(";\n")); 
+                                str_join(arena, str8("}\n\n"));
+                            }; break;
+                            case resourceType_sampler: {
+                                str_join(arena, namedResInfo->typeName, s8(" rx__"), namedResInfo->name, s8(": register(s"), samplerIdx, s8(", space"), resGroupIdx, s8(");\n"));
+                                samplerIdx += 1;
+                                str_join(arena, namedResInfo->typeName, str8(" "), namedResInfo->name, str8("() {\n"));
+                                str_join(arena, s8("    return "), s8("rx__"), namedResInfo->name, s8(";\n")); 
+                                str_join(arena, str8("}\n\n"));
+                            }; break;
+                            default: break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+void shd__generateShaderGenBindless(Arena* arena, ShaderFileInfo* shaderFileInfo, CodeInfo* codeInfo) {
+    str_join(arena, str8("[[vk::push_constant]]"), str8("\n"));
+    str_join(arena, str8("struct rx_pushConstants {"), str8("\n"));
+    str_join(arena, str8("	uint instanceRefIndicies[6];"), str8("\n"));
+    str_join(arena, str8("} rx_pushConstants;"), str8("\n\n"));
+
+
+    str_join(arena, str8("[[vk::binding(0, 0)]] ByteAddressBuffer   rx_staticResBlocks;"), str8("\n"));
+    str_join(arena, str8("[[vk::binding(1, 0)]] ByteAddressBuffer   rx_dynamicResBlocks;"), str8("\n"));
+    str_join(arena, str8("[[vk::binding(2, 0)]] Texture2D			rx_textures[];"), str8("\n"));
+    str_join(arena, str8("[[vk::binding(3, 0)]] SamplerState		rx_samplers[];"), str8("\n\n"));
+    // this maybe only needed for compute shader probably...
+    //str_join(arena, str8("[[vk::binding(3, 0)]] RWByteAddressBuffer		rx_buffer[];"), str8("\n"));
+
+    for (u32 resGroupIdx = 0; resGroupIdx < countOf(codeInfo->resGroups); resGroupIdx++) {
+        ResGroupInfo* resGroupInfo = &codeInfo->resGroups[resGroupIdx];
+        Str8 resGroupName = codeInfo->resGroupNames[resGroupIdx];
+        Str8 resBlockName = resGroupIdx >= dynGroup0 ? str8("rx_dynamicResBlocks") : str8("rx_staticResBlocks");
+        
+        // referenced group
+        ResGroupInfo* namedResGroup = resGroupInfo;
+        for (u32 idx = 0; idx < shaderFileInfo->resGroups.count; idx++) {
+            if (str_isEqual(resGroupName, shaderFileInfo->resGroups.elements[idx].name)) {
+                namedResGroup = &shaderFileInfo->resGroups.elements[idx].info;
+            }
+        }
+
+        u32 byteOffset = 0;
+        for (u32 resTypeIdx = resourceType_constant; resTypeIdx < resourceType__count; resTypeIdx++) {
+            ResArr* resArr = &resGroupInfo->resTypes[resTypeIdx];
+            ResArr* namedResArr = &namedResGroup->resTypes[resTypeIdx];
+            for (u32 idx = 0; idx < namedResArr->count; idx++) {
+                ResInfo* namedResInfo = namedResArr->elements + idx;
+
+                // check which properties from the block were used and generate a getter for it
+                for (u32 i = 0; i < resArr->count; i++) {
+                    ResInfo* resInfo = resArr->elements + i;
+                    if (str_isEqual(namedResInfo->name, resInfo->name)) {
+                        if (!str_isEqual(namedResInfo->typeName, resInfo->typeName)) {
+                            ASSERT(!"Error type of named res group must be the same");
+                        }
+                        //u32 size = constTypeByteSize[namedResInfo->type];;
+                        switch ((resourceType)resTypeIdx) {
+                            case resourceType_constant: {
+                                str_join(arena, namedResInfo->typeName, str8(" "), namedResInfo->name, str8("() {\n"));
+                                str_fmt(arena, str8("	return {0}.Load<{1}>(rx_pushConstants.instanceRefIndicies[{2}] * sizeof(uint) + sizeof(uint) * {3});\n"), resBlockName, namedResInfo->typeName, resGroupIdx, byteOffset);   
+                                str_join(arena, str8("}\n"));
+                                byteOffset += namedResInfo->byteSize / 4;
+                            } break;
+                            case resourceType_texture: {
+                                str_join(arena, namedResInfo->typeName, str8(" "), namedResInfo->name, str8("() {\n"));
+                                str_fmt(arena,  str8("    uint index = {0}.Load(rx_pushConstants.instanceRefIndicies[{2}] * sizeof(uint) + sizeof(uint) * {3});\n"), resBlockName, namedResInfo->typeName, resGroupIdx, byteOffset);   
+                                str_join(arena, str8("    return rx_textures[index];\n")); 
+                                str_join(arena, str8("}\n"));  
+                                byteOffset += namedResInfo->byteSize / 4;
+                            }; break;
+                            case resourceType_sampler: {
+                                str_join(arena, namedResInfo->typeName, str8(" "), namedResInfo->name, str8("() {\n"));
+                                str_fmt(arena,  str8("    uint index = {0}.Load(rx_pushConstants.instanceRefIndicies[{2}] * sizeof(uint) + sizeof(uint) * {3});\n"), resBlockName, namedResInfo->typeName, resGroupIdx, byteOffset);     
+                                str_join(arena, str8("    return rx_samplers[index];\n")); 
+                                str_join(arena, str8("}\n"));  
+                                byteOffset += namedResInfo->byteSize / 4;
+                            }; break;
+                            default: break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+bx shd_generateShaders(Arena* arena, DxCompiler* dxCompiler, ShaderFileInfo* shaderFileInfo, CodeInfo* codeInfo) {
     Str8 generatedCode = {0};
     str_record(generatedCode, arena) {
         // Generate code for
@@ -1448,76 +1880,14 @@ bx shd_generateShaders(Arena* arena, dxc_Instance* dxcInstance, ShaderFileInfo* 
         str_join(arena, str8("//******************************************************************//"), str8("\n"));
         str_join(arena, str8("\n\n"));
 
+        shd__generateShaderGenLegacy(arena, shaderFileInfo, codeInfo);
 
-        str_join(arena, str8("[[vk::push_constant]]"), str8("\n"));
-        str_join(arena, str8("struct rx_pushConstants {"), str8("\n"));
-        str_join(arena, str8("	uint instanceRefIndicies[6];"), str8("\n"));
-        str_join(arena, str8("} rx_pushConstants;"), str8("\n\n"));
+        //str_join(arena, str8("\n\n"));
 
+        //str_join(arena, str8("#if 0"));
+        //shd__generateShaderGenBindless(arena, shaderFileInfo, codeInfo);
+        //str_join(arena, str8("#endif"));
 
-        str_join(arena, str8("[[vk::binding(0, 0)]] ByteAddressBuffer   rx_staticResBlocks;"), str8("\n"));
-        str_join(arena, str8("[[vk::binding(1, 0)]] ByteAddressBuffer   rx_dynamicResBlocks;"), str8("\n"));
-        str_join(arena, str8("[[vk::binding(2, 0)]] Texture2D			rx_textures[];"), str8("\n"));
-        str_join(arena, str8("[[vk::binding(3, 0)]] SamplerState		rx_samplers[];"), str8("\n\n"));
-        // this maybe only needed for compute shader probably...
-        //str_join(arena, str8("[[vk::binding(3, 0)]] RWByteAddressBuffer		rx_buffer[];"), str8("\n"));
-
-        for (u32 resGroupIdx = 0; resGroupIdx < countOf(codeInfo->resGroups); resGroupIdx++) {
-            ResGroupInfo* resGroupInfo = &codeInfo->resGroups[resGroupIdx];
-            Str8 resGroupName = codeInfo->resGroupNames[resGroupIdx];
-            Str8 resBlockName = resGroupIdx >= dynGroup0 ? str8("rx_dynamicResBlocks") : str8("rx_staticResBlocks");
-            
-            // referenced group
-            ResGroupInfo* namedResGroup = resGroupInfo;
-            for (u32 idx = 0; idx < shaderFileInfo->resGroups.count; idx++) {
-                if (str_isEqual(resGroupName, shaderFileInfo->resGroups.elements[idx].name)) {
-                    namedResGroup = &shaderFileInfo->resGroups.elements[idx].info;
-                }
-            }
-
-            u32 byteOffset = 0;
-            for (u32 resTypeIdx = resourceType_constant; resTypeIdx < resourceType__count; resTypeIdx++) {
-                ResArr* resArr = &resGroupInfo->resTypes[resTypeIdx];
-                ResArr* namedResArr = &namedResGroup->resTypes[resTypeIdx];
-                for (u32 idx = 0; idx < namedResArr->count; idx++) {
-                    ResInfo* namedResInfo = namedResArr->elements + idx;
-
-                    // check which properties from the block were used and generate a getter for it
-                    for (u32 i = 0; i < resArr->count; i++) {
-                        ResInfo* resInfo = resArr->elements + i;
-                        if (str_isEqual(namedResInfo->name, resInfo->name)) {
-                            if (!str_isEqual(namedResInfo->typeName, resInfo->typeName)) {
-                                ASSERT(!"Error type of named res group must be the same");
-                            }
-                            //u32 size = constTypeByteSize[namedResInfo->type];;
-                            switch ((resourceType)resTypeIdx) {
-                                case resourceType_constant: {
-                                    str_join(arena, namedResInfo->typeName, str8(" "), namedResInfo->name, str8("() {\n"));
-                                    str_fmt(arena, str8("	return {0}.Load<{1}>(rx_pushConstants.instanceRefIndicies[{2}] * sizeof(uint) + sizeof(uint) * {3});\n"), resBlockName, namedResInfo->typeName, resGroupIdx, byteOffset);   
-                                    str_join(arena, str8("}\n"));
-                                    byteOffset += namedResInfo->byteSize / 4;
-                                } break;
-                                case resourceType_texture: {
-                                    str_join(arena, namedResInfo->typeName, str8(" "), namedResInfo->name, str8("() {\n"));
-                                    str_fmt(arena,  str8("    uint index = {0}.Load(rx_pushConstants.instanceRefIndicies[{2}] * sizeof(uint) + sizeof(uint) * {3});\n"), resBlockName, namedResInfo->typeName, resGroupIdx, byteOffset);   
-                                    str_join(arena, str8("    return rx_textures[index];\n")); 
-                                    str_join(arena, str8("}\n"));  
-                                    byteOffset += namedResInfo->byteSize / 4;
-                                }; break;
-                                case resourceType_sampler: {
-                                    str_join(arena, namedResInfo->typeName, str8(" "), namedResInfo->name, str8("() {\n"));
-                                    str_fmt(arena,  str8("    uint index = {0}.Load(rx_pushConstants.instanceRefIndicies[{2}] * sizeof(uint) + sizeof(uint) * {3});\n"), resBlockName, namedResInfo->typeName, resGroupIdx, byteOffset);     
-                                    str_join(arena, str8("    return rx_samplers[index];\n")); 
-                                    str_join(arena, str8("}\n"));  
-                                    byteOffset += namedResInfo->byteSize / 4;
-                                }; break;
-                                default: break;
-                            }
-                        }
-                    }
-                }
-            }
-        }
         
         #if 0
         for (u32 resGroupIdx = 0; resGroupIdx < countOf(codeInfo->resGroups); resGroupIdx++) {
@@ -1581,7 +1951,6 @@ bx shd_generateShaders(Arena* arena, dxc_Instance* dxcInstance, ShaderFileInfo* 
     //log_trace(str8("\ngenerated code:\n"), generatedCode, str8("\n gen done"));
     //log_trace("call dxc...\n");
     StrPair defs = {};
-    Str8 params = str_lit("-spirv");
     // compile code with dxc
 
     // https://github.com/floooh/sokol-tools/blob/master/src/shdc/spirvcross.cc
@@ -1590,19 +1959,51 @@ bx shd_generateShaders(Arena* arena, dxc_Instance* dxcInstance, ShaderFileInfo* 
     // gather shader informations about locations & sizes in input/output
     arrFor(&shaderFileInfo->renderPrograms, idx) {
         RenderProgram* program = shaderFileInfo->renderPrograms.elements + idx;
-        dxc_CompileResult vsResult = dxc_compileHlslToSpv(arena, dxcInstance, dxc_shaderType_vertex, generatedCode, codeInfo->name, program->vs.entry, &defs, 0, &params, 1);
-        if (vsResult.diagMessage.size > 0) log_error(arena, vsResult.diagMessage);
-        program->vs.source = vsResult.spvCode;
-        dxc_CompileResult psResult = dxc_compileHlslToSpv(arena, dxcInstance, dxc_shaderType_pixel, generatedCode, codeInfo->name, program->ps.entry, &defs, 0, &params, 1);
-        if (psResult.diagMessage.size > 0) log_error(arena, psResult.diagMessage);
-        program->ps.source = psResult.spvCode;
+        /*
+            DxCompiler* dxCompiler;
+            dxc_shaderType type;
+            Str8 source;
+            Str8 inputFileName;
+            Str8 entryPoint;
+            StrPair* defines;
+            u32 defineCount;
+            Str8 (*includeLoadCallback)(Str8 includeName, void* userPtr);
+            void* userPtr;
+            dxc_CompileOptions options;
+        */
+       log_debug(arena, generatedCode);
+        dxc_CompileDesc compilerDesc = {};
+        compilerDesc.dxCompiler               = dxCompiler;
+        compilerDesc.type                     = dxc_shaderType_vertex;
+        compilerDesc.source                   = generatedCode;
+        compilerDesc.inputFileName            = codeInfo->name;
+        compilerDesc.defines                  = &defs;
+        compilerDesc.defineCount              = 0;
+
+        compilerDesc.entryPoint               = program->vs.entry;
+        compilerDesc.options.binaryShaderType = dxc_binaryShader_spirv;
+        dxc_CompileResult vsResult = dxc_compileHlslToSpv(arena, &compilerDesc);
+        if (vsResult.hasError) {
+            log_error(arena, vsResult.errorWarningMsg);
+        }
+        program->vs.source = vsResult.target;
+
+        compilerDesc.entryPoint               = program->ps.entry;
+        compilerDesc.type                     = dxc_shaderType_pixel;
+        dxc_CompileResult psResult = dxc_compileHlslToSpv(arena, &compilerDesc);
+        if (psResult.hasError) {
+            log_error(arena, psResult.errorWarningMsg);
+        }
+        program->ps.source = psResult.target;
 
         // parse vertex shader
         Parser vsSpirvParser((u32*) program->vs.source.content, program->vs.source.size / 4);
         vsSpirvParser.parse();
         CompilerReflection vsCompiler(std::move(vsSpirvParser.get_parsed_ir()));
-        ASSERT(program->vs.type == shd_entryPointType_vertex && "Expected vertex shader");
         shd_parseSpirvShaderDetails(arena, &program->vs, vsCompiler);
+        ASSERT(program->vs.type == shd_entryPointType_vertex && "Expected vertex shader");
+        shd__CompiledShader* glslVertexShader = shd_toGlsl(arena, program->vs.source, 0);
+
 
         // parse fragment shader
         Parser psSpirvParser((u32*) program->ps.source.content, program->ps.source.size / 4);
@@ -1610,6 +2011,11 @@ bx shd_generateShaders(Arena* arena, dxc_Instance* dxcInstance, ShaderFileInfo* 
         CompilerReflection psCompiler(std::move(psSpirvParser.get_parsed_ir()));
         shd_parseSpirvShaderDetails(arena, &program->ps, psCompiler);
         ASSERT(program->ps.type == shd_entryPointType_pixel && "Expected pixel shader");
+        shd__CompiledShader* glslPixelShader = shd_toGlsl(arena, program->ps.source, 0);
+        if (glslPixelShader) {
+            log_debug(arena, s8("GLSL shader:"));
+            log_debug(arena, glslPixelShader->sourceCode);
+        }
     }
 
     return true;
@@ -1619,12 +2025,12 @@ bx shd_generateShaders(Arena* arena, dxc_Instance* dxcInstance, ShaderFileInfo* 
 i32 main(i32 argc, char* argv[]) {
 
 // enable for debug
-#if 0
+#if 1
     char* debugArgV[] = {
         (char*) "-s",
-        (char*) PROJECT_ROOT "/engine_test/ui_shaders.hlsl",
+        (char*) PROJECT_ROOT "/_examples/sample_texture.hlsl",
         (char*) "-h",
-        (char*) PROJECT_ROOT "/engine_test/ui_shaders.hlsl.h"
+        (char*) PROJECT_ROOT "/_examples/sample_texture.hlsl.h"
     };
     i32 debugArgc = countOf(debugArgV);
 
@@ -1695,13 +2101,6 @@ i32 main(i32 argc, char* argv[]) {
     BaseMemory baseMem = os_getBaseMemory();
     Arena* arena = mem_makeArena(&baseMem, MEGABYTE(20));
 
-    dxc_Dll dll;
-
-    if (!dxc_loadLib(&dll)) {
-        return 1;
-    }
-
-    dxc_Instance* dxcInstance = dxc_create(arena, &dll);
 
     Str8 shaderFileContent = os_fileRead(arena, shaderFilePath);
 
@@ -1715,7 +2114,15 @@ i32 main(i32 argc, char* argv[]) {
         return 1; // error!
     }
 
-    if (!shd_generateShaders(arena, dxcInstance, &fileInfo, &fileInfo.codeInfos.elements[0])) {
+    DxCompiler* dxCompiler = NULL;
+    mem_scoped(mm, arena) {
+        dxCompiler = dxc_create(mm.arena);
+    }
+    ASSERT(dxCompiler);
+
+    u8 foo[] = {'a', 'a', 'a', 'a', '\0'};
+
+    if (!shd_generateShaders(arena, dxCompiler, &fileInfo, &fileInfo.codeInfos.elements[0])) {
         return 1; // error!
     }
 
