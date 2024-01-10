@@ -1314,6 +1314,28 @@ LOCAL uint32_t rx__vertexFormatBytesize(rx_vertexFormat fmt) {
 
 #if RX_VULKAN
 
+
+#define RX__VK_INSTANCE_FUNCS \
+    RX__XMACRO(vkCreateInstance,                 VKAPI_PTR, (const VkInstanceCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkInstance* pInstance)) \
+    RX__XMACRO(vkDestroyInstance,                VKAPI_PTR, (VkInstance instance, const VkAllocationCallbacks* pAllocator))
+
+
+#define RX__XMACRO(name, ret, args) typedef ret (VK_APIENTRY* PFN_ ## name) args;
+RX__VK_INSTANCE_FUNCS
+#undef RX__XMACRO
+
+
+
+typedef struct VkInstanceApi {
+#define RX__XMACRO(name, ret, args) PFN_ ## name name;
+RX__VK_INSTANCE_FUNCS
+#undef RX__XMACRO
+} VkInstanceApi;
+
+typedef struct VkDeviceApi {
+    int toDo;
+} VkDeviceApi;
+
 typedef struct rx_VulkanCtx {
     rx_Ctx base;
     VkInstance instance;
@@ -1326,6 +1348,8 @@ typedef struct rx_VulkanCtx {
         VkResult (VKAPI_PTR* vkCreateDevice)(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDevice* pDevice);
         void     (VKAPI_PTR* vkDestroyDevice)(VkDevice device, const VkAllocationCallbacks* pAllocator);
     } instanceApi;
+    VkInstanceApi instanceApi;
+    VkDeviceApi deviceApi;
 } rx_VulkanCtx;
 
 #endif
