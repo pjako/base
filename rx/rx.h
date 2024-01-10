@@ -62,21 +62,11 @@ typedef union rx_texture {
 #ifdef RX_INTERNAL
     struct {
         u16 idx;
-        u16 gen;
-    };
-#endif
-} rx_texture;
-
-typedef union rx_textureView {
-    u32 id;
-#ifdef RX_INTERNAL
-    struct {
-        u16 idx;
         u32 gen     : 7;
         u32 passIdx : 9;
     };
 #endif
-} rx_textureView;
+} rx_texture;
 
 
 typedef union rx_swapChain {
@@ -823,7 +813,7 @@ API rx_renderPipeline rx_makeRenderPipeline(rx_RenderPipelineDesc* desc);
 
 
 // in the future there may be multiple swap chains so this needs to be called with a specific one
-API rx_textureView rx_getCurrentSwapTextureView(void);
+API rx_texture rx_getCurrentSwapTexture(void);
 
 typedef struct rx_ScissorRect {
     struct { uint16_t x, y; } offset;
@@ -863,7 +853,7 @@ typedef enum rx_storeOp {
 } rx_storeOp;
 
 typedef struct rx_RenderPassColorTargetDesc {
-    rx_textureView view;
+    rx_texture target;
     rx_loadOp loadOp;
     rx_storeOp storeOp;
     Rgba clearColor;
@@ -885,7 +875,7 @@ typedef struct rx_RenderPassDesc {
 } rx_RenderPassDesc;
 
 typedef struct rx_RenderPassResult {
-    rx_textureView colorTargets[RX_MAX_COLOR_TARGETS];
+    rx_texture colorTargets[RX_MAX_COLOR_TARGETS];
 } rx_RenderPassResult;
 
 API rx_renderPass rx_makeRenderPass(rx_RenderPassDesc* renderPassDesc, rx_RenderPassResult* resultTextureViews);

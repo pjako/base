@@ -115,6 +115,7 @@ typedef struct rx_Texture {
         } gl;
 #endif
     };
+    rx_texture ref;
     bx belongsToSwapChain : 1;
     u32 gen : 16;
 } rx_Texture;
@@ -190,7 +191,6 @@ typedef struct rx_ResGroup {
 
 typedef struct rx_SwapChain {
     rx_texture textures[RX_MAX_SWAP_TEXTURES];
-    rx_textureView textureViews[RX_MAX_SWAP_TEXTURES];
     u32 textureCount : 2;
     u32 gen : 16;
 } rx_SwapChain;
@@ -217,7 +217,7 @@ typedef struct rx_IndexQueue {
 // rx_poolInit(ctx->.arena, &ctx->buffers, descWithDefaults.maxBuffers);
 
 typedef struct rx_ColorTarget {
-    rx_textureView view;
+    rx_texture target;
     rx_loadOp loadOp : 2;
     rx_storeOp storeOp : 2;
     Rgba clearColor;
@@ -354,14 +354,33 @@ typedef struct rx_FrameGraph {
 
 } rx_FrameGraph;
 
+typedef struct rx_Features {
+    bx originTopLeft;
+    bx imageClampToBorder;
+    bx mrtIndependentBlendState;
+    bx mrtIndependentWriteMask;
+} rx_Features;
+
+typedef struct rx_Limits {
+    u32 maxImageSize2d;
+    u32 maxImageSizeArray;
+    u32 maxImageSizeCube;
+    u32 maxVertexAttributes;
+    u32 glMaxVertexUniformVectors;
+    u32 maxImageSize3d;
+    u32 glMaxCombinedTextureImageUnits;
+    u32 maxImageArrayLayers;
+} rx_Limits;
+
 typedef struct rx_Ctx {
     rx_api api;
     Arena* arena;
     rx_error error;
     u64 frameIdx;
+    rx_Features features;
+    rx_Limits limits;
     rx__poolDef(rx_Buffer) buffers;
     rx__poolDef(rx_Texture) textures;
-    rx__poolDef(rx_TextureView) textureViews;
     rx__poolDef(rx_Sampler) samplers;
     rx__poolDef(rx_RenderShader) renderShaders;
     rx__poolDef(rx_RenderPipeline) renderPipelines;
@@ -1078,23 +1097,6 @@ LOCAL rx_texture rx__allocTexture(rx_Ctx* ctx) {
 
     return handle;
 }
-LOCAL rx_textureView rx__allocTextureView(rx_Ctx* ctx) {
-    ASSERT(ctx);
-    u32 idx = rx__queuePull(&ctx->textureViews.freeIndicies);
-    ASSERT(idx != RX__INVALID_INDEX && "No free textures views available");
-    if (idx == RX__INVALID_INDEX) {
-        return (rx_textureView) {0};
-    }
-
-    rx_TextureView* textureView = &ctx->textureViews.elements[idx];
-    textureView->gen = maxVal(1, (textureView->gen + 1) % u16_max);
-
-    rx_textureView handle = {0};
-    handle.idx = idx;
-    handle.gen = textureView->gen;
-
-    return handle;
-}
 
 LOCAL rx_swapChain rx__allocSwapChain(rx_Ctx* ctx) {
     ASSERT(ctx);
@@ -1131,16 +1133,6 @@ LOCAL rx_Texture* rx__getTexture(rx_Ctx* ctx, rx_texture textureHandle) {
 
     rx_Texture* texture = &ctx->textures.elements[textureHandle.idx];
     ASSERT(texture->gen == textureHandle.gen);
-    return texture;
-}
-
-LOCAL rx_TextureView* rx__getTextureView(rx_Ctx* ctx, rx_texture textureViewHandle) {
-    ASSERT(ctx);
-    ASSERT(textureViewHandle.id != 0);
-    ASSERT(textureViewHandle.idx < ctx->textureViews.capacity);
-
-    rx_TextureView* texture = &ctx->textureViews.elements[textureViewHandle.idx];
-    ASSERT(texture->gen == textureViewHandle.gen);
     return texture;
 }
 
@@ -1757,22 +1749,55 @@ LOCAL void rx__loadOpenGl(rx_OpenGlCtx* ctx) {
 }
 #endif // RX_USE_WIN32_GL_LOADER
 
-#if 0
-LOCAL rx_renderPipeline rx__makeRenderPipeline(rx_RenderPipelineDesc* desc) {
-
+LOCAL void rx__glInitLimits(rx_OpenGlCtx* ctx) {
+    rx_Limits* limits = &ctx->base.limits;
+    rx__oglCheckErrors();
+    GLint glInt;
+    glGetIntegerv(GL_MAX_TEXTURE_SIZE, &glInt);
+    rx__oglCheckErrors();
+    limits->maxImageSize2d = glInt;
+    limits->maxImageSizeArray = glInt;
+    glGetIntegerv(GL_MAX_CUBE_MAP_TEXTURE_SIZE, &glInt);
+    rx__oglCheckErrors();
+    limits->maxImageSizeCube = glInt;
+    glGetIntegerv(GL_MAX_VERTEX_ATTRIBS, &glInt);
+    rx__oglCheckErrors();
+    if (glInt > RX_MAX_VERTEX_ATTRIBUTES) {
+        glInt = RX_MAX_VERTEX_ATTRIBUTES;
+    }
+    limits->maxVertexAttributes = glInt;
+    glGetIntegerv(GL_MAX_VERTEX_UNIFORM_VECTORS, &glInt);
+    rx__oglCheckErrors();
+    limits->glMaxVertexUniformVectors = glInt;
+    glGetIntegerv(GL_MAX_3D_TEXTURE_SIZE, &glInt);
+    rx__oglCheckErrors();
+    limits->maxImageSize3d = glInt;
+    glGetIntegerv(GL_MAX_ARRAY_TEXTURE_LAYERS, &glInt);
+    rx__oglCheckErrors();
+    limits->maxImageArrayLayers = glInt;
+    if (ctx->extAnisotropic) {
+        glGetIntegerv(GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, &glInt);
+        rx__oglCheckErrors();
+        ctx->maxAnisotropy = glInt;
+    } else {
+        ctx->maxAnisotropy = 1;
+    }
+    glGetIntegerv(GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS, &glInt);
+    rx__oglCheckErrors();
+    limits->glMaxCombinedTextureImageUnits = glInt;
 }
-#endif
 
 
 #if defined(RX_GLCORE33)
-LOCAL void rx__initCapsGlCore33(rx_OpenGlCtx* ctx) {
-    #if 0
-    _sg.backend = SG_BACKEND_GLCORE33;
+LOCAL void rx__glInitCapsGlCore33(rx_OpenGlCtx* ctx) {
+    rx_Features* features = &ctx->base.features;
+    //rx_Limits* limits = &ctx_limits;
+    //_sg.backend = SG_BACKEND_GLCORE33;
 
-    _sg.features.origin_top_left = false;
-    _sg.features.image_clamp_to_border = true;
-    _sg.features.mrt_independent_blend_state = false;
-    _sg.features.mrt_independent_write_mask = true;
+    features->originTopLeft = false;
+    features->imageClampToBorder = true;
+    features->mrtIndependentBlendState = false;
+    features->mrtIndependentWriteMask = true;
 
     // scan extensions
     bool has_s3tc = false;  // BC1..BC3
@@ -1780,39 +1805,42 @@ LOCAL void rx__initCapsGlCore33(rx_OpenGlCtx* ctx) {
     bool has_bptc = false;  // BC6H and BC7
     bool has_pvrtc = false;
     bool has_etc2 = false;
-    GLint num_ext = 0;
-    glGetIntegerv(GL_NUM_EXTENSIONS, &num_ext);
-    for (int i = 0; i < num_ext; i++) {
+    GLint numExt = 0;
+    glGetIntegerv(GL_NUM_EXTENSIONS, &numExt);
+    for (int i = 0; i < numExt; i++) {
         const char* ext = (const char*) glGetStringi(GL_EXTENSIONS, (GLuint)i);
-        if (ext) {
-            if (strstr(ext, "_texture_compression_s3tc")) {
+        Str8 extensionName = str_fromNullTerminatedCharPtr((char*)ext);
+        if (extensionName.size > 0) {
+            if (str_isEqual(extensionName, s8("_texture_compression_s3tc"))) {
                 has_s3tc = true;
-            } else if (strstr(ext, "_texture_compression_rgtc")) {
+            } else if (str_isEqual(extensionName, s8("_texture_compression_rgtc"))) {
                 has_rgtc = true;
-            } else if (strstr(ext, "_texture_compression_bptc")) {
+            } else if (str_isEqual(extensionName, s8("_texture_compression_bptc"))) {
                 has_bptc = true;
-            } else if (strstr(ext, "_texture_compression_pvrtc")) {
+            } else if (str_isEqual(extensionName, s8("_texture_compression_pvrtc"))) {
                 has_pvrtc = true;
-            } else if (strstr(ext, "_ES3_compatibility")) {
+            } else if (str_isEqual(extensionName, s8("_ES3_compatibility"))) {
                 has_etc2 = true;
-            } else if (strstr(ext, "_texture_filter_anisotropic")) {
-                _sg.gl.ext_anisotropic = true;
+            } else if (str_isEqual(extensionName, s8("_texture_filter_anisotropic"))) {
+                ctx->extAnisotropic = true;
             }
         }
     }
 
     // limits
-    _sg_gl_init_limits();
+    rx__glInitLimits(ctx);
 
+#if 0
     // pixel formats
-    const bool has_bgra = false;    // not a bug
-    const bool has_colorbuffer_float = true;
-    const bool has_colorbuffer_half_float = true;
-    const bool has_texture_float_linear = true; // FIXME???
-    const bool has_float_blend = true;
-    _sg_gl_init_pixelformats(has_bgra);
-    _sg_gl_init_pixelformats_float(has_colorbuffer_float, has_texture_float_linear, has_float_blend);
-    _sg_gl_init_pixelformats_half_float(has_colorbuffer_half_float);
+    const bool hasBgra = false;    // not a bug
+    const bool hasColorbufferFloat = true;
+    const bool hasColorbufferHalfFloat = true;
+    const bool hasTextureFloatLinear = true; // FIXME???
+    const bool hasFloatBlend = true;
+    _sg_gl_init_pixelformats(hasBgra);
+    _sg_gl_init_pixelformats_float(hasColorbufferFloat, hasTextureFloatLinear, hasFloatBlend);
+    _sg_gl_init_pixelformats_half_float(hasColorbufferHalfFloat);
+
     if (has_s3tc) {
         _sg_gl_init_pixelformats_s3tc();
     }
@@ -1828,10 +1856,13 @@ LOCAL void rx__initCapsGlCore33(rx_OpenGlCtx* ctx) {
     if (has_etc2) {
         _sg_gl_init_pixelformats_etc2();
     }
-    #endif
+#endif
+}
+#elif defined(SOKOL_GLES3)
+LOCAL void rx__glInitCapsGlES3(rx_OpenGlCtx* ctx) {
+    ASSERT(!"Implement me!");
 }
 #endif
-
 
 LOCAL void rx__setupBackend(rx_Ctx* baseCtx, const rx_SetupDesc* desc) {
     ASSERT(baseCtx);
@@ -1842,19 +1873,18 @@ LOCAL void rx__setupBackend(rx_Ctx* baseCtx, const rx_SetupDesc* desc) {
     // assumes that _sg.gl is already zero-initialized
     //_sg.gl.valid = true;
 
-    #if defined(_SOKOL_USE_WIN32_GL_LOADER)
-    _sg_gl_load_opengl();
+    #if defined(RX_USE_WIN32_GL_LOADER)
+    rx__glLoadOpenGl();
     #endif
 
-
     // clear initial GL error state
-    #if defined(SOKOL_DEBUG)
+    #if defined(RX_DEBUG)
         while (glGetError() != GL_NO_ERROR);
     #endif
     #if defined(RX_GLCORE33)
-        rx__initCapsGlCore33(ctx);
-    #elif defined(SOKOL_GLES3)
-        _sg_gl_init_caps_gles3(ctx);
+        rx__glInitCapsGlCore33(ctx);
+    #elif defined(RX_GLES3)
+        rx__glInitCapsGlES3(ctx);
     #endif
 }
 
@@ -1891,6 +1921,7 @@ LOCAL rx_Ctx* rx__create(Arena* arena, rx_SetupDesc* desc) {
         // enable seamless cubemap sampling (only desktop GL)
         glEnable(GL_TEXTURE_CUBE_MAP_SEAMLESS);
     #endif
+
     return (rx_Ctx*) ctx;
 }
 
@@ -2340,6 +2371,8 @@ LOCAL bx rx__glMakeRenderPipeline(rx_Ctx* baseCtx, rx_RenderPipeline* renderPipe
     renderPipeline->gl.stencilEnabled = desc->depthStencil.stencilEnabled;
     // FIXME: blend color and write mask per draw-buffer-attachment (requires GL4)
 
+    renderPipeline->gl.depthStencilState = desc->depthStencil;
+
     mem_copy(&renderPipeline->gl.colorTargets[0], &desc->colorTargets[0], sizeOf(renderPipeline->gl.colorTargets));
 
     renderPipeline->gl.cullMode = desc->rasterizer.cullMode;
@@ -2468,15 +2501,10 @@ LOCAL bx rx__glCreateSwapChain(rx_Ctx* baseCtx, rx_SwapChain* swapChain) {
     rx_OpenGlCtx* ctx = (rx_OpenGlCtx*) baseCtx;
 
     rx_texture texHandle = rx__allocTexture(baseCtx);
-    rx_Texture* texture = &baseCtx->textures.elements[texHandle.idx];
+    rx_Texture* texture = rx__getTexture(baseCtx, texHandle);
     texture->belongsToSwapChain = true;
 
-    rx_textureView texViewHandle = rx__allocTextureView(baseCtx);
-    rx_TextureView* textureView = &baseCtx->textureViews.elements[texHandle.idx];
-    textureView->textureRef = texHandle;
-
     swapChain->textures[0] = texHandle;
-    swapChain->textureViews[0] = texViewHandle;
 
     swapChain->textureCount = 1;
 
@@ -2488,12 +2516,12 @@ LOCAL bx rx__glCreateSwapChain(rx_Ctx* baseCtx, rx_SwapChain* swapChain) {
     return true;
 }
 
-LOCAL rx_textureView rx__glGetCurrentSwapTextureView(rx_Ctx* baseCtx, rx_SwapChain* swapChain) {
+LOCAL rx_texture rx__glGetCurrentSwapTexture(rx_Ctx* baseCtx, rx_SwapChain* swapChain) {
     ASSERT(baseCtx);
     ASSERT(swapChain);
     // swapchain is external controlled and created for MacOS
     // TODO(PJ): might do something different on other platforms
-    return swapChain->textureViews[0];
+    return swapChain->textures[0];
 }
 
 LOCAL GLenum rx__glStencilOp(rx_stencilOp op) {
@@ -2547,19 +2575,96 @@ typedef struct rx_GlStateCache {
     rx_TargetBlendState blend;
     bx polygonOffsetEnabled : 1;
     u8 colorWriteMask[RX_MAX_COLOR_TARGETS];
-    rx_cullMode cullMode;
-    rx_faceWinding faceWinding;
+    //rx_cullMode cullMode;
+    //rx_faceWinding faceWinding;
+    rx_primitiveTopology primitiveTopology;
     bx alphaToCoverageEnabled : 1;
     rx_renderShader shader;
+    u32 sampleCount;
+    rx__GlVertexAttribute vertexAttributes[RX_MAX_VERTEX_ATTRIBUTES];
 } rx_GlStateCache;
 
 LOCAL void rx__glInitStateCache(rx_OpenGlCtx* ctx, rx_GlStateCache* stateCache) {
-    glDisable(GL_POLYGON_OFFSET_FILL);
-    glDepthFunc(GL_NEVER);
-    glDepthMask(stateCache->depthStencilState.depthWriteEnabled);
-    glDisable(GL_POLYGON_OFFSET_FILL);
+
+    mem_structSetZero(stateCache);
+
+    rx__oglCheckErrors();
+    glBindVertexArray(ctx->vao);
+    rx__oglCheckErrors();
+    mem_structSetZero(stateCache);
+
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+
+    rx__oglCheckErrors();
+    // _sg_gl_cache_clear_texture_sampler_bindings(true);
+    rx__oglCheckErrors();
+
+    for (u32 idx = 0; idx < ctx->base.limits.maxVertexAttributes; idx++) {
+        stateCache->vertexAttributes[idx].vbIndex = -1;
+        glDisableVertexAttribArray(idx);
+    }
+
+    stateCache->primitiveTopology = GL_TRIANGLES;
+
+    // shader program
+    //glGetIntegerv(GL_CURRENT_PROGRAM, (GLint*)&stateCache->prog);
+    rx__oglCheckErrors();
+
+    // depth and stencil state
+    stateCache->depthStencilState.depthCompareFunc = rx_compareFunc_always;
+    stateCache->depthStencilState.stencilFront.compareFunc = rx_compareFunc_always;
+    stateCache->depthStencilState.stencilFront.failOp = rx_stencilOp_keep;
+    stateCache->depthStencilState.stencilFront.depthFailOp = rx_stencilOp_keep;
+    stateCache->depthStencilState.stencilFront.passOp = rx_stencilOp_keep;
+    stateCache->depthStencilState.stencilBack.compareFunc = rx_compareFunc_always;
+    stateCache->depthStencilState.stencilBack.failOp = rx_stencilOp_keep;
+    stateCache->depthStencilState.stencilBack.depthFailOp = rx_stencilOp_keep;
+    stateCache->depthStencilState.stencilBack.passOp = rx_stencilOp_keep;
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_ALWAYS);
+    glDepthMask(GL_FALSE);
     glDisable(GL_STENCIL_TEST);
-    glStencilMask(stateCache->depthStencilState.stencilWriteMask);
+    glStencilFunc(GL_ALWAYS, 0, 0);
+    glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
+    glStencilMask(0);
+    // _sg_stats_add(gl.num_render_state, 7);
+
+    // blend state
+    stateCache->blend.srcFactorRgb = rx_blendFactor_one;
+    stateCache->blend.dstFactorRgb = rx_blendFactor_zero;
+    stateCache->blend.opRgb = rx_blendOp_add;
+    stateCache->blend.srcFactorAlpha = rx_blendFactor_one;
+    stateCache->blend.dstFactorAlpha = rx_blendFactor_zero;
+    stateCache->blend.opAlpha = rx_blendOp_add;
+    glDisable(GL_BLEND);
+    glBlendFuncSeparate(GL_ONE, GL_ZERO, GL_ONE, GL_ZERO);
+    glBlendEquationSeparate(GL_FUNC_ADD, GL_FUNC_ADD);
+    glBlendColor(0.0f, 0.0f, 0.0f, 0.0f);
+    // _sg_stats_add(gl.num_render_state, 4);
+
+    // standalone state
+    for (u32 i = 0; i < RX_MAX_COLOR_TARGETS; i++) {
+        stateCache->colorWriteMask[i] = rx_colorMask_rgba;
+    }
+
+    stateCache->rasterizerState.cullMode = rx_cullMode_none;
+    stateCache->rasterizerState.faceWinding = rx_faceWinding_clockwise;
+    stateCache->sampleCount = 1;
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    glPolygonOffset(0.0f, 0.0f);
+    glDisable(GL_POLYGON_OFFSET_FILL);
+    glDisable(GL_CULL_FACE);
+    glFrontFace(GL_CW);
+    glCullFace(GL_BACK);
+    glEnable(GL_SCISSOR_TEST);
+    glDisable(GL_SAMPLE_ALPHA_TO_COVERAGE);
+    glEnable(GL_DITHER);
+    glDisable(GL_POLYGON_OFFSET_FILL);
+#if defined(SOKOL_GLCORE33)
+    glEnable(GL_MULTISAMPLE);
+    glEnable(GL_PROGRAM_POINT_SIZE);
+#endif
 }
 
 LOCAL void rx__glApplyRenderPipeline(rx_OpenGlCtx* ctx, rx_RenderPipeline* renderPipeline, rx_GlStateCache* stateCache) {
@@ -2724,8 +2829,8 @@ LOCAL void rx__glApplyRenderPipeline(rx_OpenGlCtx* ctx, rx_RenderPipeline* rende
         }
     } // pip->cmn.color_count > 0
 
-    if (renderPipeline->gl.cullMode != stateCache->cullMode) {
-        stateCache->cullMode = renderPipeline->gl.cullMode;
+    if (renderPipeline->gl.cullMode != stateCache->rasterizerState.cullMode) {
+        stateCache->rasterizerState.cullMode = renderPipeline->gl.cullMode;
         if (renderPipeline->gl.cullMode == rx_cullMode_none) {
             glDisable(GL_CULL_FACE);
         } else {
@@ -2734,8 +2839,8 @@ LOCAL void rx__glApplyRenderPipeline(rx_OpenGlCtx* ctx, rx_RenderPipeline* rende
             glCullFace(glMode);
         }
     }
-    if (renderPipeline->gl.faceWinding != stateCache->faceWinding) {
-        stateCache->faceWinding = renderPipeline->gl.faceWinding;
+    if (renderPipeline->gl.faceWinding != stateCache->rasterizerState.faceWinding) {
+        stateCache->rasterizerState.faceWinding = renderPipeline->gl.faceWinding;
         GLenum glWinding = (renderPipeline->gl.faceWinding = rx_faceWinding_clockwise) ? GL_CW : GL_CCW;
         glFrontFace(glWinding);
     }
@@ -2964,15 +3069,65 @@ LOCAL void rx__glExcuteDrawList(rx_OpenGlCtx* ctx, rx_GlStateCache* glStateCache
             ASSERT(indexCount > 0);
             uint32_t vertexOffset = drawList->commands[currentOffset++];
             uint32_t vertexCount  = drawList->commands[currentOffset++];
+            
 
             if (needsToRebindVertexAttributes || vertexOffset != lastVertexOffset) {
                 lastVertexOffset = vertexOffset;
                 // uint32_t vertexBufferCount = 0;
                 // for (; boundVertexBuffers[vertexBufferCount].id != 0 && vertexBufferCount < countOf(boundVertexBuffers); vertexBufferCount++);
-
+                
                 GLintptr vbOffset = vertexOffset * sizeOf(f32);
-                for (u32 attributeIdx = 0, bufferIdx = u32_max; attributeIdx < countOf(renderPipeline->gl.vertexAttributes); attributeIdx++) {
+                for (u32 attributeIdx = 0, bufferIdx = u32_max; attributeIdx < ctx->base.limits.maxVertexAttributes; attributeIdx++) {
                     rx__GlVertexAttribute* attribute = &renderPipeline->gl.vertexAttributes[attributeIdx];
+                    rx__GlVertexAttribute* cachedAttribute = &glStateCache->vertexAttributes[attributeIdx];
+                    if (attribute->vbIndex >= 0) {
+                        GLintptr totalOffset = vertexOffset + attribute->offset;
+                        if (attribute->vbIndex != cachedAttribute->vbIndex
+                            || attribute->divisor    != cachedAttribute->divisor
+                            || attribute->divisor    != cachedAttribute->divisor
+                            || attribute->stride     != cachedAttribute->stride
+                            || attribute->size       != cachedAttribute->size
+                            || attribute->normalized != cachedAttribute->normalized
+                            || attribute->offset     != cachedAttribute->offset
+                            || attribute->type       != cachedAttribute->type
+                        ) {
+
+                            if (u32_cast(attribute->vbIndex) != bufferIdx) {
+                                bufferIdx = attribute->vbIndex;
+                                rx_Buffer* vertBuf = rx__getBuffer(&ctx->base, boundVertexBuffers[bufferIdx]);
+                                glBindBuffer(GL_ARRAY_BUFFER, vertBuf->gl.handle);
+                                rx__oglCheckErrors();
+                            }
+
+                            GLintptr totalOffset = vertexOffset + attribute->offset;
+                            glVertexAttribPointer(attributeIdx, attribute->size, attribute->type, attribute->normalized, attribute->stride, (const GLvoid*) totalOffset);
+
+                            rx__oglCheckErrors();
+                            glVertexAttribDivisor(attributeIdx, (GLuint)attribute->divisor);
+                            rx__oglCheckErrors();
+                            glEnableVertexAttribArray(attributeIdx);
+
+                            if (cachedAttribute->vbIndex == -1) {
+                                glEnableVertexAttribArray(attributeIdx);
+                            }
+                            *cachedAttribute = *attribute;
+                        }
+                    } else {
+                        cachedAttribute->vbIndex = -1;
+                        glDisableVertexAttribArray(attributeIdx);
+                    }
+/*
+typedef struct rx__GlVertexAttribute {
+    i8 vbIndex;        // -1 if attr is not enabled
+    i8 divisor;         // -1 if not initialized
+    i8 stride;
+    i8 size;
+    bx normalized : 1;
+    i32 offset;
+    GLenum type;
+} rx__GlVertexAttribute;
+
+*/
                     if (attribute->vbIndex == -1) {
                         glDisableVertexAttribArray(attributeIdx);
                         continue;
@@ -2987,11 +3142,7 @@ LOCAL void rx__glExcuteDrawList(rx_OpenGlCtx* ctx, rx_GlStateCache* glStateCache
 
                     GLintptr totalOffset = vertexOffset + attribute->offset;
                     glVertexAttribPointer(attributeIdx, attribute->size, attribute->type, attribute->normalized, attribute->stride, (const GLvoid*) totalOffset);
-                    //glVertexAttribPointer(attributeIdx, attribute->size, GL_FLOAT, true, 12, (const GLvoid*)(GLintptr)totalOffset);
-                    // void glVertexAttribPointer(	GLuint index, GLint size, GLenum type, GLboolean normalized, GLsizei stride, const void * pointer);
-                    GLenum error = glGetError();
-                    GLenum eeee = GL_INVALID_VALUE;
-                    ASSERT(error == GL_NO_ERROR);
+
                     rx__oglCheckErrors();
                     glVertexAttribDivisor(attributeIdx, (GLuint)attribute->divisor);
                     rx__oglCheckErrors();
@@ -3194,10 +3345,10 @@ LOCAL void rx__glExcuteGraph(rx_Ctx* baseCtx, rx_FrameGraph* frameGraph) {
 
     // Assume external changes to the gl state so everything needs to set again
     rx_GlStateCache glStateCache = {0};
-    // rx__glInitStateCache(ctx, &glStateCache);
+    rx__glInitStateCache(ctx, &glStateCache);
 
     rx_SwapChain* swapChain = rx__getSwapChain(baseCtx, baseCtx->defaultSwapChain);
-    rx_textureView defaultTextureView = swapChain->textureViews[0];
+    rx_texture defaultTexture = swapChain->textures[0];
     GLuint defaultFrameBuffer = rx__getTexture(baseCtx, swapChain->textures[0])->gl.handle;
 
     glBindVertexArray(ctx->vao);
@@ -3220,7 +3371,7 @@ LOCAL void rx__glExcuteGraph(rx_Ctx* baseCtx, rx_FrameGraph* frameGraph) {
             // execute pass
             for (u32 idx = 0; idx < colorAttachmentCount; idx++) {
                 rx_ColorTarget* colorTarget = &renderPass->colorTargets[idx];
-                if (colorTarget->view.id == defaultTextureView.id) {
+                if (colorTarget->target.id == defaultTexture.id) {
                     // default target
                     isDefaultPass = true;
 
@@ -3306,8 +3457,8 @@ LOCAL void rx__glExcuteGraph(rx_Ctx* baseCtx, rx_FrameGraph* frameGraph) {
             //if (needPipCacheFlush) {
             //    // we messed with the state cache directly, need to clear cached
             //    // pipeline to force re-evaluation in next sg_apply_pipeline()
-            //    _sg.gl.cache.cur_pipeline = 0;
-            //    _sg.gl.cache.cur_pipeline_id.id = SG_INVALID_ID;
+            //    stateCache->cur_pipeline = 0;
+            //    stateCache->cur_pipeline_id.id = SG_INVALID_ID;
             //}
 
             for (int i = 0; i < colorAttachmentCount; i++) {
@@ -3484,7 +3635,6 @@ void rx_setup(rx_SetupDesc* desc) {
     rx__poolInit(ctx->arena, &ctx->buffers, descWithDefaults.maxBuffers);
     rx__poolInit(ctx->arena, &ctx->samplers, descWithDefaults.maxSamplers);
     rx__poolInit(ctx->arena, &ctx->textures, descWithDefaults.maxTextures);
-    rx__poolInit(ctx->arena, &ctx->textureViews, descWithDefaults.maxTextureViews);
     rx__poolInit(ctx->arena, &ctx->renderShaders, descWithDefaults.maxRenderShaders);
     rx__poolInit(ctx->arena, &ctx->renderPipelines, descWithDefaults.maxRenderPipelines);
     rx__poolInit(ctx->arena, &ctx->resGroups, descWithDefaults.maxResGroups);
@@ -3835,17 +3985,17 @@ rx_renderPass rx_makeRenderPass(rx_RenderPassDesc* renderPassDesc, rx_RenderPass
     for (u32 idx = 0; idx < countOf(renderPassDesc->colorTargets); idx++) {
         rx_RenderPassColorTargetDesc* colorTargetDesc = &renderPassDesc->colorTargets[idx];
         rx_ColorTarget* colorTarget = &renderPass->colorTargets[idx];
-        if (colorTargetDesc->view.id == 0) {
-            colorTarget->view.id = 0;
+        if (colorTargetDesc->target.id == 0) {
+            colorTarget->target.id = 0;
             continue;
         }
 
-        if (colorTargetDesc->view.passIdx > 0) {
-            flags64 passIdxFlag = 1 <<(colorTargetDesc->view.passIdx - 1);
+        if (colorTargetDesc->target.passIdx > 0) {
+            flags64 passIdxFlag = 1 <<(colorTargetDesc->target.passIdx - 1);
             readDependencies  |= passIdxFlag;
             writeDependencies |= passIdxFlag;
         }
-        colorTarget->view = colorTargetDesc->view;
+        colorTarget->target = colorTargetDesc->target;
         colorTarget->loadOp = rx__valueOrDefault(colorTargetDesc->loadOp, rx_loadOp_clear);
         colorTarget->storeOp = rx__valueOrDefault(colorTargetDesc->storeOp, rx_storeOp_store);
         colorTarget->clearColor = colorTargetDesc->clearColor;
@@ -3874,14 +4024,14 @@ rx_renderPass rx_makeRenderPass(rx_RenderPassDesc* renderPassDesc, rx_RenderPass
         u32 fromPass = passIdx + 1;
         for (u32 idx = 0; idx < countOf(renderPass->colorTargets); idx++) {
             rx_ColorTarget* colorTarget = &renderPass->colorTargets[idx];
-            if (colorTarget->view.id == 0) {
-                colorTarget->view.id = 0;
+            if (colorTarget->target.id == 0) {
+                colorTarget->target.id = 0;
                 continue;
             }
-            rx_textureView targetView = colorTarget->view;
-            targetView.passIdx = fromPass;
+            rx_texture target = colorTarget->target;
+            target.passIdx = fromPass;
 
-            colorTarget->view = targetView;
+            colorTarget->target = target;
         }
     }
 
@@ -3894,12 +4044,12 @@ rx_renderPass rx_makeRenderPass(rx_RenderPassDesc* renderPassDesc, rx_RenderPass
     return handle;
 }
 
-rx_textureView rx_getCurrentSwapTextureView(void) {
+rx_texture rx_getCurrentSwapTexture(void) {
     ASSERT(rx__ctx);
     rx_Ctx* ctx = rx__ctx;
     rx_SwapChain* swapChain = &ctx->swapChains.elements[ctx->defaultSwapChain.idx];
-    rx_textureView textureView = rx_callBknFn(GetCurrentSwapTextureView, ctx, swapChain);
-    return textureView;
+    rx_texture texture = rx_callBknFn(GetCurrentSwapTexture, ctx, swapChain);
+    return texture;
 }
 void rx_setRenderPassDrawList(rx_renderPass renderPass, rx_DrawArea* arenas, u32 areaCount, rx_DrawList* drawList) {
     ASSERT(rx__ctx);
