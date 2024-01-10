@@ -73,6 +73,72 @@ typedef unsigned int  GLuint;
 #endif
 #endif
 
+#if RX_VULKAN
+#define VK_DEFINE_HANDLE(object) typedef struct object##_T* object
+#ifndef VK_USE_64_BIT_PTR_DEFINES
+    #if defined(__LP64__) || defined(_WIN64) || (defined(__x86_64__) && !defined(__ILP32__) ) || defined(_M_X64) || defined(__ia64) || defined (_M_IA64) || defined(__aarch64__) || defined(__powerpc64__)
+        #define VK_USE_64_BIT_PTR_DEFINES 1
+    #else
+        #define VK_USE_64_BIT_PTR_DEFINES 0
+    #endif
+#endif
+
+#ifndef VK_DEFINE_NON_DISPATCHABLE_HANDLE
+    #if (VK_USE_64_BIT_PTR_DEFINES==1)
+        #if (defined(__cplusplus) && (__cplusplus >= 201103L)) || (defined(_MSVC_LANG) && (_MSVC_LANG >= 201103L))
+            #define VK_NULL_HANDLE nullptr
+        #else
+            #define VK_NULL_HANDLE ((void*)0)
+        #endif
+    #else
+        #define VK_NULL_HANDLE 0ULL
+    #endif
+#endif
+#ifndef VK_NULL_HANDLE
+    #define VK_NULL_HANDLE 0
+#endif
+#ifndef VK_DEFINE_NON_DISPATCHABLE_HANDLE
+    #if (VK_USE_64_BIT_PTR_DEFINES==1)
+        #define VK_DEFINE_NON_DISPATCHABLE_HANDLE(object) typedef struct object##_T *object
+    #else
+        #define VK_DEFINE_NON_DISPATCHABLE_HANDLE(object) typedef uint64_t object
+    #endif
+#endif
+
+typedef uint32_t VkBool32;
+typedef uint64_t VkDeviceAddress;
+typedef uint64_t VkDeviceSize;
+typedef uint32_t VkFlags;
+typedef uint32_t VkSampleMask;
+
+VK_DEFINE_NON_DISPATCHABLE_HANDLE(VkBuffer);
+VK_DEFINE_NON_DISPATCHABLE_HANDLE(VkImage);
+VK_DEFINE_HANDLE(VkInstance);
+VK_DEFINE_HANDLE(VkPhysicalDevice);
+VK_DEFINE_HANDLE(VkDevice);
+VK_DEFINE_HANDLE(VkQueue);
+VK_DEFINE_NON_DISPATCHABLE_HANDLE(VkSemaphore);
+VK_DEFINE_HANDLE(VkCommandBuffer);
+VK_DEFINE_NON_DISPATCHABLE_HANDLE(VkFence);
+VK_DEFINE_NON_DISPATCHABLE_HANDLE(VkDeviceMemory);
+VK_DEFINE_NON_DISPATCHABLE_HANDLE(VkEvent);
+VK_DEFINE_NON_DISPATCHABLE_HANDLE(VkQueryPool);
+VK_DEFINE_NON_DISPATCHABLE_HANDLE(VkBufferView);
+VK_DEFINE_NON_DISPATCHABLE_HANDLE(VkImageView);
+VK_DEFINE_NON_DISPATCHABLE_HANDLE(VkShaderModule);
+VK_DEFINE_NON_DISPATCHABLE_HANDLE(VkPipelineCache);
+VK_DEFINE_NON_DISPATCHABLE_HANDLE(VkPipelineLayout);
+VK_DEFINE_NON_DISPATCHABLE_HANDLE(VkPipeline);
+VK_DEFINE_NON_DISPATCHABLE_HANDLE(VkRenderPass);
+VK_DEFINE_NON_DISPATCHABLE_HANDLE(VkDescriptorSetLayout);
+VK_DEFINE_NON_DISPATCHABLE_HANDLE(VkSampler);
+VK_DEFINE_NON_DISPATCHABLE_HANDLE(VkDescriptorSet);
+VK_DEFINE_NON_DISPATCHABLE_HANDLE(VkDescriptorPool);
+VK_DEFINE_NON_DISPATCHABLE_HANDLE(VkFramebuffer);
+VK_DEFINE_NON_DISPATCHABLE_HANDLE(VkCommandPool);
+
+#endif
+
 typedef struct rx_Shader {
     union {
 #if RX_OGL
@@ -114,6 +180,8 @@ typedef struct rx_Texture {
 #if RX_OGL
         struct {
             GLuint handle;
+            GLuint msaaRenderBuffer;
+            GLenum target;
         } gl;
 #endif
     };
@@ -134,11 +202,24 @@ typedef struct rx_TextureView {
     rx_texture textureRef;
 } rx_TextureView;
 
+#if RX_OGL
+typedef struct rx__glSampler {
+    u8 textResGroupIdx;
+    u8 textResIdx;
+    u8 samplerResGroupIdx;
+    u8 samplerResIdx;
+} rx__glSampler;
+
+#endif
+
 typedef struct rx_RenderShader {
     union {
 #if RX_OGL
         struct {
             GLuint handle;
+            rx__glSampler samplerMapping[24];
+            u8 samperMappingCount;
+            u8 activeResGroups[6];
         } gl;
 #endif
     };
@@ -202,9 +283,16 @@ typedef struct rx_ResGroupRes {
 
 typedef struct rx_ResGroup {
     union {
+        #if RX_OGL
         struct {
             rx_ResGroupRes resources[RX_MAX_RESOURCES_PER_RES_GROUP];
         } gl;
+        #endif
+        #if RX_VULKAN
+        struct {
+            VkDescriptorSet bindGroup;
+        } vk;
+        #endif
     };
     rx_resGroupLayout layout;
     rx_buffer target;
@@ -213,6 +301,7 @@ typedef struct rx_ResGroup {
     rx_resGroupUsage usage : 2;
     u64 lastUpdateFrameIdx;
     flags64 passDepFlags;
+    flags64 writtenInPassesFlags;
     u32 gen : 16;
 } rx_ResGroup;
 
@@ -231,14 +320,6 @@ typedef struct rx_SwapChain {
     u32 textureCount : 2;
     u32 gen : 16;
 } rx_SwapChain;
-
-typedef enum rx_api {
-    rx_api_default = 0,
-    rx_api_ogl,
-    rx_api_vk,
-    rx_api_mtl,
-    rx_api_dx12,
-} rx_api;
 
 typedef struct rx_IndexQueue {
     u64 out;
@@ -412,8 +493,17 @@ typedef struct rx_Limits {
     u32 uniformBufferAlignment;
 } rx_Limits;
 
+typedef struct rx_TextureSupport {
+    bool sample: 1;        // pixel format can be sampled in shaders at least with nearest filtering
+    bool filter: 1;        // pixel format can be sampled with linear filtering
+    bool render: 1;        // pixel format can be used as render target
+    bool blend:  1;         // alpha-blending is supported
+    bool msaa:   1;          // pixel format can be used as MSAA render target
+    bool depth:  1;         // pixel format is a depth format
+} rx_TextureSupport;
+
 typedef struct rx_Ctx {
-    rx_api api;
+    rx_backend backend;
     Arena* arena;
     rx_error error;
     u64 frameIdx;
@@ -430,10 +520,13 @@ typedef struct rx_Ctx {
 
 
     rx_swapChain defaultSwapChain;
+    rx_resGroupLayout  defaultResGroupDynamicOffsetBuffers;
     
     
     rx_arrDef(rx_Pass) passes;
     rx_FrameGraph frameGraph;
+
+    rx_TextureSupport textureSupport[rx_textureFormat__count];
     
     //rx__poolDef(rx_Texture) textures;
 } rx_Ctx;
@@ -443,6 +536,145 @@ typedef struct rx_Ctx {
 
 // Shared code
 
+// Texture Info
+
+
+typedef enum rx_Aspect {
+    rx_aspect_none = 0x0,
+    rx_aspect_color = 0x1,
+    rx_aspect_depth = 0x2,
+    rx_aspect_stencil = 0x4,
+    // Aspects used to select individual planes in a multi-planar format.
+    rx_aspect_plane0 = 0x8,
+    rx_aspect_plane1 = 0x10,
+    // An aspect for that represents the combination of both the depth and stencil aspects. It
+    // can be ignored outside of the Vulkan backend.
+    rx_aspect_combinedDepthStencil = 0x20,
+    rx_aspect__count,
+    rx_aspect__forceU32 = RX_U32_MAX
+} rx_Aspect;
+typedef flags32 rx_AspectFlags;
+
+typedef struct rx_TexelInfo {
+    uint32_t byteSize;
+    uint32_t width;
+    uint32_t height;
+} rx_TexelInfo;
+
+typedef enum rx_ComponentTypeBit {
+    rx_componentTypeBit_none            = 0,
+    rx_componentTypeBit_float           = 1,
+    rx_componentTypeBit_sint            = 2,
+    rx_componentTypeBit_uint            = 4,
+    rx_componentTypeBit_depthComparison = 8,
+} rx_ComponentTypeBit;
+
+typedef enum rx_TextureComponentType {
+    rx_textureComponentType__invalid        = 0,
+    rx_textureComponentType_float           = rx_componentTypeBit_float,
+    rx_textureComponentType_sint            = rx_componentTypeBit_sint,
+    rx_textureComponentType_uint            = rx_componentTypeBit_uint,
+    rx_textureComponentType_depthComparison = rx_componentTypeBit_depthComparison,
+    rx_textureComponentType__forceU32 = RX_U32_MAX
+} rx_TextureComponentType;
+
+typedef struct rx_AspectInfo {
+    rx_TexelInfo block;
+    rx_TextureComponentType baseType;
+    rx_ComponentTypeBit supportedComponentTypes;
+    rx_textureFormat format;
+} rx_AspectInfo;
+
+typedef enum rx_textureFormatProperty {
+    rx_textureFormatProperty_none = 0,
+    rx_textureFormatProperty_renderable = 1,
+    rx_textureFormatProperty_compressable = 2,
+    // A format can be known but not supported because it is part of a disabled extension.
+    rx_textureFormatProperty_supported = 4,
+    rx_textureFormatProperty_storage = 8,
+    rx_textureFormatProperty_color = 16,
+    rx_textureFormatProperty_depth = 32,
+    rx_textureFormatProperty_stencil = 64,
+    rx_textureFormatProperty_depthOrStencil = rx_textureFormatProperty_depth | rx_textureFormatProperty_stencil,
+} rx_textureFormatProperty;
+typedef flags32 rx_textureFormatPropertyFlags;
+
+typedef struct rx_TextureFormatInfo {
+    rx_textureFormat format;
+    rx_textureFormatPropertyFlags flags;
+    rx_AspectFlags aspects;
+    rx_AspectInfo aspectInfos[2];
+} rx_TextureFormatInfo;
+
+#define RX_COLOR_FORMAT(FORMAT, FLAGS, BYTESIZE, COMPTYPE) {FORMAT, rx_textureFormatProperty_supported | rx_textureFormatProperty_color | FLAGS, rx_aspect_color, {{{BYTESIZE, 1, 1}, COMPTYPE, (rx_ComponentTypeBit) COMPTYPE}}}
+#define RX_DEPTH_FORMAT(FORMAT, BYTESIZE) {FORMAT, rx_textureFormatProperty_renderable | rx_textureFormatProperty_supported | rx_textureFormatProperty_depth, rx_aspect_depth, {{{BYTESIZE, 1, 1}, rx_textureComponentType_float, rx_componentTypeBit_float | rx_componentTypeBit_depthComparison}}}
+
+static const rx_TextureFormatInfo rx_textureFormatInfos[rx_textureFormat__count] = {
+    {rx_textureFormat__invalid},
+    // 1 byte color formats
+    RX_COLOR_FORMAT(rx_textureFormat_r8unorm, rx_textureFormatProperty_renderable, 1, rx_textureComponentType_float),
+    RX_COLOR_FORMAT(rx_textureFormat_r8snorm, 0,                                   1, rx_textureComponentType_float),
+    RX_COLOR_FORMAT(rx_textureFormat_r8uint,  rx_textureFormatProperty_renderable, 1, rx_textureComponentType_uint),
+    RX_COLOR_FORMAT(rx_textureFormat_r8sint,  rx_textureFormatProperty_renderable, 1, rx_textureComponentType_sint),
+    // 2 bytes color formats
+    RX_COLOR_FORMAT(rx_textureFormat_r16uint,  rx_textureFormatProperty_renderable, 2, rx_textureComponentType_uint),
+    RX_COLOR_FORMAT(rx_textureFormat_r16sint,  rx_textureFormatProperty_renderable, 2, rx_textureComponentType_sint),
+    RX_COLOR_FORMAT(rx_textureFormat_r16float, rx_textureFormatProperty_renderable, 2, rx_textureComponentType_float),
+    RX_COLOR_FORMAT(rx_textureFormat_rg8unorm, rx_textureFormatProperty_renderable, 2, rx_textureComponentType_float),
+    RX_COLOR_FORMAT(rx_textureFormat_rg8snorm, 0,                                   2, rx_textureComponentType_float),
+    RX_COLOR_FORMAT(rx_textureFormat_rg8uint,  rx_textureFormatProperty_renderable, 2, rx_textureComponentType_uint),
+    RX_COLOR_FORMAT(rx_textureFormat_rg8sint,  rx_textureFormatProperty_renderable, 2, rx_textureComponentType_sint),
+    // 4 bytes color formats
+    RX_COLOR_FORMAT(rx_textureFormat_r32uint,        rx_textureFormatProperty_renderable | rx_textureFormatProperty_storage, 4, rx_textureComponentType_uint),
+    RX_COLOR_FORMAT(rx_textureFormat_r32sint,        rx_textureFormatProperty_renderable | rx_textureFormatProperty_storage, 4, rx_textureComponentType_sint),
+    RX_COLOR_FORMAT(rx_textureFormat_r32float,       rx_textureFormatProperty_renderable | rx_textureFormatProperty_storage, 4, rx_textureComponentType_float),
+    RX_COLOR_FORMAT(rx_textureFormat_rg16uint,       rx_textureFormatProperty_renderable, 4, rx_textureComponentType_uint),
+    RX_COLOR_FORMAT(rx_textureFormat_rg16sint,       rx_textureFormatProperty_renderable, 4, rx_textureComponentType_sint),
+    RX_COLOR_FORMAT(rx_textureFormat_rg16float,      rx_textureFormatProperty_renderable, 4, rx_textureComponentType_float),
+    RX_COLOR_FORMAT(rx_textureFormat_rgba8unorm,     rx_textureFormatProperty_renderable | rx_textureFormatProperty_storage, 4, rx_textureComponentType_float),
+    RX_COLOR_FORMAT(rx_textureFormat_rgba8unormSrgb, rx_textureFormatProperty_renderable, 4, rx_textureComponentType_float),
+    RX_COLOR_FORMAT(rx_textureFormat_rgba8snorm,     rx_textureFormatProperty_storage   , 4, rx_textureComponentType_float),
+    RX_COLOR_FORMAT(rx_textureFormat_rgba8uint,      rx_textureFormatProperty_renderable | rx_textureFormatProperty_storage, 4, rx_textureComponentType_uint),
+    RX_COLOR_FORMAT(rx_textureFormat_rgba8sint,      rx_textureFormatProperty_renderable | rx_textureFormatProperty_storage, 4, rx_textureComponentType_sint),
+
+    RX_COLOR_FORMAT(rx_textureFormat_bgra8unorm, rx_textureFormatProperty_renderable, 4, rx_textureComponentType_float),
+    {rx_textureFormat_bgra8unormSrgb},
+    {rx_textureFormat_rgb9e5ufloat},
+    RX_COLOR_FORMAT(rx_textureFormat_rgb10a2unorm, rx_textureFormatProperty_renderable, 4, rx_textureComponentType_float),
+    RX_COLOR_FORMAT(rx_textureFormat_rg11b10ufloat, 0, 4, rx_textureComponentType_float),
+    // 8 bytes color formats
+    RX_COLOR_FORMAT(rx_textureFormat_rg32uint, rx_textureFormatProperty_renderable | rx_textureFormatProperty_storage, 8, rx_textureComponentType_uint),
+    RX_COLOR_FORMAT(rx_textureFormat_rg32sint, rx_textureFormatProperty_renderable | rx_textureFormatProperty_storage, 8, rx_textureComponentType_sint),
+    RX_COLOR_FORMAT(rx_textureFormat_rg32float, rx_textureFormatProperty_renderable | rx_textureFormatProperty_storage, 8, rx_textureComponentType_float),
+    RX_COLOR_FORMAT(rx_textureFormat_rgba16uint, rx_textureFormatProperty_renderable | rx_textureFormatProperty_storage, 8, rx_textureComponentType_uint),
+    RX_COLOR_FORMAT(rx_textureFormat_rgba16sint, rx_textureFormatProperty_renderable | rx_textureFormatProperty_storage, 8, rx_textureComponentType_sint),
+    RX_COLOR_FORMAT(rx_textureFormat_rgba16float, rx_textureFormatProperty_renderable | rx_textureFormatProperty_storage, 8, rx_textureComponentType_float),
+    // 16 bytes color formats
+    RX_COLOR_FORMAT(rx_textureFormat_rgba32uint, rx_textureFormatProperty_renderable | rx_textureFormatProperty_storage, 16, rx_textureComponentType_uint),
+    RX_COLOR_FORMAT(rx_textureFormat_rgba32sint, rx_textureFormatProperty_renderable | rx_textureFormatProperty_storage, 16, rx_textureComponentType_sint),
+    RX_COLOR_FORMAT(rx_textureFormat_rgba32float, rx_textureFormatProperty_renderable | rx_textureFormatProperty_storage, 16, rx_textureComponentType_float),
+    // Depth-stencil formats
+    {rx_textureFormat_depth16unorm},
+    RX_DEPTH_FORMAT(rx_textureFormat_depth24plus, 4),
+    {rx_textureFormat_depth24plusStencil8},
+    RX_DEPTH_FORMAT(rx_textureFormat_depth32float, 4),
+    {rx_textureFormat_bc1RgbaUnorm},
+    {rx_textureFormat_bc1RgbaUnormSrgb},
+    {rx_textureFormat_bc2RgbaUnorm},
+    {rx_textureFormat_bc2RgbaUnormSrgb},
+    {rx_textureFormat_bc3RgbaUnorm},
+    {rx_textureFormat_bc3RgbaUnormSrgb},
+    {rx_textureFormat_bc4RUnorm},
+    {rx_textureFormat_bc4RSnorm},
+    {rx_textureFormat_bc5RgUnorm},
+    {rx_textureFormat_bc5RgSnorm},
+    {rx_textureFormat_bc6hRgbuFloat},
+    {rx_textureFormat_bc6hRgbFloat},
+    {rx_textureFormat_bc7RgbaUnorm},
+    {rx_textureFormat_bc7RgbaUnormSrgb},
+    {rx_textureFormat_depth24unormStencil8},
+    {rx_textureFormat_depth32floatStencil8},
+};
 
 // IndexQueu implementation
 
@@ -1272,6 +1504,257 @@ LOCAL rx_ResGroupLayout* rx__getResGroupLayout(rx_Ctx* ctx, rx_resGroupLayout re
     return resGroup;
 }
 
+LOCAL bx rx_isCompressedTexture(rx_textureFormat fmt) {
+    switch (fmt) {
+        case rx_textureFormat_bc1RgbaUnorm:
+        case rx_textureFormat_bc1RgbaUnormSrgb:
+        case rx_textureFormat_bc2RgbaUnorm:
+        case rx_textureFormat_bc2RgbaUnormSrgb:
+        case rx_textureFormat_bc3RgbaUnorm:
+        case rx_textureFormat_bc3RgbaUnormSrgb:
+        case rx_textureFormat_bc4RUnorm:
+        case rx_textureFormat_bc4RSnorm:
+        case rx_textureFormat_bc5RgUnorm:
+        case rx_textureFormat_bc5RgSnorm:
+        case rx_textureFormat_bc6hRgbuFloat:
+        case rx_textureFormat_bc6hRgbFloat:
+        case rx_textureFormat_bc7RgbaUnorm:
+        case rx_textureFormat_bc7RgbaUnormSrgb:
+            return true;
+        default: return false;
+    }
+}
+
+LOCAL int rx_mipLevelDim(int baseDim, int mipLevel) {
+    int result = baseDim >> mipLevel;
+    return maxVal(result, 1);
+}
+
+
+LOCAL void rx_textureFormatAll(rx_TextureSupport* pfi) {
+    pfi->sample = true;
+    pfi->filter = true;
+    pfi->blend = true;
+    pfi->render = true;
+    pfi->msaa = true;
+}
+
+LOCAL void rx_textureFormatS(rx_TextureSupport* pfi) {
+    pfi->sample = true;
+}
+
+LOCAL void rx_textureFormatSf(rx_TextureSupport* pfi) {
+    pfi->sample = true;
+    pfi->filter = true;
+}
+
+LOCAL void rx_textureFormatSr(rx_TextureSupport* pfi) {
+    pfi->sample = true;
+    pfi->render = true;
+}
+
+LOCAL void rx_textureFormatSrmd(rx_TextureSupport* pfi) {
+    pfi->sample = true;
+    pfi->render = true;
+    pfi->msaa = true;
+    pfi->depth = true;
+}
+
+LOCAL void rx_textureFormatSrm(rx_TextureSupport* pfi) {
+    pfi->sample = true;
+    pfi->render = true;
+    pfi->msaa = true;
+}
+
+LOCAL void rx_textureFormatSfrm(rx_TextureSupport* pfi) {
+    pfi->sample = true;
+    pfi->filter = true;
+    pfi->render = true;
+    pfi->msaa = true;
+}
+LOCAL void rx_textureFormatSbrm(rx_TextureSupport* pfi) {
+    pfi->sample = true;
+    pfi->blend = true;
+    pfi->render = true;
+    pfi->msaa = true;
+}
+
+LOCAL void rx_textureFormatSbr(rx_TextureSupport* pfi) {
+    pfi->sample = true;
+    pfi->blend = true;
+    pfi->render = true;
+}
+
+LOCAL void rx_textureFormatSfbr(rx_TextureSupport* pfi) {
+    pfi->sample = true;
+    pfi->filter = true;
+    pfi->blend = true;
+    pfi->render = true;
+}
+
+// see: https://www.khronos.org/registry/OpenGL-Refpages/es3.0/html/glTexImage2D.xhtml
+LOCAL void rx_initTextureFormats(rx_Ctx* ctx, bool hasBgra) {
+
+    // 8-bit formats
+    rx_textureFormatAll(&ctx->textureSupport[rx_textureFormat_r8unorm]);
+    rx_textureFormatSf(&ctx->textureSupport[rx_textureFormat_r8snorm]);
+    rx_textureFormatSrm(&ctx->textureSupport[rx_textureFormat_r8uint]);
+    rx_textureFormatSrm(&ctx->textureSupport[rx_textureFormat_r8sint]);
+
+    // 16-bit formats
+    if (ctx->backend != rx_backend_gles3) {
+        //rx_textureFormatAll(&ctx->textureSupport[rx_textureFormat_r16]); ??
+        //rx_textureFormatAll(&ctx->textureSupport[rx_textureFormat_r16snorm]);
+    }
+    rx_textureFormatSrm(&ctx->textureSupport[rx_textureFormat_r16uint]);
+    rx_textureFormatSrm(&ctx->textureSupport[rx_textureFormat_r16sint]);
+
+    rx_textureFormatAll(&ctx->textureSupport[rx_textureFormat_rg8unorm]);
+    rx_textureFormatSf(&ctx->textureSupport[rx_textureFormat_rg8snorm]);
+    rx_textureFormatSrm(&ctx->textureSupport[rx_textureFormat_rg8uint]);
+    rx_textureFormatSrm(&ctx->textureSupport[rx_textureFormat_rg8sint]);
+
+    // 32-bit formats
+    rx_textureFormatSr(&ctx->textureSupport[rx_textureFormat_r32uint]);
+    rx_textureFormatSr(&ctx->textureSupport[rx_textureFormat_r32sint]);
+    if (ctx->backend != rx_backend_gles3) {
+        //rx_textureFormatAll(&ctx->textureSupport[rx_textureFormat_rg16unorm]);
+        //rx_textureFormatAll(&ctx->textureSupport[rx_textureFormat_rg16snorm]);
+    }
+    rx_textureFormatSrm(&ctx->textureSupport[rx_textureFormat_rg16uint]);
+    rx_textureFormatSrm(&ctx->textureSupport[rx_textureFormat_rg16sint]);
+    rx_textureFormatAll(&ctx->textureSupport[rx_textureFormat_rgba8unorm]);
+    // rx_textureFormat_rgba8unorm?
+    rx_textureFormatAll(&ctx->textureSupport[rx_textureFormat_rgba8unormSrgb]);
+    rx_textureFormatSf(&ctx->textureSupport[rx_textureFormat_rgba8snorm]);
+    rx_textureFormatSrm(&ctx->textureSupport[rx_textureFormat_rgba8uint]);
+    rx_textureFormatSrm(&ctx->textureSupport[rx_textureFormat_rgba8sint]);
+    if (hasBgra) {
+        rx_textureFormatAll(&ctx->textureSupport[rx_textureFormat_bgra8unorm]);
+        rx_textureFormatAll(&ctx->textureSupport[rx_textureFormat_bgra8unormSrgb]);
+        // rx_textureFormat_bgra8unormSrgb ?
+    }
+
+    // Packed 32-bit formats
+    rx_textureFormatAll(&ctx->textureSupport[rx_textureFormat_rgb10a2unorm]);
+    //rx_textureFormatSf(&ctx->textureSupport[SG_PIXELFORMAT_RG11B10F]);
+    //rx_textureFormatSf(&ctx->textureSupport[SG_PIXELFORMAT_RGB9E5]);
+    //rx_textureFormatSrm(&ctx->textureSupport[SG_PIXELFORMAT_RG32UI]);
+    //rx_textureFormatSrm(&ctx->textureSupport[SG_PIXELFORMAT_RG32SI]);
+
+    // 64-bit formats
+
+    if (ctx->backend != rx_backend_gles3) {
+        rx_textureFormatAll(&ctx->textureSupport[rx_textureFormat_rgba16uint]);
+        rx_textureFormatAll(&ctx->textureSupport[rx_textureFormat_rgba16sint]);
+    }
+    rx_textureFormatSrm(&ctx->textureSupport[rx_textureFormat_rgba16uint]);
+    rx_textureFormatSrm(&ctx->textureSupport[rx_textureFormat_rgba16sint]);
+
+    // 128-bit formats
+    rx_textureFormatSrm(&ctx->textureSupport[rx_textureFormat_rgba32uint]);
+    rx_textureFormatSrm(&ctx->textureSupport[rx_textureFormat_rgba32sint]);
+
+    // Depth  & Stencil
+    rx_textureFormatSrmd(&ctx->textureSupport[rx_textureFormat_depth16unorm]);
+    rx_textureFormatSrmd(&ctx->textureSupport[rx_textureFormat_depth32float]);
+    rx_textureFormatSrmd(&ctx->textureSupport[rx_textureFormat_depth24plus]);
+    rx_textureFormatSrmd(&ctx->textureSupport[rx_textureFormat_depth24plusStencil8]);
+
+    rx_textureFormatSrmd(&ctx->textureSupport[rx_textureFormat_swapChain]);
+
+    // "depth24unorm-stencil8" feature
+    // rx_textureFormat_depth24unormStencil8
+    // "depth32float-stencil8" feature
+    // rx_textureFormat_depth32floatStencil8
+}
+
+// FIXME: OES_half_float_blend
+LOCAL void rx_initTextureFormatsHalfFloat(rx_Ctx* ctx, bool hasColorBufferHalfFloat) {
+    if (hasColorBufferHalfFloat) {
+        rx_textureFormatAll(&ctx->textureSupport[rx_textureFormat_r16float]);
+        rx_textureFormatAll(&ctx->textureSupport[rx_textureFormat_rg16float]);
+        rx_textureFormatAll(&ctx->textureSupport[rx_textureFormat_rgba16float]);
+    } else {
+        rx_textureFormatSf(&ctx->textureSupport[rx_textureFormat_r16float]);
+        rx_textureFormatSf(&ctx->textureSupport[rx_textureFormat_rg16float]);
+        rx_textureFormatSf(&ctx->textureSupport[rx_textureFormat_rgba16float]);
+    }
+}
+
+LOCAL void rx_initTextureFormatsFloat(rx_Ctx* ctx, bool hasColorBufferFloat, bool hasTextureFloatLinear, bool hasFloatBlend) {
+    if (hasTextureFloatLinear) {
+        if (hasColorBufferFloat) {
+            if (hasFloatBlend) {
+                rx_textureFormatAll(&ctx->textureSupport[rx_textureFormat_r32float]);
+                rx_textureFormatAll(&ctx->textureSupport[rx_textureFormat_rg32float]);
+                rx_textureFormatAll(&ctx->textureSupport[rx_textureFormat_rgba32float]);
+            } else {
+                rx_textureFormatSfrm(&ctx->textureSupport[rx_textureFormat_r32float]);
+                rx_textureFormatSfrm(&ctx->textureSupport[rx_textureFormat_rg32float]);
+                rx_textureFormatSfrm(&ctx->textureSupport[rx_textureFormat_rgba32float]);
+            }
+        } else {
+            rx_textureFormatSf(&ctx->textureSupport[rx_textureFormat_r32float]);
+            rx_textureFormatSf(&ctx->textureSupport[rx_textureFormat_rg32float]);
+            rx_textureFormatSf(&ctx->textureSupport[rx_textureFormat_rgba32float]);
+        }
+    } else {
+        if (hasColorBufferFloat) {
+            rx_textureFormatSbrm(&ctx->textureSupport[rx_textureFormat_r32float]);
+            rx_textureFormatSbrm(&ctx->textureSupport[rx_textureFormat_rg32float]);
+            rx_textureFormatSbrm(&ctx->textureSupport[rx_textureFormat_rgba32float]);
+        } else {
+            rx_textureFormatS(&ctx->textureSupport[rx_textureFormat_r32float]);
+            rx_textureFormatS(&ctx->textureSupport[rx_textureFormat_rg32float]);
+            rx_textureFormatS(&ctx->textureSupport[rx_textureFormat_rgba32float]);
+        }
+    }
+}
+
+LOCAL void rx_initTextureFormatsS3tc(rx_Ctx* ctx) {
+    rx_textureFormatSf(&ctx->textureSupport[rx_textureFormat_bc1RgbaUnorm]);
+    rx_textureFormatSf(&ctx->textureSupport[rx_textureFormat_bc2RgbaUnorm]);
+    rx_textureFormatSf(&ctx->textureSupport[rx_textureFormat_bc3RgbaUnorm]);
+    // rx_textureFormat_bc1RgbaUnormSrgb
+    // rx_textureFormat_bc2RgbaUnormSrgb
+    // rx_textureFormat_bc3RgbaUnormSrgb
+}
+
+LOCAL void rx_initTextureFormatsRgtc(rx_Ctx* ctx) {
+    rx_textureFormatSf(&ctx->textureSupport[rx_textureFormat_bc4RUnorm]);
+    rx_textureFormatSf(&ctx->textureSupport[rx_textureFormat_bc4RUnorm]);
+    rx_textureFormatSf(&ctx->textureSupport[rx_textureFormat_bc5RgUnorm]);
+    rx_textureFormatSf(&ctx->textureSupport[rx_textureFormat_bc5RgSnorm]);
+}
+
+LOCAL void rx_initTextureFormatsBptc(rx_Ctx* ctx) {
+    rx_textureFormatSf(&ctx->textureSupport[rx_textureFormat_bc6hRgbuFloat]);
+    rx_textureFormatSf(&ctx->textureSupport[rx_textureFormat_bc6hRgbFloat]);
+    rx_textureFormatSf(&ctx->textureSupport[rx_textureFormat_bc7RgbaUnorm]);
+    // rx_textureFormat_bc7RgbaUnormSrgb
+}
+
+LOCAL void rx_initTextureFormatsPvrtc(rx_Ctx* ctx) {
+    // rx_textureFormatSf(&ctx->textureSupport[SG_PIXELFORMAT_PVRTC_RGB_2BPP]);
+    // rx_textureFormatSf(&ctx->textureSupport[SG_PIXELFORMAT_PVRTC_RGB_4BPP]);
+    // rx_textureFormatSf(&ctx->textureSupport[SG_PIXELFORMAT_PVRTC_RGBA_2BPP]);
+    // rx_textureFormatSf(&ctx->textureSupport[SG_PIXELFORMAT_PVRTC_RGBA_4BPP]);
+}
+
+LOCAL void rx_initTextureFormatsEtc2(rx_Ctx* ctx) {
+    // rx_textureFormatSf(&ctx->textureSupport[SG_PIXELFORMAT_ETC2_RGB8]);
+    // rx_textureFormatSf(&ctx->textureSupport[SG_PIXELFORMAT_ETC2_RGB8A1]);
+    // rx_textureFormatSf(&ctx->textureSupport[SG_PIXELFORMAT_ETC2_RGBA8]);
+    // rx_textureFormatSf(&ctx->textureSupport[SG_PIXELFORMAT_ETC2_RG11]);
+    // rx_textureFormatSf(&ctx->textureSupport[SG_PIXELFORMAT_ETC2_RG11SN]);
+}
+
+LOCAL bool rx_supportedTextureFormat(rx_Ctx* ctx, rx_textureFormat fmt) {
+    const int fmtIndex = (int) fmt;
+    ASSERT((fmtIndex > rx_textureFormat__invalid) && (fmtIndex < rx_textureFormat__count));
+    return ctx->textureSupport[fmtIndex].sample;
+}
 
 LOCAL uint32_t rx__vertexFormatBytesize(rx_vertexFormat fmt) {
     switch (fmt) {
@@ -1824,6 +2307,12 @@ _SOKOL_PRIVATE void _sg_gl_unload_opengl(void) {
 #define RXGLLayer CAEAGLLayer
 #endif
 
+typedef struct rx_GlCachedTextureSamplerBindSlot {
+    GLenum target;
+    GLuint texture;
+    GLuint sampler;
+} rx_GlCachedTextureSamplerBindSlot;
+
 typedef struct rx_OpenGlCtx {
     rx_Ctx base;
 #if defined(RX_USE_WIN32_GL_LOADER)
@@ -1843,6 +2332,9 @@ typedef struct rx_OpenGlCtx {
         GLuint storedVertexBuffer;
         GLuint storedIndexBuffer;
         GLuint storedUniformBuffer;
+        GLenum currentActiveTexture;
+        rx_GlCachedTextureSamplerBindSlot storedTextureSampler;
+        rx_GlCachedTextureSamplerBindSlot textureSamplers[RX_COUNT_SHADER_STAGES *  RX_MAX_SHADERSTAGE_TEXTURE_SAMPLER_PAIRS];
     } cache;
 
     struct {
@@ -1927,47 +2419,127 @@ LOCAL void rx__glInitLimits(rx_OpenGlCtx* ctx) {
 }
 
 
-#if defined(RX_GLCORE33)
-LOCAL void rx__glInitCapsGlCore33(rx_OpenGlCtx* ctx) {
+LOCAL void rx__glInitCaps(rx_OpenGlCtx* ctx) {
     rx_Features* features = &ctx->base.features;
     //rx_Limits* limits = &ctx_limits;
     //_sg.backend = SG_BACKEND_GLCORE33;
 
-    features->originTopLeft = false;
-    features->imageClampToBorder = true;
-    features->mrtIndependentBlendState = false;
-    features->mrtIndependentWriteMask = true;
+    switch (ctx->base.backend) {
+        case rx_backend_gles3: {
+            features->originTopLeft = false;
+            features->imageClampToBorder = false;
+            features->mrtIndependentBlendState = false;
+            features->mrtIndependentWriteMask = false;
+        } break;
+        case rx_backend_gl400: {
+            features->originTopLeft = false;
+            features->imageClampToBorder = true;
+            features->mrtIndependentBlendState = false;
+            features->mrtIndependentWriteMask = true;
+        } break;
+        default: ASSERT(!"Unimplemented backend");
+    }
 
     // scan extensions
-    bool has_s3tc = false;  // BC1..BC3
-    bool has_rgtc = false;  // BC4 and BC5
-    bool has_bptc = false;  // BC6H and BC7
-    bool has_pvrtc = false;
-    bool has_etc2 = false;
+    bool hasS3tc  = false;  // BC1..BC3
+    bool hasRgtc  = false;  // BC4 and BC5
+    bool hasBptc  = false;  // BC6H and BC7
+    bool hasPvrtc = false;
+    bool hasEtc2  = true;
+    #if defined(__EMSCRIPTEN__)
+    hasEtc2 = false;
+    #endif
+
+    const bool hasBgra = false;  
+    // es 3
+    bool hasColorBufferFloat      = ctx->base.backend == rx_backend_gles3 ? false : true;
+    bool hasColorBufferHalfFloat = ctx->base.backend == rx_backend_gles3 ? false : true;
+    bool hasTextureFloatLinear   = ctx->base.backend == rx_backend_gles3 ? false : true;
+    bool hasFloatBlend            = ctx->base.backend == rx_backend_gles3 ? false : true;
+
+
     GLint numExt = 0;
     glGetIntegerv(GL_NUM_EXTENSIONS, &numExt);
-    for (int i = 0; i < numExt; i++) {
-        const char* ext = (const char*) glGetStringi(GL_EXTENSIONS, (GLuint)i);
-        Str8 extensionName = str_fromNullTerminatedCharPtr((char*)ext);
-        if (extensionName.size > 0) {
-            if (str_isEqual(extensionName, s8("_texture_compression_s3tc"))) {
-                has_s3tc = true;
-            } else if (str_isEqual(extensionName, s8("_texture_compression_rgtc"))) {
-                has_rgtc = true;
-            } else if (str_isEqual(extensionName, s8("_texture_compression_bptc"))) {
-                has_bptc = true;
-            } else if (str_isEqual(extensionName, s8("_texture_compression_pvrtc"))) {
-                has_pvrtc = true;
-            } else if (str_isEqual(extensionName, s8("_ES3_compatibility"))) {
-                has_etc2 = true;
-            } else if (str_isEqual(extensionName, s8("_texture_filter_anisotropic"))) {
-                ctx->extAnisotropic = true;
+    if (ctx->base.backend == rx_backend_gles3) {
+        for (GLint i = 0; i < numExt; i++) {
+            const char* ext = (const char*) glGetStringi(GL_EXTENSIONS, i);
+            Str8 extensionName = str_fromNullTerminatedCharPtr((char*)ext);
+            if (extensionName.size > 0) {
+                if (strstr(ext, "_texture_compression_s3tc")) {
+                hasS3tc = true;
+                } else if (strstr(ext, "_compressed_texture_s3tc")) {
+                    hasS3tc = true;
+                } else if (strstr(ext, "_texture_compression_rgtc")) {
+                    hasRgtc = true;
+                } else if (strstr(ext, "_texture_compression_bptc")) {
+                    hasBptc = true;
+                } else if (strstr(ext, "_texture_compression_pvrtc")) {
+                    hasPvrtc = true;
+                } else if (strstr(ext, "_compressed_texture_pvrtc")) {
+                    hasPvrtc = true;
+                } else if (strstr(ext, "_compressed_texture_etc")) {
+                    hasEtc2 = true;
+                } else if (strstr(ext, "_color_buffer_float")) {
+                    hasColorBufferFloat = true;
+                } else if (strstr(ext, "_color_buffer_half_float")) {
+                    hasColorBufferHalfFloat = true;
+                } else if (strstr(ext, "_texture_float_linear")) {
+                    hasTextureFloatLinear = true;
+                } else if (strstr(ext, "_float_blend")) {
+                    hasFloatBlend = true;
+                } else if (strstr(ext, "_texture_filter_anisotropic")) {
+                    ctx->extAnisotropic = true;
+                }
+            }
+        }
+    } else {
+        for (GLint i = 0; i < numExt; i++) {
+            const char* ext = (const char*) glGetStringi(GL_EXTENSIONS, i);
+            Str8 extensionName = str_fromNullTerminatedCharPtr((char*)ext);
+            if (extensionName.size > 0) {
+                if (str_isEqual(extensionName, s8("_texture_compression_s3tc"))) {
+                    hasS3tc = true;
+                } else if (str_isEqual(extensionName, s8("_texture_compression_rgtc"))) {
+                    hasRgtc = true;
+                } else if (str_isEqual(extensionName, s8("_texture_compression_bptc"))) {
+                    hasBptc = true;
+                } else if (str_isEqual(extensionName, s8("_texture_compression_pvrtc"))) {
+                    hasPvrtc = true;
+                } else if (str_isEqual(extensionName, s8("_ES3_compatibility"))) {
+                    hasEtc2 = true;
+                } else if (str_isEqual(extensionName, s8("_texture_filter_anisotropic"))) {
+                    ctx->extAnisotropic = true;
+                }
             }
         }
     }
 
     // limits
     rx__glInitLimits(ctx);
+
+    rx_initTextureFormats(&ctx->base, hasBgra);
+    rx_initTextureFormatsFloat(&ctx->base, hasColorBufferFloat, hasTextureFloatLinear, hasFloatBlend);
+    rx_initTextureFormatsHalfFloat(&ctx->base, hasColorBufferHalfFloat);
+
+    if (hasS3tc) {
+        rx_initTextureFormatsS3tc(&ctx->base);
+    }
+
+    if (hasRgtc) {
+        rx_initTextureFormatsRgtc(&ctx->base);
+    }
+
+    if (hasBptc) {
+        rx_initTextureFormatsBptc(&ctx->base);
+    }
+
+    if (hasPvrtc) {
+        rx_initTextureFormatsPvrtc(&ctx->base);
+    }
+
+    if (hasEtc2) {
+        rx_initTextureFormatsEtc2(&ctx->base);
+    }
 
 #if 0
     // pixel formats
@@ -1980,28 +2552,23 @@ LOCAL void rx__glInitCapsGlCore33(rx_OpenGlCtx* ctx) {
     _sg_gl_init_pixelformats_float(hasColorbufferFloat, hasTextureFloatLinear, hasFloatBlend);
     _sg_gl_init_pixelformats_half_float(hasColorbufferHalfFloat);
 
-    if (has_s3tc) {
+    if (hasS3tc) {
         _sg_gl_init_pixelformats_s3tc();
     }
-    if (has_rgtc) {
+    if (hasRgtc) {
         _sg_gl_init_pixelformats_rgtc();
     }
-    if (has_bptc) {
+    if (hasBptc) {
         _sg_gl_init_pixelformats_bptc();
     }
-    if (has_pvrtc) {
+    if (hasPvrtc) {
         _sg_gl_init_pixelformats_pvrtc();
     }
-    if (has_etc2) {
+    if (hasEtc2) {
         _sg_gl_init_pixelformats_etc2();
     }
 #endif
 }
-#elif defined(SOKOL_GLES3)
-LOCAL void rx__glInitCapsGlES3(rx_OpenGlCtx* ctx) {
-    ASSERT(!"Implement me!");
-}
-#endif
 
 LOCAL void rx__setupBackend(rx_Ctx* baseCtx, const rx_SetupDesc* desc) {
     ASSERT(baseCtx);
@@ -2020,11 +2587,8 @@ LOCAL void rx__setupBackend(rx_Ctx* baseCtx, const rx_SetupDesc* desc) {
     #if defined(RX_DEBUG)
         while (glGetError() != GL_NO_ERROR);
     #endif
-    #if defined(RX_GLCORE33)
-        rx__glInitCapsGlCore33(ctx);
-    #elif defined(RX_GLES3)
-        rx__glInitCapsGlES3(ctx);
-    #endif
+
+    rx__glInitCaps(ctx);
 
     ASSERT(desc->streamingUniformSize > 0);
     ctx->uniform.streaming.currentOffset = 0;
@@ -2040,23 +2604,13 @@ LOCAL void rx__setupBackend(rx_Ctx* baseCtx, const rx_SetupDesc* desc) {
         .usage = rx_bufferUsage_uniform | rx_bufferUsage_dynamic,
         .size = desc->dynamicUniformSize
     });
-    struct {
-        struct {
-            rx_buffer buffer;
-            u32 currentOffset;
-        } streaming;
-        struct {
-            rx_buffer buffer;
-            oa_allocator_t* allocator;
-        } dynamic;
-    } uniform;
 }
 
 LOCAL rx_Ctx* rx__create(Arena* arena, rx_SetupDesc* desc) {
     ASSERT(arena);
     ASSERT(desc);
     rx_OpenGlCtx* ctx = mem_arenaPushStructZero(arena, rx_OpenGlCtx);
-    ctx->base.api = rx_api_ogl;
+    ctx->base.backend = rx_backend_gl400;
 #if OS_WINDOWS
     os_Dl* openGlLib = os_dlOpen(s8(""))
 #endif
@@ -2378,11 +2932,404 @@ LOCAL void rx__glMakeSampler(rx_Ctx* baseCtx, rx_Sampler* sampler, rx_SamplerDes
     }
 }
 
+LOCAL GLenum rx_glInternalTextureFormat(rx_textureFormat imgFormat) {
+    switch (imgFormat) {
+        case rx_textureFormat_r8unorm:                    return GL_R8;
+        case rx_textureFormat_r8snorm:                    return GL_R8_SNORM;
+        case rx_textureFormat_r8uint:                     return GL_R8UI;
+        case rx_textureFormat_r8sint:                     return GL_R8I;
+#if !defined(RX_GLES3) && OS_APPLE == 0
+        case rx_textureFormat_r8unorm:                    return GL_R16;
+        case rx_textureFormat_r8snorm:                    return GL_R16_SNORM;
+#endif
+        case rx_textureFormat_r16uint:                    return GL_R16UI;
+        case rx_textureFormat_r16sint:                    return GL_R16I;
+        case rx_textureFormat_r16float:                   return GL_R16F;
+        case rx_textureFormat_rg8unorm:                   return GL_RG8;
+        case rx_textureFormat_rg8snorm:                   return GL_RG8_SNORM;
+        case rx_textureFormat_rg8uint:                    return GL_RG8UI;
+        case rx_textureFormat_rg8sint:                    return GL_RG8I;
+        case rx_textureFormat_r32uint:                    return GL_R32UI;
+        case rx_textureFormat_r32sint:                    return GL_R32I;
+        case rx_textureFormat_r32float:                   return GL_R32F;
+        case rx_textureFormat_rg16uint:                   return GL_RG16UI;
+        case rx_textureFormat_rg16sint:                   return GL_RG16I;
+        case rx_textureFormat_rg16float:                  return GL_RG16F;
+        case rx_textureFormat_rgba8unorm:                 return GL_RGBA8;
+        case rx_textureFormat_rgba8unormSrgb:             return GL_SRGB8_ALPHA8;
+        case rx_textureFormat_rgba8snorm:                 return GL_RGBA8_SNORM;
+        case rx_textureFormat_rgba8uint:                  return GL_RGBA8UI;
+        case rx_textureFormat_rgba8sint:                  return GL_RGBA8I;
+        // case rx_textureFormat_bgra8unorm:                 return GL_B8G8R8A8_UNORM;
+        // case rx_textureFormat_bgra8unormSrgb:             return GL_B8G8R8A8_SRGB;
+        case rx_textureFormat_rgb9e5ufloat:               return GL_RGB9_E5;
+        case rx_textureFormat_rgb10a2unorm:               return GL_RGB10_A2;
+        case rx_textureFormat_rg11b10ufloat:              return GL_R11F_G11F_B10F;
+        case rx_textureFormat_rg32uint:                   return GL_RG32UI;
+        case rx_textureFormat_rg32sint:                   return GL_RG32I;
+        case rx_textureFormat_rg32float:                  return GL_RG32F;
+        case rx_textureFormat_rgba16uint:                 return GL_RGBA16UI;
+        case rx_textureFormat_rgba16sint:                 return GL_RGBA16I;
+        case rx_textureFormat_rgba16float:                return GL_RGBA16F;
+        case rx_textureFormat_rgba32uint:                 return GL_RGBA32UI;
+        case rx_textureFormat_rgba32sint:                 return GL_RGBA32I;
+        case rx_textureFormat_rgba32float:                return GL_RGBA32F;
+//        case rx_textureFormat_stencil8:                   return ; // can be emulated with GL_DEPTH24_STENCIL8 with depth deactivated (possible to do that in ogl?)
+        case rx_textureFormat_depth16unorm:               return GL_DEPTH_COMPONENT16;
+        case rx_textureFormat_depth24plus:                return GL_DEPTH_COMPONENT24;
+        case rx_textureFormat_depth24plusStencil8:        return GL_DEPTH24_STENCIL8;
+        case rx_textureFormat_depth32float:               return GL_DEPTH_COMPONENT32F;
+        case rx_textureFormat_bc1RgbaUnorm:               return GL_COMPRESSED_RGBA_S3TC_DXT1_EXT;
+        //case rx_textureFormat_bc1RgbaUnormSrgb:           return GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT1_EXT;
+        case rx_textureFormat_bc2RgbaUnorm:               return GL_COMPRESSED_RGBA_S3TC_DXT3_EXT;
+        //case rx_textureFormat_bc2RgbaUnormSrgb:           return GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT3_EXT;
+        case rx_textureFormat_bc3RgbaUnorm:               return GL_COMPRESSED_RGBA_S3TC_DXT5_EXT;
+        //case rx_textureFormat_bc3RgbaUnormSrgb:           return GL_BC3_SRGB_BLOCK;
+        case rx_textureFormat_bc4RUnorm:                  return GL_COMPRESSED_RED_RGTC1;
+        case rx_textureFormat_bc4RSnorm:                  return GL_COMPRESSED_SIGNED_RED_RGTC1;
+        case rx_textureFormat_bc5RgUnorm:                 return GL_COMPRESSED_RED_GREEN_RGTC2;
+        case rx_textureFormat_bc5RgSnorm:                 return GL_COMPRESSED_SIGNED_RED_GREEN_RGTC2;
+        case rx_textureFormat_bc6hRgbuFloat:              return GL_COMPRESSED_RGB_BPTC_UNSIGNED_FLOAT_ARB;
+        case rx_textureFormat_bc6hRgbFloat:               return GL_COMPRESSED_RGB_BPTC_SIGNED_FLOAT_ARB;
+        case rx_textureFormat_bc7RgbaUnorm:               return GL_COMPRESSED_RGBA_BPTC_UNORM_ARB;
+        //case rx_textureFormat_bc7RgbaUnormSrgb:           return GL_COMPRESSED_SRGB_ALPHA_BPTC_UNORM;
+        case rx_textureFormat_depth24unormStencil8:       return GL_DEPTH24_STENCIL8;
+        case rx_textureFormat_depth32floatStencil8:       return GL_DEPTH32F_STENCIL8;
+        default:
+            RX_UNREACHABLE();
+    }
+    return u32_max;
+}
+
+LOCAL GLenum rx_glTextureFormat(rx_textureFormat fmt) {
+    switch (fmt) {
+        case rx_textureFormat_r8unorm:
+        case rx_textureFormat_r8snorm:
+#if !defined(RX_GLES3) && OS_APPLE == 0
+        case rx_textureFormat_r8unorm:
+        case rx_textureFormat_r8snorm:
+#endif
+        case rx_textureFormat_r16float:
+        case rx_textureFormat_r32float:
+            return GL_RED;
+        case rx_textureFormat_r8uint:
+        case rx_textureFormat_r8sint:
+        case rx_textureFormat_r16uint:
+        case rx_textureFormat_r16sint:
+        case rx_textureFormat_r32uint:
+        case rx_textureFormat_r32sint:
+            return GL_RED_INTEGER;
+        case rx_textureFormat_rg8unorm:
+        case rx_textureFormat_rg8snorm:
+        case rx_textureFormat_rg16float:
+        case rx_textureFormat_rg32float:
+            return GL_RG;
+        case rx_textureFormat_rg8uint:
+        case rx_textureFormat_rg8sint:
+        case rx_textureFormat_rg16uint:
+        case rx_textureFormat_rg16sint:
+        case rx_textureFormat_rg32uint:
+        case rx_textureFormat_rg32sint:
+        case rx_textureFormat_rg11b10ufloat:
+            return GL_RG_INTEGER;
+        case rx_textureFormat_rgba8unorm:
+        case rx_textureFormat_rgba8unormSrgb:
+        case rx_textureFormat_rgba8snorm:
+        case rx_textureFormat_rgba16float:
+        case rx_textureFormat_rgba32float:
+            return GL_RGBA;
+        case rx_textureFormat_rgba8uint:
+        case rx_textureFormat_rgba8sint:
+        case rx_textureFormat_rgba16uint:
+        case rx_textureFormat_rgba16sint:
+        case rx_textureFormat_rgba32uint:
+        case rx_textureFormat_rgba32sint:
+            return GL_RGBA_INTEGER;
+        caserx_textureFormat_rgb9e5ufloat:
+        caserx_textureFormat_rgb10a2unorm:
+            return GL_RGB;
+        case rx_textureFormat_depth16unorm:
+        case rx_textureFormat_depth24plus:
+        case rx_textureFormat_depth32float:
+            return GL_DEPTH_COMPONENT;
+        case rx_textureFormat_depth24plusStencil8:
+        case rx_textureFormat_depth32floatStencil8:
+        case rx_textureFormat_depth24unormStencil8:
+            return GL_DEPTH_STENCIL;
+        case rx_textureFormat_bc1RgbaUnorm:
+            return GL_COMPRESSED_RGBA_S3TC_DXT1_EXT;
+        case rx_textureFormat_bc2RgbaUnorm:
+            return GL_COMPRESSED_RGBA_S3TC_DXT3_EXT;
+        case rx_textureFormat_bc3RgbaUnorm:
+            return GL_COMPRESSED_RGBA_S3TC_DXT5_EXT;
+        case rx_textureFormat_bc4RUnorm:
+            return GL_COMPRESSED_RED_RGTC1;
+        case rx_textureFormat_bc4RSnorm:
+            return GL_COMPRESSED_SIGNED_RED_RGTC1;
+        case rx_textureFormat_bc5RgUnorm:
+            return GL_COMPRESSED_RED_GREEN_RGTC2;
+        case rx_textureFormat_bc5RgSnorm:
+            return GL_COMPRESSED_SIGNED_RED_GREEN_RGTC2;
+        case rx_textureFormat_bc6hRgbFloat:
+            return GL_COMPRESSED_RGB_BPTC_SIGNED_FLOAT_ARB;
+        case rx_textureFormat_bc6hRgbuFloat:
+            return GL_COMPRESSED_RGB_BPTC_UNSIGNED_FLOAT_ARB;
+        case rx_textureFormat_bc7RgbaUnorm:
+            return GL_COMPRESSED_RGBA_BPTC_UNORM_ARB;
+            #if 0
+        case SG_PIXELFORMAT_PVRTC_RGB_2BPP:
+            return GL_COMPRESSED_RGB_PVRTC_2BPPV1_IMG;
+        case SG_PIXELFORMAT_PVRTC_RGB_4BPP:
+            return GL_COMPRESSED_RGB_PVRTC_4BPPV1_IMG;
+        case SG_PIXELFORMAT_PVRTC_RGBA_2BPP:
+            return GL_COMPRESSED_RGBA_PVRTC_2BPPV1_IMG;
+        case SG_PIXELFORMAT_PVRTC_RGBA_4BPP:
+            return GL_COMPRESSED_RGBA_PVRTC_4BPPV1_IMG;
+        case SG_PIXELFORMAT_ETC2_RGB8:
+            return GL_COMPRESSED_RGB8_ETC2;
+        case SG_PIXELFORMAT_ETC2_RGB8A1:
+            return GL_COMPRESSED_RGB8_PUNCHTHROUGH_ALPHA1_ETC2;
+        case SG_PIXELFORMAT_ETC2_RGBA8:
+            return GL_COMPRESSED_RGBA8_ETC2_EAC;
+        case SG_PIXELFORMAT_ETC2_RG11:
+            return GL_COMPRESSED_RG11_EAC;
+        case SG_PIXELFORMAT_ETC2_RG11SN:
+            return GL_COMPRESSED_SIGNED_RG11_EAC;
+        #endif
+        default: ASSERT(!"Unreachable");
+    }
+    return 0;
+}
+
+LOCAL GLenum rx_glTextureFormatType(rx_textureFormat fmt) {
+    switch (fmt) {
+        case rx_textureFormat_r8unorm:
+        case rx_textureFormat_r8uint:
+        case rx_textureFormat_rg8unorm:
+        case rx_textureFormat_rg8uint:
+        case rx_textureFormat_rgba8unorm:
+        case rx_textureFormat_rgba8unormSrgb:
+        case rx_textureFormat_rgba8uint:
+        case rx_textureFormat_bgra8unorm:
+        case rx_textureFormat_bgra8unormSrgb:
+            return GL_UNSIGNED_BYTE;
+        case rx_textureFormat_r8snorm:
+        case rx_textureFormat_r8sint:
+        case rx_textureFormat_rg8snorm:
+        case rx_textureFormat_rg8sint:
+        case rx_textureFormat_rgba8snorm:
+        case rx_textureFormat_rgba8sint:
+            return GL_BYTE;
+
+
+        case rx_textureFormat_r16uint:
+        case rx_textureFormat_rg16uint:
+        case rx_textureFormat_rgba16uint:
+        // case rx_textureFormat_r16unorm:
+        // case rx_textureFormat_rg16unorm:
+            return GL_UNSIGNED_SHORT;
+        case rx_textureFormat_r16sint:
+        case rx_textureFormat_rg16sint:
+        case rx_textureFormat_rgba16sint:
+        // case rx_textureFormat_r16snorm:
+        // case rx_textureFormat_rg16snorm:
+            return GL_SHORT;
+        case rx_textureFormat_r16float:
+        case rx_textureFormat_rg16float:
+        case rx_textureFormat_rgba16float:
+            return GL_HALF_FLOAT;
+        case rx_textureFormat_r32uint:
+        case rx_textureFormat_rg32uint:
+        case rx_textureFormat_rgba32uint:
+            return GL_UNSIGNED_INT;
+        case rx_textureFormat_r32sint:
+        case rx_textureFormat_rg32sint:
+        case rx_textureFormat_rgba32sint:
+            return GL_INT;
+        case rx_textureFormat_r32float:
+        case rx_textureFormat_rg32float:
+        case rx_textureFormat_rgba32float:
+            return GL_FLOAT;
+        case rx_textureFormat_rgb10a2unorm:
+            return GL_UNSIGNED_INT_2_10_10_10_REV;
+        case rx_textureFormat_rg11b10ufloat:
+            return GL_UNSIGNED_INT_10F_11F_11F_REV;
+        case rx_textureFormat_rgb9e5ufloat:
+            return GL_UNSIGNED_INT_5_9_9_9_REV;
+        case rx_textureFormat_depth16unorm:
+        case rx_textureFormat_depth24plus:
+        case rx_textureFormat_depth32float:
+            return GL_FLOAT;
+        case rx_textureFormat_depth24plusStencil8:
+        case rx_textureFormat_depth24unormStencil8:
+            return GL_UNSIGNED_INT_24_8;
+        //case rx_textureFormat_depth32floatStencil8:
+        //    return GL_UNSIGNED_INT_32_8;
+        default: ASSERT(!"Unreachable");
+    }
+    return 0;
+}
+
+LOCAL GLenum rx_glTextureTarget(rx_textureDimension t) {
+    switch (t) {
+        case rx_textureDimension_2d:       return GL_TEXTURE_2D;
+        case rx_textureDimension_cube:     return GL_TEXTURE_CUBE_MAP;
+        case rx_textureDimension_3d:       return GL_TEXTURE_3D;
+        case rx_textureDimension_array:    return GL_TEXTURE_2D_ARRAY;
+        default: ASSERT(!"Unkown format");
+    }
+    return 0;
+}
+
+LOCAL GLenum rx_glCubefaceTarget(int faceIndex) {
+    switch (faceIndex) {
+        case 0: return GL_TEXTURE_CUBE_MAP_POSITIVE_X;
+        case 1: return GL_TEXTURE_CUBE_MAP_NEGATIVE_X;
+        case 2: return GL_TEXTURE_CUBE_MAP_POSITIVE_Y;
+        case 3: return GL_TEXTURE_CUBE_MAP_NEGATIVE_Y;
+        case 4: return GL_TEXTURE_CUBE_MAP_POSITIVE_Z;
+        case 5: return GL_TEXTURE_CUBE_MAP_NEGATIVE_Z;
+        default: ASSERT(!"Unreachable"); return 0;
+    }
+}
+
+LOCAL void rx_glCacheActiveTexture(rx_OpenGlCtx* ctx, GLenum texture) {
+    rx__oglCheckErrors();
+    if (ctx->cache.currentActiveTexture != texture) {
+        ctx->cache.currentActiveTexture = texture;
+        glActiveTexture(texture);
+    }
+    rx__oglCheckErrors();
+}
+
+LOCAL void rx__glCacheBindTextureSampler(rx_OpenGlCtx* ctx, int slotIndex, GLenum target, GLuint texture, GLuint sampler) {
+    /* it's valid to call this function with target=0 and/or texture=0
+       target=0 will unbind the previous binding, texture=0 will clear
+       the new binding
+    */
+    ASSERT((slotIndex >= 0) && (slotIndex < countOf(ctx->cache.textureSamplers)));
+    if (slotIndex >= ctx->base.limits.glMaxCombinedTextureImageUnits) {
+        return;
+    }
+    rx__oglCheckErrors();
+    rx_GlCachedTextureSamplerBindSlot* slot = &ctx->cache.textureSamplers[slotIndex];
+    if ((slot->target != target) || (slot->texture != texture) || (slot->sampler != sampler)) {
+        rx_glCacheActiveTexture(ctx, (GLenum)(GL_TEXTURE0 + slotIndex));
+        // if the target has changed, clear the previous binding on that target
+        if ((target != slot->target) && (slot->target != 0)) {
+            glBindTexture(slot->target, 0);
+            rx__oglCheckErrors();
+        }
+        // apply new binding (can be 0 to unbind)
+        if (target != 0) {
+            glBindTexture(target, texture);
+            rx__oglCheckErrors();
+            //_sg_stats_add(gl.num_bind_texture, 1);
+        }
+        // apply new sampler (can be 0 to unbind)
+        glBindSampler((GLuint)slotIndex, sampler);
+        rx__oglCheckErrors();
+        //_sg_stats_add(gl.num_bind_sampler, 1);
+
+        slot->target = target;
+        slot->texture = texture;
+        slot->sampler = sampler;
+    }
+}
+
+// #define RX_COUNT_SHADER_STAGES *  RX_MAX_SHADERSTAGE_TEXTURE_SAMPLER_PAIRS
+LOCAL void rx__glCacheStoreTextureSamplerBinding(rx_OpenGlCtx* ctx, int slotIndex) {
+    ASSERT((slotIndex >= 0) && (slotIndex < countOf(ctx->cache.textureSamplers)));
+    ctx->cache.storedTextureSampler = ctx->cache.textureSamplers[slotIndex];
+}
+
+LOCAL void rx__glCacheRestoreTextureSamplerBinding(rx_OpenGlCtx* ctx, int slotIndex) {
+    ASSERT((slotIndex >= 0) && (slotIndex < countOf(ctx->cache.textureSamplers)));
+    rx_GlCachedTextureSamplerBindSlot* slot = &ctx->cache.storedTextureSampler;
+    if (slot->texture != 0) {
+        // we only care about restoring valid ids
+        ASSERT(slot->target != 0);
+        rx__glCacheBindTextureSampler(ctx, slotIndex, slot->target, slot->texture, slot->sampler);
+        slot->target = 0;
+        slot->texture = 0;
+        slot->sampler = 0;
+    }
+}
+
+LOCAL bx rx__glMakeTexture(rx_Ctx* ctx, rx_Texture* texture, const rx_TextureDesc* desc) {
+    ASSERT(ctx && texture);
+    rx_OpenGlCtx* oglCtx = (rx_OpenGlCtx*) ctx;
+
+    rx__oglCheckErrors();
+    const GLenum glInternalFormat = rx_glInternalTextureFormat(desc->format);
+    
+    // if this is a MSAA render target, a render buffer object will be created instead of a regulat texture
+    // (since GLES3 has no multisampled texture objects)
+    if (((desc->usage & rx_textureUsage_renderAttachment) != 0) && (desc->sampleCount > rx_sampleCount_1bit)) {
+        glGenRenderbuffers(1, &texture->gl.msaaRenderBuffer);
+        glBindRenderbuffer(GL_RENDERBUFFER, texture->gl.msaaRenderBuffer);
+        glRenderbufferStorageMultisample(GL_RENDERBUFFER, (GLsizei) desc->sampleCount, glInternalFormat, desc->size.width, desc->size.height);
+    } else {
+        // create our own GL texture(s)
+        texture->gl.target = rx_glTextureTarget(desc->dimension);
+        const GLenum gl_format = rx_glTextureFormat(desc->format);
+        const bool is_compressed = rx_isCompressedTexture(desc->format);
+    
+        glGenTextures(1, &texture->gl.handle);
+        ASSERT(texture->gl.handle);
+        rx__glCacheStoreTextureSamplerBinding(oglCtx, 0);
+        rx__glCacheBindTextureSampler(oglCtx, 0, texture->gl.target, texture->gl.handle, 0);
+        glTexParameteri(texture->gl.target, GL_TEXTURE_MAX_LEVEL, desc->mipLevelCount - 1);
+        const int numFaces = desc->dimension == rx_textureDimension_cube ? 6 : 1;
+        //int data_index = 0;
+        for (int faceIndex = 0; faceIndex < numFaces; faceIndex++) {
+            for (int mipIndex = 0; mipIndex < desc->mipLevelCount; mipIndex++/*, data_index++*/) {
+                GLenum glTextureTarget = texture->gl.target;
+                if (desc->dimension == rx_textureDimension_cube) {
+                    glTextureTarget = rx_glCubefaceTarget(faceIndex);
+                }
+                const GLvoid* data_ptr = desc->data.subimage[faceIndex][mipIndex].content;
+                const int mip_width = rx_mipLevelDim(desc->size.width, mipIndex);
+                const int mip_height = rx_mipLevelDim(desc->size.height, mipIndex);
+                if ((desc->dimension == rx_textureDimension_2d) || (desc->dimension == rx_textureDimension_cube)) {
+                    if (is_compressed) {
+                        const GLsizei data_size = (GLsizei) desc->data.subimage[faceIndex][mipIndex].size;
+                        glCompressedTexImage2D(glTextureTarget, mipIndex, glInternalFormat,
+                            mip_width, mip_height, 0, data_size, data_ptr);
+                    } else {
+                        const GLenum gl_type = rx_glTextureFormatType(desc->format);
+                        glTexImage2D(glTextureTarget, mipIndex, (GLint)glInternalFormat,
+                            mip_width, mip_height, 0, gl_format, gl_type, data_ptr);
+                    }
+                } else if ((desc->dimension == rx_textureDimension_3d) || (desc->dimension == rx_textureDimension_array)) {
+                    int mip_depth = desc->arrayLayerCount; //img->cmn.num_slices;
+                    if (desc->dimension == rx_textureDimension_3d) {
+                        mip_depth = rx_mipLevelDim(mip_depth, mipIndex);
+                    }
+                    if (is_compressed) {
+                        const GLsizei data_size = (GLsizei) desc->data.subimage[faceIndex][mipIndex].size;
+                        glCompressedTexImage3D(glTextureTarget, mipIndex, glInternalFormat,
+                            mip_width, mip_height, mip_depth, 0, data_size, data_ptr);
+                    } else {
+                        const GLenum glType = rx_glTextureFormatType(desc->format);
+                        glTexImage3D(glTextureTarget, mipIndex, (GLint)glInternalFormat,
+                            mip_width, mip_height, mip_depth, 0, gl_format, glType, data_ptr);
+                    }
+                }
+            }
+        }
+        rx__glCacheRestoreTextureSamplerBinding(oglCtx, 0);
+    }
+    rx__oglCheckErrors();
+
+    return true;
+}
+
 LOCAL GLenum rx__shaderStage(rx_shaderStage stage) {
     return stage == rx_shaderStage_vertex ? GL_VERTEX_SHADER : GL_FRAGMENT_SHADER;
 }
 
-LOCAL GLuint rx__compileShader(rx_OpenGlCtx* ctx, rx_shaderStage stage, const Str8 source) {
+LOCAL GLuint rx__glCompileShader(rx_OpenGlCtx* ctx, rx_shaderStage stage, Str8 source) {
     rx__oglCheckErrors();
     GLuint glShd = glCreateShader(rx__shaderStage(stage));
     glShaderSource(glShd, 1, (const GLchar**) &source.content, (const GLint*) &source.size);
@@ -2413,56 +3360,57 @@ LOCAL bx rx__glMakeRenderShader(rx_Ctx* baseCtx, rx_RenderShader* renderShader, 
     rx_OpenGlCtx* ctx = (rx_OpenGlCtx*) baseCtx;
     rx__oglCheckErrors();
 
-    GLuint vsShader = rx__compileShader(ctx, rx_shaderStage_vertex, desc->vs.source);
-    GLuint fsShader = rx__compileShader(ctx, rx_shaderStage_fragment, desc->fs.source);
+    GLuint vsShader = rx__glCompileShader(ctx, rx_shaderStage_vertex, str_fromNullTerminatedCharPtr((char*) desc->vs.source));
+    GLuint fsShader = rx__glCompileShader(ctx, rx_shaderStage_fragment, str_fromNullTerminatedCharPtr((char*) desc->fs.source));
+
     renderShader->gl.handle = 0;
     if (!(vsShader && fsShader)) {
         return false;
     }
 
-    GLuint glProgam = glCreateProgram();
-    glAttachShader(glProgam, vsShader);
-    glAttachShader(glProgam, fsShader);
-    glLinkProgram(glProgam);
+    GLuint glProgram = glCreateProgram();
+    glAttachShader(glProgram, vsShader);
+    glAttachShader(glProgram, fsShader);
+    glLinkProgram(glProgram);
     glDeleteShader(vsShader);
     glDeleteShader(fsShader);
     rx__oglCheckErrors();
 
     GLint linkStatus = 0;
-    glGetProgramiv(glProgam, GL_LINK_STATUS, &linkStatus);
+    glGetProgramiv(glProgram, GL_LINK_STATUS, &linkStatus);
     if (!linkStatus) {
         // compilation failed, log error and delete shader
         GLint logLen = 0;
-        glGetProgramiv(glProgam, GL_INFO_LOG_LENGTH, &logLen);
+        glGetProgramiv(glProgram, GL_INFO_LOG_LENGTH, &logLen);
         if (logLen > 0) {
             mem_scoped(memName, ctx->base.arena) {
                 GLchar* logBuf = (GLchar*) mem_arenaPush(memName.arena, logLen);
-                glGetProgramInfoLog(glProgam, logLen, &logLen, logBuf);
+                glGetProgramInfoLog(glProgram, logLen, &logLen, logBuf);
                 rx__setError(&ctx->base, rx_error_shaderLinkFailed);
                 rx__log(&ctx->base, str_fromNullTerminatedCharPtr(logBuf));
             }
         }
-        glDeleteProgram(glProgam);
+        glDeleteProgram(glProgram);
         return false;
     }
     rx__oglCheckErrors();
 
-    renderShader->gl.handle = glProgam;
+    renderShader->gl.handle = glProgram;
 
 
-    GLuint resGroupIndex[5];
+    GLuint resGroupIndex[4];
+
     // resolve uniforms
-    resGroupIndex[0] = glGetUniformBlockIndex(glProgam, "resGroup0");
-    resGroupIndex[1] = glGetUniformBlockIndex(glProgam, "resGroup1");
-    resGroupIndex[2] = glGetUniformBlockIndex(glProgam, "resGroup2");
-    resGroupIndex[3] = glGetUniformBlockIndex(glProgam, "resGroup3");
-    resGroupIndex[4] = glGetUniformBlockIndex(glProgam, "resGroup4");
+    resGroupIndex[0] = glGetUniformBlockIndex(glProgram, "resGroup0");
+    resGroupIndex[1] = glGetUniformBlockIndex(glProgram, "resGroup1");
+    resGroupIndex[2] = glGetUniformBlockIndex(glProgram, "resGroup2");
+    resGroupIndex[3] = glGetUniformBlockIndex(glProgram, "resGroup3");
 
 
 
     for (u32 idx = 0; idx < countOf(resGroupIndex); idx++) {
         if (resGroupIndex[idx] != GL_INVALID_INDEX) {
-            glUniformBlockBinding(glProgam, resGroupIndex[idx], idx);
+            glUniformBlockBinding(glProgram, resGroupIndex[idx], idx);
         }
     }
 
@@ -2470,7 +3418,52 @@ LOCAL bx rx__glMakeRenderShader(rx_Ctx* baseCtx, rx_RenderShader* renderShader, 
 
     GLuint currentProgram = 0;
     glGetIntegerv(GL_CURRENT_PROGRAM, (GLint*)&currentProgram);
-    glUseProgram(currentProgram);
+    glUseProgram(glProgram);
+    rx__oglCheckErrors();
+
+
+    int gl_tex_slot = 0;
+    const rx_ShaderStageDesc* stages[] = {&desc->vs, &desc->fs};
+
+    GLint usedSlots[countOf(desc->vs.textureSamplerPairs) * 2];
+    u32 allocatedSlotCount = 0;
+    for (u32 stageIdx = 0; stageIdx < countOf(stages); stageIdx++) {
+        const rx_ShaderStageDesc* stage = stages[stageIdx];
+        for (u32 samplerDescIdx = 0; samplerDescIdx < countOf(stage->textureSamplerPairs); samplerDescIdx++) {
+            const rx_ShaderTextureSamplerPairDesc* samplerDesc = &stage->textureSamplerPairs[samplerDescIdx];
+            if (!samplerDesc->used) {
+                continue;
+            }
+            ASSERT(samplerDesc->glslName && "Mussing glslName");
+            
+            GLint glLoc = glGetUniformLocation(glProgram, samplerDesc->glslName);
+            if (glLoc == GL_INVALID_VALUE) {
+                ASSERT(!"Error: Sampler does not exist.");
+                continue;
+            }
+
+            for (u32 idx = 0; idx < allocatedSlotCount; idx++) {
+                if (usedSlots[idx] == glLoc) {
+                    // we have this sampler already covered
+                    goto continueNextSamperDesc;
+                }
+            }
+
+            u32 samplerIndex = allocatedSlotCount++;
+            usedSlots[samplerIndex] = glLoc;
+            glUniform1i(glLoc, samplerIndex);
+
+            rx__glSampler* samplerMapping = &renderShader->gl.samplerMapping[samplerIndex];
+            samplerMapping->textResGroupIdx = samplerDesc->texResGroupIdx;
+            samplerMapping->textResIdx = samplerDesc->texResIdx;
+            samplerMapping->samplerResGroupIdx = samplerDesc->samplerResGroupIdx;
+            samplerMapping->samplerResIdx = samplerDesc->samplerResIdx;
+            continueNextSamperDesc:
+            ((void) 0);
+        }
+    }
+    
+    renderShader->gl.samperMappingCount = allocatedSlotCount;
 
     glUseProgram(currentProgram);
     rx__oglCheckErrors();
@@ -3334,9 +4327,9 @@ LOCAL void rx__glExcuteDrawList(rx_OpenGlCtx* ctx, rx_GlStateCache* glStateCache
                 }
                 // TODO(PJ): ResGroups
 
-                if ((flags & (rx_renderCmd_resGroup1 | rx_renderCmd_resGroup2 | rx_renderCmd_resGroup3 | rx_renderCmd_dynResGroup0 | rx_renderCmd_dynResGroup1)) != 0) {
-                    const u32 resFlags[] = {rx_renderCmd_resGroup1, rx_renderCmd_resGroup2, rx_renderCmd_resGroup3};
-                    const u32 resSlots[] = {1, 2, 3};
+                if ((flags & (rx_renderCmd_resGroup1 | rx_renderCmd_resGroup2 | rx_renderCmd_dynResGroup0 | rx_renderCmd_dynResGroup1)) != 0) {
+                    static const u32 resFlags[] = {rx_renderCmd_resGroup1, rx_renderCmd_resGroup2};
+                    static const u32 resSlots[] = {1, 2, 3};
                     for (u32 idx = 0; idx < countOf(resFlags); idx++) {
                         if ((flags & resFlags[idx]) != 0) {
                             uint32_t id = drawList->commands[currentOffset++];
@@ -3992,6 +4985,15 @@ void rx_setup(rx_SetupDesc* desc) {
     rx__initFrameGaph(ctx->arena, &ctx->frameGraph, descWithDefaults.maxPassesPerFrame, maxQueues);    
 
     rx__setupBackend(ctx, &descWithDefaults);
+
+    ctx->defaultResGroupDynamicOffsetBuffers = rx_makeResGroupLayout(&(rx_ResGroupLayoutDesc) {
+        .resources[0] = {
+            .type = rx_resType_dynUniformBuffer,
+        },
+        .resources[1] = {
+            .type = rx_resType_dynUniformBuffer,
+        },
+    });
 #if 0
     arrMake(ctx->arena, &ctx->buffers, descWithDefaults.maxBuffers);
     arrMake(ctx->arena, &ctx->textures, descWithDefaults.maxTextures);
@@ -4008,6 +5010,12 @@ void rx_shutdown(void) {
     // Destroy arena and free up all alocated memory with it
     mem_destroyArena(ctx->arena);
     rx__ctx = NULL;
+}
+
+
+rx_backend rx_queryBackend(void) {
+    ASSERT(rx__ctx);
+    return rx__ctx->backend;
 }
 
 rx_buffer rx_makeBuffer(const rx_BufferDesc* desc) {
@@ -4082,7 +5090,7 @@ void rx_updateBuffer(rx_buffer buffer, mms offset, rx_Range range) {
 }
 
 LOCAL rx_SamplerDesc rx__samplerDescDefaults(const rx_SamplerDesc* desc) {
-    rx_SamplerDesc outDesc;
+    rx_SamplerDesc outDesc = *desc;
     outDesc.addressModeU      = rx__valueOrDefault(outDesc.addressModeU, rx_addressMode_repeat);
     outDesc.addressModeV      = rx__valueOrDefault(outDesc.addressModeV, rx_addressMode_repeat);
     outDesc.addressModeW      = rx__valueOrDefault(outDesc.addressModeW, rx_addressMode_repeat);
@@ -4118,28 +5126,60 @@ rx_sampler rx_makeSampler(const rx_SamplerDesc* desc) {
     handle.gen = sampler->gen;
 
     return handle;
+}
+
+LOCAL rx_TextureDesc rx__textureDescDefaults(const rx_TextureDesc* desc) {
+    rx_TextureDesc outDesc = *desc;
+
+    outDesc.format           = rx__valueOrDefault(outDesc.format, rx_textureFormat_rgba8unorm);
+    outDesc.usage            = rx__valueOrDefault(outDesc.usage, (rx_textureUsage_copyDst | rx_textureUsage_sampled));
+    outDesc.dimension        = rx__valueOrDefault(outDesc.dimension, rx_textureDimension_2d);
+    outDesc.size.depth       = rx__valueOrDefault(outDesc.size.depth, 1);
+    outDesc.sampleCount      = rx__valueOrDefault(outDesc.sampleCount, rx_sampleCount_1bit);
+    outDesc.mipLevelCount    = rx__valueOrDefault(outDesc.mipLevelCount, 1);
+
 #if 0
-    typedef struct rx_SamplerDesc {
-        Str8           label;
-        rx_addressMode addressModeU;
-        rx_addressMode addressModeV;
-        rx_addressMode addressModeW;
-        rx_filterMode  magFilter;
-        rx_filterMode  minFilter;
-        rx_mipmapMode  mipmapMode;
-        f32            lodMinClamp;
-        f32            lodMaxClamp;
-        rx_CompareFunc compare;
-        u16            maxAnisotropy;
-    } rx_SamplerDesc;
+    outDesc.addressModeU      = rx__valueOrDefault(outDesc.addressModeU, rx_addressMode_repeat);
+    outDesc.addressModeV      = rx__valueOrDefault(outDesc.addressModeV, rx_addressMode_repeat);
+    outDesc.addressModeW      = rx__valueOrDefault(outDesc.addressModeW, rx_addressMode_repeat);
+    outDesc.mipmapMode        = rx__valueOrDefault(outDesc.mipmapMode, rx_mipmapMode_linear);
+    //outDesc.lodMinClamp       = rx__valueOrDefault(outDesc.lodMinClamp, float);
+    outDesc.lodMaxClamp       = rx__valueOrDefault(outDesc.lodMaxClamp, f32_max);
+    outDesc.compare           = rx__valueOrDefault(outDesc.compare, rx_compareFunc_always);
+    outDesc.maxAnisotropy     = rx__valueOrDefault(outDesc.maxAnisotropy, 1);
 #endif
+    return outDesc;
+}
+
+rx_texture rx_makeTexture(const rx_TextureDesc* desc) {
+    ASSERT(rx__ctx && desc);
+    rx_Ctx* ctx = rx__ctx;
+
+    rx_TextureDesc descWithDefaults = rx__textureDescDefaults(desc);
+
+    if (!rx_supportedTextureFormat(ctx, desc->format)) {
+        ASSERT(!"Texture format is not supported!");
+        return (rx_texture) {0};
+    }
+
+
+    rx_texture handle = rx__allocTexture(ctx);
+
+    if (handle.id == 0) {
+        return handle;
+    }
+
+    rx_Texture* texture = rx__getTexture(ctx, handle);
+    rx_callBknFn(MakeTexture, ctx, texture, &descWithDefaults);
+
+    return handle;
 }
 
 rx_renderShader rx_makeRenderShader(const rx_RenderShaderDesc* desc) {
     ASSERT(rx__ctx && desc);
     rx_Ctx* ctx = rx__ctx;
-    ASSERT(desc->vs.source.size > 0 || desc->vs.byteCode.size > 0);
-    ASSERT(desc->fs.source.size > 0 || desc->fs.byteCode.size > 0);
+    ASSERT(desc->vs.source != NULL || desc->vs.byteCode.size > 0);
+    ASSERT(desc->fs.source != NULL || desc->fs.byteCode.size > 0);
 
 
     // get free sampler slot
@@ -4208,6 +5248,13 @@ rx_resGroupLayout rx_makeResGroupLayout(rx_ResGroupLayoutDesc* desc) {
     rx_callBknFn(MakeResGroupLayout, ctx, resGroupLayout, &descWithDefaults);
 
     return resGroupLayoutHandle;
+}
+
+
+API rx_resGroupLayout rx_getResGroupLayoutForDynBuffers(void) {
+    ASSERT(rx__ctx);
+    ASSERT(rx__ctx->defaultResGroupDynamicOffsetBuffers.id != 0);
+    return rx__ctx->defaultResGroupDynamicOffsetBuffers;
 }
 
 rx_resGroup rx_makeResGroup(rx_ResGroupDesc* desc) {

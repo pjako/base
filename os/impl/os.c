@@ -817,7 +817,7 @@ Str8 os_fileRead(Arena* arena, Str8 fileName) {
 
     HANDLE file = INVALID_HANDLE_VALUE;
     mem_scoped(scratch, arena) {
-        Str16 fileName16 = str_toStr16(scratch.arena, fileName);
+        S16 fileName16 = str_toS16(scratch.arena, fileName);
         file = CreateFileW((WCHAR*) fileName16.content, GENERIC_READ, 0, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
     }
 
@@ -863,7 +863,7 @@ bool os_fileWrite(Str8 fileName, Str8 data) {
     mem_defineMakeStackArena(arena, 1024 * sizeOf(u32));
     
     bx result = false;
-    Str16 fileMame16 = str_toStr16(arena, fileName);
+    S16 fileMame16 = str_toS16(arena, fileName);
     HANDLE file = CreateFileW((WCHAR*)fileMame16.content, GENERIC_WRITE, 0, 0, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
 
     if (file != INVALID_HANDLE_VALUE) {
@@ -884,14 +884,14 @@ bool os_fileWrite(Str8 fileName, Str8 data) {
 
 bx os_dirCreate(Str8 dirname) {
     mem_defineMakeStackArena(tmpMem, 1024 * sizeof(u32) + 1);
-    Str16 dirname16 = str_toStr16(tmpMem, dirname);
+    S16 dirname16 = str_toS16(tmpMem, dirname);
 	b32 result = CreateDirectoryW((WCHAR*) dirname16.content, 0);
 	return result;
 }
 
 bx os_dirDelete(Str8 dirname) {
     mem_defineMakeStackArena(tmpMem, 1024 * sizeof(u32) + 1);
-    Str16 dirname16 = str_toStr16(tmpMem, dirname);
+    S16 dirname16 = str_toS16(tmpMem, dirname);
 	b32 result = RemoveDirectoryW((WCHAR*) dirname16.content);
 	return result;
 }
@@ -956,7 +956,7 @@ os_FileProperties os_fileProperties(Str8 fileName) {
     path[fileName.size] = '\0';
     #if 0
 	M_Scratch scratch = scratch_get();
-	string_utf16 filename16 = str16_from_str8(&scratch.arena, filename);
+	string_utf16 filename16 = S16_from_str8(&scratch.arena, filename);
 	OS_FileProperties result = {0};
 	WIN32_FILE_ATTRIBUTE_DATA attribs = {0};
 	if (GetFileAttributesExW((WCHAR*)filename16.str, GetFileExInfoStandard,
@@ -972,7 +972,7 @@ os_FileProperties os_fileProperties(Str8 fileName) {
 
     #if 0
     M_ArenaTemp scratch = m_get_scratch(0, 0);
-    String16 file_name16 = str16_from_str8(scratch.arena, file_name);
+    String16 file_name16 = S16_from_str8(scratch.arena, file_name);
     
     // get attribs and convert to properties
     FileProperties result = {};
@@ -1045,7 +1045,7 @@ Str8 os_filepath(Arena* arena, os_systemPath path) {
 
     DWORD tmpName[2048 * 2];
     DWORD tmpCount = countOf(tmpName);
-    Str16 path16 = {0};
+    S16 path16 = {0};
     path16.content = (u16*) tmpName;
 
     mem_defineMakeStackArena(tmpArena, 2048 * sizeOf(u32));
@@ -1057,14 +1057,14 @@ Str8 os_filepath(Arena* arena, os_systemPath path) {
 			DWORD size = GetCurrentDirectoryW(tmpCount, (WCHAR*) tmpName);
             ASSERT((size >= tmpCount) && "Increase tmpName size");
             path16.size = size;
-            result = str_fromStr16(tmpArena, path16);
+            result = str_fromS16(tmpArena, path16);
         case os_systemPath_binary: {
             mms pushAmount = 1024 * sizeOf(u32);
             u8* mem = mem_arenaPush(arena, pushAmount);
             DWORD size = GetModuleFileNameW(0, (WCHAR*)try_buffer, cap);
             ASSERT(size == tmpCount && GetLastError() == ERROR_INSUFFICIENT_BUFFER && "Increase tmpName size");
             path16.size = size;
-            Str8 fullPath = str_fromStr16(tmpArena, path16);
+            Str8 fullPath = str_fromS16(tmpArena, path16);
 			Str8 binaryPath = os_getDirectoryFromFilepath(fullPath);
             result = binaryPath;
 		} break;
@@ -1073,13 +1073,13 @@ Str8 os_filepath(Arena* arena, os_systemPath path) {
             bx success = GetUserProfileDirectoryW(token, (WCHAR*)tmpName, &tmpCount);
             ASSERT(success && "Increase tmpName size");
             path16.size = tmpCount;
-            result = str_fromStr16(tmpArena, path16);
+            result = str_fromS16(tmpArena, path16);
 		} break;
 		case os_systemPath_tempData: {
 			DWORD size = GetTempPathW(cap, (WCHAR*)buffer);
             ASSERT(size >= tmpCount && "Increase tmpName size");
             path16.size = size;
-            result = str_fromStr16(tmpArena, path16);
+            result = str_fromS16(tmpArena, path16);
 		} break;
 	}
 
@@ -1101,7 +1101,7 @@ Str8 os_filepath(Arena* arena, os_systemPath path) {
 				buffer = arena_alloc_array(&scratch.arena, u16, size + 1);
 				size = GetCurrentDirectoryW(size + 1, (WCHAR*) buffer);
 			}
-			result = str8_from_str16(&scratch.arena, (string_utf16) { buffer, size });
+			result = str8_from_S16(&scratch.arena, (string_utf16) { buffer, size });
 			result = str_replace_all(arena, result, str_lit("\\"), str_lit("/"));
 			
 			scratch_return(&scratch);
@@ -1126,7 +1126,7 @@ Str8 os_filepath(Arena* arena, os_systemPath path) {
 				}
 			}
 			
-			string full_path = str8_from_str16(&scratch.arena, (string_utf16) { buffer, size });
+			string full_path = str8_from_S16(&scratch.arena, (string_utf16) { buffer, size });
 			string binary_path = U_GetDirectoryFromFilepath(full_path);
 			result = str_replace_all(arena, binary_path, str_lit("\\"), str_lit("/"));
 			
@@ -1148,7 +1148,7 @@ Str8 os_filepath(Arena* arena, os_systemPath path) {
 			}
 			
 			if (buffer) {
-				result = str8_from_str16(&scratch.arena, str16_cstring(buffer));
+				result = str8_from_S16(&scratch.arena, S16_cstring(buffer));
 				result = str_replace_all(arena, result, str_lit("\\"), str_lit("/"));
 			}
 			
@@ -1165,7 +1165,7 @@ Str8 os_filepath(Arena* arena, os_systemPath path) {
 				buffer = arena_alloc_array(&scratch.arena, u16, size + 1);
 				size = GetTempPathW(size + 1, (WCHAR*)buffer);
 			}
-			result = str8_from_str16(&scratch.arena, (string_utf16) { buffer, size - 1 });
+			result = str8_from_S16(&scratch.arena, (string_utf16) { buffer, size - 1 });
 			result = str_replace_all(arena, result, str_lit("\\"), str_lit("/"));
 			
 			scratch_return(&scratch);

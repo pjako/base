@@ -5,8 +5,8 @@
 #include "parser/tokenizer.h"
 
 
-Str8 tn_getTokenTypeName(tn_tokenType Type) {
-    switch(Type) {
+Str8 tn_getTokenTypeName(tn_tokenType type) {
+    switch(type) {
         case tn_tokenType_openParen: {return(str_lit("open parentheses"));}
         case tn_tokenType_closeParen: {return(str_lit("close parentheses"));}
         case tn_tokenType_colon: {return(str_lit("colon"));}
@@ -27,9 +27,10 @@ Str8 tn_getTokenTypeName(tn_tokenType Type) {
         case tn_tokenType_endOfLine: {return(str_lit("end of line"));}
         case tn_tokenType_comment: {return(str_lit("comment"));}
         case tn_tokenType_endOfStream: {return(str_lit("end of stream"));}
+        default: str_lit("unknown");
     }
     
-    return(str_lit("unknown"));
+    return str_lit("unknown");
 };
 
 bool tn_parsing(tn_Tokenizer *tokenizer) {
