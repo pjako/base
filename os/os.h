@@ -29,7 +29,11 @@ API BaseMemory os_getBaseMemory(void);
 
 /////////////////////////
 // time related functionality
-API u64 os_nowInMicroSeconds(void);
+
+API DateTime os_timeUniversalNow(void);
+API DateTime os_timeLocalFromUniversal(DateTime* date_time);
+API DateTime os_timeUniversalFromLocal(DateTime* date_time);
+API u64 os_timeMicrosecondsNow(void);
 
 
 /////////////////////////
@@ -47,7 +51,26 @@ API Str8 os_fileRead(Arena* arena, Str8 fileName);
 API bx os_fileWrite(Str8 fileName, Str8 data);
 API bx os_fileDelete(Str8 fileName);
 API bx os_fileExists(Str8 fileName);
+typedef enum os_systemPath {
+	os_systemPath_currentDir,
+	os_systemPath_binary,
+	os_systemPath_userData,
+	os_systemPath_tempData,
+} os_systemPath;
 
+API Str8 os_filepath(Arena* arena, os_systemPath path);
+
+INLINE Str8 os_getDirectoryFromFilepath(Str8 filepath) {
+    i64 lastSlash = str_lastIndexOfChar(filepath, '/');
+    if (lastSlash == -1) {
+        lastSlash = str_lastIndexOfChar(filepath, '\\');
+    }
+    Str8 result = filepath;
+    if (lastSlash != -1) {
+        result.size = lastSlash - 1;
+    }
+    return result;
+}
 
 /////////////////////////
 // File properties
