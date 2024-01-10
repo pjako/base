@@ -13,8 +13,8 @@ typedef enum dxc_binaryShader {
 } dxc_binaryShader;
 
 typedef struct StrPair {
-    Str8 left;
-    Str8 right;
+    S8 left;
+    S8 right;
 } StrPair;
 
 typedef struct DxCompiler DxCompiler;
@@ -43,26 +43,26 @@ typedef struct dxc_CompileOptions {
 typedef struct dxc_CompileDesc {
     DxCompiler* dxCompiler;
     dxc_shaderType type;
-    Str8 source;
-    Str8 inputFileName;
-    Str8 entryPoint;
+    S8 source;
+    S8 inputFileName;
+    S8 entryPoint;
     StrPair* defines;
     u32 defineCount;
-    Str8 (*includeLoadCallback)(Str8 includeName, void* userPtr);
+    S8 (*includeLoadCallback)(S8 includeName, void* userPtr);
     void* userPtr;
     dxc_CompileOptions options;
 } dxc_CompileDesc;
 
 typedef struct dxc_ReflectionResultDesc {
-    Str8 descs; // The underneath type is ReflectionDesc
+    S8 descs; // The underneath type is ReflectionDesc
     uint32_t descCount = 0;
     uint32_t instructionCount = 0;
 } dxc_ReflectionResultDesc;
 
 typedef struct dxc_CompileResult {
-    Str8 target;
+    S8 target;
 
-    Str8 errorWarningMsg;
+    S8 errorWarningMsg;
     bool hasError;
 
     dxc_ReflectionResultDesc reflection;

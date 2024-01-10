@@ -264,7 +264,7 @@ typedef enum rx_bufferUsage {
 typedef flags32 rx_bufferUsageFlags;
 
 typedef struct rx_BufferDesc {
-    Str8 label;
+    S8 label;
     rx_bufferUsageFlags usage;
     mms size;
     rx_Range data;
@@ -313,7 +313,7 @@ typedef enum rx_compareFunc {
 } rx_compareFunc;
 
 typedef struct rx_SamplerDesc {
-    Str8           label;
+    S8           label;
     rx_addressMode addressModeU;
     rx_addressMode addressModeV;
     rx_addressMode addressModeW;
@@ -506,7 +506,7 @@ typedef enum rx_textureViewDimension {
 } rx_textureViewDimension;
 
 typedef struct rx_TextureViewDesc {
-    Str8 label;
+    S8 label;
     rx_texture texture;
     rx_textureFormat format;
     rx_textureViewDimension dimension;
@@ -947,7 +947,7 @@ typedef enum rx_vertexFormat {
 } rx_vertexFormat;
 
 typedef struct rx_VertexAttrDesc {
-    Str8 name;
+    S8 name;
     i32 bufferIndex;
     i32 offset;
     rx_vertexFormat format;
@@ -1034,13 +1034,13 @@ typedef struct rx_BindingLayoutDesc {
 } rx_BindingLayoutDesc;
 
 typedef struct rx_RenderPipelineDesc {
-    Str8                    label;
+    S8                    label;
     rx_primitiveTopology    primitiveTopology;
     rx_indexType            indexFormat;
     struct {
         rx_renderShader shader;
-        Str8            vsEntryPoint;
-        Str8            fsEntryPoint;
+        S8            vsEntryPoint;
+        S8            fsEntryPoint;
     } program;
     rx_LayoutDesc           layout;
     rx_RasterizerState      rasterizer;
@@ -1109,7 +1109,7 @@ typedef struct rx_RenderPassColorTargetDesc {
 } rx_RenderPassColorTargetDesc;
 
 typedef struct rx_RenderPassDesc {
-    Str8 name;
+    S8 name;
     rx_RenderPassColorTargetDesc colorTargets[RX_MAX_COLOR_TARGETS];
     struct {
         bx               active;

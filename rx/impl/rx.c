@@ -502,6 +502,8 @@ typedef struct rx_TextureSupport {
     bool depth:  1;         // pixel format is a depth format
 } rx_TextureSupport;
 
+#pragma region CTX
+
 typedef struct rx_Ctx {
     rx_backend backend;
     Arena* arena;
@@ -531,6 +533,7 @@ typedef struct rx_Ctx {
     //rx__poolDef(rx_Texture) textures;
 } rx_Ctx;
 
+#pragma endregion
 
 #define rx_valueOrDefault(VAR, DEFAULT) (VAR) != 0 ? (VAR) : (DEFAULT)
 
@@ -1349,7 +1352,7 @@ LOCAL void rx__setError(rx_Ctx* ctx, rx_error error) {
     ctx->error = error;
 }
 
-LOCAL void rx__log(rx_Ctx* ctx, Str8 msg) {
+LOCAL void rx__log(rx_Ctx* ctx, S8 msg) {
     ASSERT(ctx);
     os_log(msg);
 }
@@ -1794,7 +1797,8 @@ LOCAL uint32_t rx__vertexFormatBytesize(rx_vertexFormat fmt) {
             return 0;
     }
 }
-
+#pragma region - VULKAN -
+#pragma endregion
 #if RX_VULKAN
 
 
@@ -1837,6 +1841,8 @@ typedef struct rx_VulkanCtx {
 
 #endif
 
+#pragma region - OPENGL -
+#pragma endregion
 #if RX_OGL
 #define rx__oglCheckErrors() { ASSERT(glGetError() == GL_NO_ERROR); }
 
@@ -2463,7 +2469,7 @@ LOCAL void rx__glInitCaps(rx_OpenGlCtx* ctx) {
     if (ctx->base.backend == rx_backend_gles3) {
         for (GLint i = 0; i < numExt; i++) {
             const char* ext = (const char*) glGetStringi(GL_EXTENSIONS, i);
-            Str8 extensionName = str_fromNullTerminatedCharPtr((char*)ext);
+            S8 extensionName = str_fromNullTerminatedCharPtr((char*)ext);
             if (extensionName.size > 0) {
                 if (strstr(ext, "_texture_compression_s3tc")) {
                 hasS3tc = true;
@@ -2495,7 +2501,7 @@ LOCAL void rx__glInitCaps(rx_OpenGlCtx* ctx) {
     } else {
         for (GLint i = 0; i < numExt; i++) {
             const char* ext = (const char*) glGetStringi(GL_EXTENSIONS, i);
-            Str8 extensionName = str_fromNullTerminatedCharPtr((char*)ext);
+            S8 extensionName = str_fromNullTerminatedCharPtr((char*)ext);
             if (extensionName.size > 0) {
                 if (str_isEqual(extensionName, s8("_texture_compression_s3tc"))) {
                     hasS3tc = true;
@@ -3329,7 +3335,7 @@ LOCAL GLenum rx__shaderStage(rx_shaderStage stage) {
     return stage == rx_shaderStage_vertex ? GL_VERTEX_SHADER : GL_FRAGMENT_SHADER;
 }
 
-LOCAL GLuint rx__glCompileShader(rx_OpenGlCtx* ctx, rx_shaderStage stage, Str8 source) {
+LOCAL GLuint rx__glCompileShader(rx_OpenGlCtx* ctx, rx_shaderStage stage, S8 source) {
     rx__oglCheckErrors();
     GLuint glShd = glCreateShader(rx__shaderStage(stage));
     glShaderSource(glShd, 1, (const GLchar**) &source.content, (const GLint*) &source.size);
@@ -4177,6 +4183,8 @@ LOCAL void rx__glApplyRenderPipeline(rx_OpenGlCtx* ctx, rx_RenderPipeline* rende
     rx__oglCheckErrors();
 }
 
+#pragma region --GLExcuteDrawList
+
 LOCAL void rx__glExcuteDrawList(rx_OpenGlCtx* ctx, rx_GlStateCache* glStateCache, rx_DrawArea* drawAreas, u32 drawAreasCount, rx_DrawList* drawList, u32 maxWidth, u32 maxHeight) {
     ASSERT(ctx);
     ASSERT(drawList);
@@ -4258,6 +4266,25 @@ LOCAL void rx__glExcuteDrawList(rx_OpenGlCtx* ctx, rx_GlStateCache* glStateCache
             pushIndicies[0] = 0;
         }
 #endif
+
+        rx_ResGroup* resGroup0 = NULL;
+        rx_ResGroup* resGroupDynamicOffsetBuffers = NULL;
+
+        rx_Buffer* uniformBuffers[2] = {0};
+
+        if (drawArea->resGroupDynamicOffsetBuffers.id == 0) {
+            // use default
+            resGroupDynamicOffsetBuffers = rx__getResGroup(&ctx->base, drawArea->resGroupDynamicOffsetBuffers);
+
+        } else {
+            resGroupDynamicOffsetBuffers = rx__getResGroup(&ctx->base, drawArea->resGroupDynamicOffsetBuffers);
+            ASSERT(resGroupDynamicOffsetBuffers->layout.id == ctx->base.defaultResGroupDynamicOffsetBuffers.id);
+        }
+
+
+
+    rx_resGroup resGroup0;
+    rx_resGroup resGroupDynamicOffsetBuffers;
 
         uint32_t instanceOffset = 0;
         uint32_t instanceCount  = 0;
@@ -4505,6 +4532,8 @@ typedef struct rx__GlVertexAttribute {
         }
     }
 }
+
+#pragma endregion
 
 // _sg_image_t** color_images, _sg_image_t** resolve_images, _sg_image_t* ds_image, const sg_pass_desc* desc
 LOCAL void rx__glCreateRenderPass(rx_RenderPass* pass) {
@@ -4919,6 +4948,8 @@ LOCAL void rx__glCommit(rx_Ctx* baseCtx) {
 
 #endif
 
+#pragma region - METAL -
+#pragma endregion
 #if RX_METAL
 typedef struct rx_MtlCtx {
     rx_Ctx base;
@@ -4931,6 +4962,7 @@ typedef struct rx_MtlCtx {
 
 static rx_Ctx* rx__ctx;
 
+#pragma region setup
 void rx_setup(rx_SetupDesc* desc) {
     ASSERT(!rx__ctx);
     ASSERT(desc);
@@ -5003,6 +5035,7 @@ void rx_setup(rx_SetupDesc* desc) {
 #endif
 
 }
+#pragma endregion
 
 void rx_shutdown(void) {
     ASSERT(rx__ctx);
@@ -5104,6 +5137,8 @@ LOCAL rx_SamplerDesc rx__samplerDescDefaults(const rx_SamplerDesc* desc) {
     return outDesc;
 }
 
+#pragma region MakeSampler
+
 rx_sampler rx_makeSampler(const rx_SamplerDesc* desc) {
     ASSERT(rx__ctx && desc);
     rx_Ctx* ctx = rx__ctx;
@@ -5127,6 +5162,7 @@ rx_sampler rx_makeSampler(const rx_SamplerDesc* desc) {
 
     return handle;
 }
+#pragma endregion
 
 LOCAL rx_TextureDesc rx__textureDescDefaults(const rx_TextureDesc* desc) {
     rx_TextureDesc outDesc = *desc;
@@ -5150,7 +5186,9 @@ LOCAL rx_TextureDesc rx__textureDescDefaults(const rx_TextureDesc* desc) {
 #endif
     return outDesc;
 }
+#pragma endregion
 
+#pragma region MakeTexture
 rx_texture rx_makeTexture(const rx_TextureDesc* desc) {
     ASSERT(rx__ctx && desc);
     rx_Ctx* ctx = rx__ctx;
@@ -5174,6 +5212,8 @@ rx_texture rx_makeTexture(const rx_TextureDesc* desc) {
 
     return handle;
 }
+
+#pragma endregion
 
 rx_renderShader rx_makeRenderShader(const rx_RenderShaderDesc* desc) {
     ASSERT(rx__ctx && desc);

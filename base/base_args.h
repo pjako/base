@@ -30,13 +30,13 @@ typedef enum arg_optType {
 } arg_optType;
 
 typedef struct arg_Opt {
-    Str8 name;
+    S8 name;
     i32 shortName;
     arg_optType type;
     u32 flags;
-    Str8 defaultValue;
-    Str8 desc;
-    Str8 helpText;
+    S8 defaultValue;
+    S8 desc;
+    S8 helpText;
 } arg_Opt;
 
 typedef struct arg_Ctx {
@@ -47,8 +47,8 @@ typedef struct arg_Ctx {
     u64 redArgsBitField;
     u32 nextIdx;
     arg_Opt* currentOpt;
-    Str8 foundKey;
-    Str8 foundValue;
+    S8 foundKey;
+    S8 foundValue;
     i32 foundi32Value;
     f32 foundF32Value;
     u32 foundFlagsValue;
@@ -56,7 +56,7 @@ typedef struct arg_Ctx {
 
 API arg_Ctx arg_makeCtx(arg_Opt* opts, u32 optsCount, char** inputOpts, u32 inputOptsCount);
 
-API Str8 arg_createHelpText(Arena* arena, arg_Ctx* ctx);
+API S8 arg_createHelpText(Arena* arena, arg_Ctx* ctx);
 
 API i32 arg_nextOpt(arg_Ctx* ctx);
 

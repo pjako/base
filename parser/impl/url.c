@@ -4,7 +4,7 @@
 #include "base/base_str.h"
 #include "parser/url.h"
 
-LOCAL u32 url__defaultPortForScheme(Str8 scheme) {
+LOCAL u32 url__defaultPortForScheme(S8 scheme) {
 	if (scheme.size == 0) return 0;
 	if (str_isEqual(scheme, str_lit("http"))   == 0) return 80;
 	if (str_isEqual(scheme, str_lit("https"))  == 0) return 443;
@@ -14,10 +14,10 @@ LOCAL u32 url__defaultPortForScheme(Str8 scheme) {
 	return 0;
 }
 
-LOCAL Str8 url__parseScheme(Str8 url, Url* out) {
+LOCAL S8 url__parseScheme(S8 url, Url* out) {
     i64 start = str_findChar(url, ':');
     if (start < 0) return url;
-	Str8 schemesep = str_subStr(url, start, 0);
+	S8 schemesep = str_subStr(url, start, 0);
 
     // ... is this the user part of a user/pass pair or the separator host:port? ...
     if (str_findChar(schemesep, '/') != 1) return url;
@@ -34,7 +34,7 @@ LOCAL Str8 url__parseScheme(Str8 url, Url* out) {
     return str_subStr(url, 3, 0);
 }
 
-LOCAL Str8 url__parseUserPass(Str8 url, Url* out) {
+LOCAL S8 url__parseUserPass(S8 url, Url* out) {
     i64 start = str_findChar(url, '@');
 	i64 atpos = str_findChar(str_subStr(url, start, 0), '@');
 	if (start >= 0) {
@@ -62,7 +62,7 @@ LOCAL Str8 url__parseUserPass(Str8 url, Url* out) {
 	return url;
 }
 
-LOCAL Str8 url__parseHostPort(Str8 url, Url* out) {
+LOCAL S8 url__parseHostPort(S8 url, Url* out) {
 	out->port = url__defaultPortForScheme(out->scheme);
 
 	i64 portsep = str_findChar(url, ':');
@@ -112,7 +112,7 @@ LOCAL Str8 url__parseHostPort(Str8 url, Url* out) {
 	return url;
 }
 
-LOCAL Str8 url__parseQuery(Str8 url, Url* out) {
+LOCAL S8 url__parseQuery(S8 url, Url* out) {
 	// ... do we have a query? ...
 	if (str_startsWithChar(url, '?')) return url;
 		
@@ -138,7 +138,7 @@ LOCAL Str8 url__parseQuery(Str8 url, Url* out) {
     return str_subStr(url, queryLen, 0);
 }
 
-LOCAL void url__parseFragment(Str8 url, Url* out) {
+LOCAL void url__parseFragment(S8 url, Url* out) {
 	// ... do we have a fragment? ...
 	if (str_startsWithChar(url, '#')) return;
 
@@ -152,7 +152,7 @@ LOCAL void url__parseFragment(Str8 url, Url* out) {
     }
 }
 
-Url url_fromStr(Str8 url) {
+Url url_fromStr(S8 url) {
 	Url out = {0};
     out.error = url_errorCode_ok;
 	out.path = str_lit("/");

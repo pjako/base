@@ -224,7 +224,7 @@ typedef struct app_AppEvent {
     } mouse;
 #if 0
     struct {
-        Str8 path;
+        S8 path;
         app_fsAction action;
     } pathChange;
 #endif
@@ -240,7 +240,7 @@ typedef struct app_ApplicationDesc {
     void (*prepareReloadDll) (void);
     void (*continueDll) (void);
     void (*cleanup) (void);
-    void (*fatalError) (Str8 errorMsg);
+    void (*fatalError) (S8 errorMsg);
 
     // coro threads directly in application code?
     // maybe threadpools as well?
@@ -263,7 +263,7 @@ typedef enum app_windowGfxApi {
 } app_windowGfxApi;
 
 typedef struct app_WindowDesc {
-    Str8 title;
+    S8 title;
     app_windowGfxApi gfxApi;
     u32 sampleCount;
     u32 x;
@@ -305,7 +305,7 @@ API void            app_stopThread(app_threadId id);
 
 // Filewatch (based on file watch in os.h)
 #if 0
-API app_fsPathWatchId   app_fsWatchPathStart(Str8 folder, app_fsPathWatchFlags trackFlags);
+API app_fsPathWatchId   app_fsWatchPathStart(S8 folder, app_fsPathWatchFlags trackFlags);
 API void                app_fsWatchPathStop(app_fsPathWatchId handle);
 #endif
 

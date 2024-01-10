@@ -33,39 +33,39 @@ using namespace spirv_cross;
 #define arrFor(ARR, IDXNAME) for(u32 IDXNAME = 0; IDXNAME < (ARR)->count; IDXNAME++)
 
 typedef struct shd_TokenRef {
-    Str8 file;
+    S8 file;
     u32 line;
-    Str8 token;
+    S8 token;
 } shd_TokenRef;
 
 typedef struct shd_Error {
-    Str8 fileName;
+    S8 fileName;
     u32 line;
-    Str8 errorMsg;
+    S8 errorMsg;
 } shd_Error;
 
 typedef struct shd_MatProperty {
-    Str8 name;
-    Str8 value;
+    S8 name;
+    S8 value;
 } shd_MatProperty;
 
 typedef struct shd_Material {
-    Str8 name;
-    Str8 program;
+    S8 name;
+    S8 program;
     arrDef(shd_MatProperty) properties;
 } shd_Material;
 
 typedef struct shd_SamplerState {
-    Str8    name;
-    Str8    addressModeU;
-    Str8    addressModeV;
-    Str8    addressModeW;
-    Str8    magFilter;
-    Str8    minFilter;
-    Str8    mipmapMode;
+    S8    name;
+    S8    addressModeU;
+    S8    addressModeV;
+    S8    addressModeW;
+    S8    magFilter;
+    S8    minFilter;
+    S8    mipmapMode;
     f32     lodMinClamp;
     f32     lodMaxClamp;
-    Str8    compare;
+    S8    compare;
     u32     maxAnisotropy;
 } shd_SamplerState;
 
@@ -88,14 +88,14 @@ enum constType {
     constType_invalid = -1,
 };
 
-typedef struct Str8Pair {
-    Str8 left;
-    Str8 right;
-} Str8Pair;
+typedef struct S8Pair {
+    S8 left;
+    S8 right;
+} S8Pair;
 
-arrTypeDef(Str8Pair);
+arrTypeDef(S8Pair);
 
-static const Str8 constTypeList[constType__count] = {
+static const S8 constTypeList[constType__count] = {
     str_lit("float"),
     str_lit("float2"),
     str_lit("float3"),
@@ -103,7 +103,7 @@ static const Str8 constTypeList[constType__count] = {
     str_lit("uint"),
 };
 
-constType getConstType(Str8 str) {
+constType getConstType(S8 str) {
     for (u32 idx = 0; idx < countOf(constTypeList); idx++) {
         if (str_isEqual(str, constTypeList[idx])) {
             return (constType) idx;
@@ -125,7 +125,7 @@ enum textureType {
     textureType__count,
 };
 
-static const Str8 textureTypeList[textureType__count] = {
+static const S8 textureTypeList[textureType__count] = {
     str_lit("Texture2D"),
 };
 
@@ -135,8 +135,8 @@ static const u32 textureTypeByteSize[textureType__count] = {
 
 // fnNameToken.text, fnTypeToken.text, indexToken.text, resTypeToken.text, resGroupToken.text
 struct ResInfo {
-    Str8 name;
-    Str8 typeName;
+    S8 name;
+    S8 typeName;
     u32  type;
     u32  byteSize;
 };
@@ -153,42 +153,42 @@ struct ResGroupInfo {
 };
 
 typedef struct shd_ResGroup {
-    Str8 name;
+    S8 name;
     u32 constantsSize;
     ResGroupInfo info;
 } shd_ResGroup;
 
 typedef struct shd_RasterState {
-    Str8 name;
-    Str8 cullMode;
-    Str8 faceWinding;
+    S8 name;
+    S8 cullMode;
+    S8 faceWinding;
     f32 depthBias;
     f32 depthBiasSlopeScale;
     f32 depthBiasClamp;
 } shd_RasterState;
 
 typedef struct shd_DepthStencil {
-    Str8 name;
+    S8 name;
     bx disabled;
-    Str8 format;
+    S8 format;
     bx depthWriteEnabled;
     bx stencilEnabled;
     u32 stencilReadMask;
     u32 stencilWriteMask;
     u32 stencilRef;
-    Str8 stencilFrontFailOp;
-    Str8 stencilFrontDepthFailOp;
-    Str8 stencilFrontPassOp;
-    Str8 stencilFrontCompareFunc;
-    Str8 stencilBackFailOp;
-    Str8 stencilBackDepthFailOp;
-    Str8 stencilBackPassOp;
-    Str8 stencilBackCompareFunc;
+    S8 stencilFrontFailOp;
+    S8 stencilFrontDepthFailOp;
+    S8 stencilFrontPassOp;
+    S8 stencilFrontCompareFunc;
+    S8 stencilBackFailOp;
+    S8 stencilBackDepthFailOp;
+    S8 stencilBackPassOp;
+    S8 stencilBackCompareFunc;
 } shd_DepthStencil;
 
 // HEADER CODEGEN
 
-void shd_recordHeaderCode(Arena* recordArena, Str8 prefix) {
+void shd_recordHeaderCode(Arena* recordArena, S8 prefix) {
 
 #if 0
 typedef struct ShaderCode {
@@ -204,7 +204,7 @@ typedef struct ShaderCode {
 #if 0
 typedef struct ShaderDesc {
     u32 codeIndex;
-    Str8 entry;
+    S8 entry;
 } ShaderDesc;
 #endif
     str_fmt(recordArena, str8("typedef struct {}ShaderDesc {{"), prefix);
@@ -214,13 +214,13 @@ typedef struct ShaderDesc {
 
 #if 0
 typedef struct RenderProgramDesc {
-    Str8 name;
+    S8 name;
     ShaderDesc vs;
     ShaderDesc ps;
 } RenderProgramDesc;
 #endif
     str_fmt(recordArena, str8("typedef struct {}RenderProgramDesc {{"), prefix);
-    str_join(recordArena, str8("    Str8 name;"));
+    str_join(recordArena, str8("    S8 name;"));
     str_join(recordArena, str8("    ShaderDesc vs;"));
     str_join(recordArena, str8("    ShaderDesc ps;"));
     str_fmt(recordArena, str8("}} {}RenderProgramDesc;"), prefix);
@@ -232,7 +232,7 @@ static RenderProgramDesc renderPrograms[] = {{}};
 */
 }
 
-void shd_recordCodeGen(Arena* recordArena, Str8 prefix, Str8 fileName) {
+void shd_recordCodeGen(Arena* recordArena, S8 prefix, S8 fileName) {
     str_join(recordArena, str8("#ifndef _RX_SHADERS_"));
     str_join(recordArena, str8("#define _RX_SHADERS_"));
     shd_recordHeaderCode(recordArena, prefix);
@@ -251,7 +251,7 @@ enum shd_entryPointType {
 };
 
 typedef struct shd_ShaderEntryPoint {
-    Str8 name;
+    S8 name;
     shd_entryPointType type;
 } shd_ShaderEntryPoint;
 
@@ -260,7 +260,7 @@ typedef struct shd_ShaderText {
         shd_ShaderEntryPoint* elements;
         uint32_t count;
     } entryPoints;
-    Str8 source;
+    S8 source;
 } shd_TextShader;
 
 typedef struct shd_ShaderFileContent {
@@ -285,8 +285,8 @@ struct MetaDataReplaceBlock {
 };
 
 struct CodeInfo {
-    Str8 name;
-    Str8 code;
+    S8 name;
+    S8 code;
     ResGroupInfo resGroups[dynGroup__count];
 
     // blocks that get put into comments, for example:
@@ -297,7 +297,7 @@ struct CodeInfo {
         u32 capacity;
     } replaceBlocks;
 
-    Str8 resGroupNames[dynGroup__count];
+    S8 resGroupNames[dynGroup__count];
 };
 
 typedef enum shd_shaderParamType {
@@ -311,21 +311,21 @@ typedef enum shd_shaderParamType {
 
 typedef struct shd_ShaderParam {
     shd_shaderParamType type;
-    Str8 name;
-    Str8 shortName;
+    S8 name;
+    S8 shortName;
     u32 size;
 } shd_ShaderParam;
 
 typedef struct shd_ShaderStorageBuffer {
     u32 flags;
     u32 slot;
-    Str8 name;
+    S8 name;
 } shd_ShaderStorageBuffer;
 
 typedef struct shd_Shader {
-    Str8 entry;
+    S8 entry;
     shd_entryPointType type;
-    Str8 source;
+    S8 source;
     arrDef(shd_ShaderParam) inputs;
     arrDef(shd_ShaderParam) outputs;
     arrDef(shd_ShaderStorageBuffer) storageBuffers;
@@ -333,13 +333,13 @@ typedef struct shd_Shader {
 } shd_Shader;
 
 typedef struct RenderProgram {
-    Str8 name;
+    S8 name;
     shd_Shader vs;
     shd_Shader ps;
-    //Str8 vsEntry;
-    //Str8 psEntry;
-    //Str8 vsSpirv;
-    //Str8 psSpirv;
+    //S8 vsEntry;
+    //S8 psEntry;
+    //S8 vsSpirv;
+    //S8 psSpirv;
 } RenderProgram;
 
 void shd_parseSpirvShaderDetails(Arena* arena, shd_Shader* shader, CompilerReflection& compiler) {
@@ -467,7 +467,7 @@ void shd_parseSpirvShaderDetails(Arena* arena, shd_Shader* shader, CompilerRefle
 #endif
 }
 
-Str8 shd_getVertexFormatStr(shd_shaderParamType type) {
+S8 shd_getVertexFormatStr(shd_shaderParamType type) {
     switch (type) {
 #if 0
         case : return str8("rx_vertexFormat_u8x2");
@@ -516,13 +516,13 @@ typedef struct ShaderFileInfo {
     arrDef(shd_Material) materials;
 } ShaderFileInfo;
 
-Str8 shd_generateHeaderShader(Arena* arena, shd_Shader* shader, Str8 name, Str8 prefix) {
-    Str8 tab = str8("    ");
+S8 shd_generateHeaderShader(Arena* arena, shd_Shader* shader, S8 name, S8 prefix) {
+    S8 tab = str8("    ");
 #if 0
 typedef struct shd_Shader {
-    Str8 entry;
+    S8 entry;
     shd_entryPointType type;
-    Str8 source;
+    S8 source;
     arrDef(shd_ShaderParam) inputs;
     arrDef(shd_ShaderParam) outputs;
     arrDef(shd_ShaderStorageBuffer) storageBuffers;
@@ -530,7 +530,7 @@ typedef struct shd_Shader {
 } shd_Shader;
 #endif
 
-    Str8 shaderShort = str8("Vs");
+    S8 shaderShort = str8("Vs");
     switch (shader->type) {
         case shd_entryPointType_vertex:  shaderShort = str8("Vs"); break;
         case shd_entryPointType_pixel:   shaderShort = str8("Ps"); break;
@@ -538,7 +538,7 @@ typedef struct shd_Shader {
     }
 
 
-    Str8 generatedCode = {0};
+    S8 generatedCode = {0};
     str_record(generatedCode, arena) {
         // write spirv code
 
@@ -551,7 +551,7 @@ typedef struct shd_Shader {
                 str_join(arena, tab);
                 for (u32 j = minVal(idx + 8, size);;) {
                     u32 val = spirv[idx];
-                    Str8 hexVal = str_u32ToHex(arena, val);
+                    S8 hexVal = str_u32ToHex(arena, val);
                     idx++;
                     if (idx >= j) break;
                     str_join(arena, str8(", "));
@@ -567,7 +567,7 @@ typedef struct shd_Shader {
             str_fmt(arena, str8("static {0}ShaderInOutValue {0}shader{1}In_{2}[] = {{\n"), prefix, shaderShort, name);
             arrFor(&shader->inputs, idx) {
                 shd_ShaderParam* param = shader->inputs.elements + idx;
-                Str8 type = shd_getVertexFormatStr(param->type);
+                S8 type = shd_getVertexFormatStr(param->type);
                 str_join(arena, tab, str8("{"), type, str8(", {(u8*)\""), param->name,str8("\", "), param->name.size, str8("}},\n"));
             }
             str_join(arena, str8("};\n\n"));
@@ -578,7 +578,7 @@ typedef struct shd_Shader {
             str_fmt(arena, str8("static {0}ShaderInOutValue {0}shader{1}Out_{2}[] = {{\n"), prefix, shaderShort, name);
             arrFor(&shader->outputs, idx) {
                 shd_ShaderParam* param = shader->outputs.elements + idx;
-                Str8 type = shd_getVertexFormatStr(param->type);
+                S8 type = shd_getVertexFormatStr(param->type);
                 str_join(arena, tab, str8("{"), type, str8(", {(u8*) \""), param->name,str8("\", "), param->name.size, str8("}},\n"));
             }
             str_join(arena, str8("};\n\n"));
@@ -633,13 +633,13 @@ typedef struct shd_Shader {
     return generatedCode;
 }
 
-Str8 shd_generateHeader(Arena* arena, ShaderFileInfo* fileInfo, Str8 prefix, CodeInfo* codeInfo, Str8PairArray* typeMap) {
+S8 shd_generateHeader(Arena* arena, ShaderFileInfo* fileInfo, S8 prefix, CodeInfo* codeInfo, S8PairArray* typeMap) {
 
     // build enum
 
-    Str8 generatedCode = {0};
+    S8 generatedCode = {0};
     str_record(generatedCode, arena) {
-        Str8 tab = str8("    ");
+        S8 tab = str8("    ");
 
         // generate default struct that holds generic shader informations
 
@@ -656,16 +656,16 @@ Str8 shd_generateHeader(Arena* arena, ShaderFileInfo* fileInfo, Str8 prefix, Cod
 
         typedef struct ShaderInOutValue {
             rx_vertexFormat type;
-            Str8 name;
+            S8 name;
         } ShaderInOutValue;
 
         typedef struct StorageBuffer {
             u32 slot;
-            Str8 name;
+            S8 name;
         } StorageBuffer;
 
         typedef struct Shader {
-            Str8 entry;
+            S8 entry;
             struct {
                 ShaderInOutValue* elements;
                 uint32_t count;
@@ -679,7 +679,7 @@ Str8 shd_generateHeader(Arena* arena, ShaderFileInfo* fileInfo, Str8 prefix, Cod
                 uint32_t count;
             } storageBuffers;
             u32 pushSize;
-            Str8 code;
+            S8 code;
         } Shader;
 
         typedef struct ResBlocks {
@@ -689,7 +689,7 @@ Str8 shd_generateHeader(Arena* arena, ShaderFileInfo* fileInfo, Str8 prefix, Cod
         } ResBlocks;
 
         typedef struct RenderProgram {
-            Str8 name;
+            S8 name;
             Shader vs;
             Shader ps;
             ResBlocks[6];
@@ -698,7 +698,7 @@ Str8 shd_generateHeader(Arena* arena, ShaderFileInfo* fileInfo, Str8 prefix, Cod
 
         str_fmt(arena, str8("typedef struct {}StorageBuffer {{\n"), prefix);
         str_join(arena, str8("    u32 slot;\n"));
-        str_join(arena, str8("    Str8 name;\n"));
+        str_join(arena, str8("    S8 name;\n"));
         str_fmt(arena, str8("}} {}StorageBuffer;\n"), prefix);
         
         str_join(arena, str8("\n"));
@@ -712,13 +712,13 @@ Str8 shd_generateHeader(Arena* arena, ShaderFileInfo* fileInfo, Str8 prefix, Cod
 
         str_fmt(arena, str8("typedef struct {}ShaderInOutValue {{\n"), prefix);
         str_join(arena, str8("    rx_vertexFormat type;\n"));
-        str_join(arena, str8("    Str8 name;\n"));
+        str_join(arena, str8("    S8 name;\n"));
         str_fmt(arena, str8("}} {}ShaderInOutValue;\n"), prefix);
         
         str_join(arena, str8("\n"));
 
         str_fmt(arena, str8("typedef struct {}Shader {{\n"), prefix);
-        str_join(arena, str8("    Str8 entry;\n"));
+        str_join(arena, str8("    S8 entry;\n"));
         str_join(arena, str8("    struct {\n"));
         str_fmt(arena, str8("        {}ShaderInOutValue* elements;\n"), prefix);
         str_join(arena, str8("        uint32_t count;\n"));
@@ -732,7 +732,7 @@ Str8 shd_generateHeader(Arena* arena, ShaderFileInfo* fileInfo, Str8 prefix, Cod
         str_join(arena, str8("        u32 count;\n"));
         str_join(arena, str8("    } storageBuffers;\n"));
         str_join(arena, str8("    u32 pushSize;\n"));
-        str_join(arena, str8("    Str8 code;\n"));
+        str_join(arena, str8("    S8 code;\n"));
         str_fmt(arena, str8("}} {}Shader;\n"), prefix);
         
         str_join(arena, str8("\n"));
@@ -746,7 +746,7 @@ Str8 shd_generateHeader(Arena* arena, ShaderFileInfo* fileInfo, Str8 prefix, Cod
         str_join(arena, str8("\n"));
 
         str_fmt(arena, str8("typedef struct {}RenderProgram {{\n"), prefix);
-        str_join(arena, str8("    Str8 name;\n"));
+        str_join(arena, str8("    S8 name;\n"));
         str_fmt(arena, str8("    {}Shader* vs;\n"), prefix);
         str_fmt(arena, str8("    {}Shader* ps;\n"), prefix);
         str_fmt(arena, str8("    {0}ResBlocks resBlocks[{1}];\n"), prefix, dynGroup__count);
@@ -766,7 +766,7 @@ Str8 shd_generateHeader(Arena* arena, ShaderFileInfo* fileInfo, Str8 prefix, Cod
                 ResArr* resArr = &resGroup->info.resTypes[resTypeIdx];
                 for (u32 idx = 0; idx < resArr->count; idx++) {
                     ResInfo* resInfo = resArr->elements + idx;
-                    Str8 mapName = {};
+                    S8 mapName = {};
                     // get type mapped type name
                     for (u32 i = 0; i < typeMap->count; i++) {
                         if (str_isEqual(typeMap->elements[i].left, resInfo->typeName)) {
@@ -782,13 +782,13 @@ Str8 shd_generateHeader(Arena* arena, ShaderFileInfo* fileInfo, Str8 prefix, Cod
 
         str_join(arena, str8("\n"));
 
-        Str8 resDefaultNames[] = {str8("_ResGroup0"), str8("_ResGroup1"), str8("_ResGroup2"), str8("_ResGroup3"), str8("_DynGroup0"), str8("_DynGroup1")};
+        S8 resDefaultNames[] = {str8("_ResGroup0"), str8("_ResGroup1"), str8("_ResGroup2"), str8("_ResGroup3"), str8("_DynGroup0"), str8("_DynGroup1")};
         for (u32 idx = 0; idx < fileInfo->codeInfos.count; idx++) {
             str_fmt(arena, str8("// Code {} ResGroups\n"), codeInfo->name);
             for (u32 resGroupIdx = 0; resGroupIdx < countOf(codeInfo->resGroups); resGroupIdx++) {
                 ResGroupInfo* resGroupInfo = &codeInfo->resGroups[resGroupIdx];
-                Str8 groupPrefix = str8("");
-                Str8 resBlockName = codeInfo->resGroupNames[resGroupIdx];
+                S8 groupPrefix = str8("");
+                S8 resBlockName = codeInfo->resGroupNames[resGroupIdx];
                 if (resBlockName.size > 0) {
                     bx globalResGroup = false;
                     for (u32 idx = 0; idx < fileInfo->resGroups.count; idx++) {
@@ -824,7 +824,7 @@ Str8 shd_generateHeader(Arena* arena, ShaderFileInfo* fileInfo, Str8 prefix, Cod
                         ResArr* resArr = &resGroupInfo->resTypes[resTypeIdx];
                         for (u32 idx = 0; idx < resArr->count; idx++) {
                             ResInfo* resInfo = resArr->elements + idx;
-                            Str8 mapName = {};
+                            S8 mapName = {};
                             for (u32 i = 0; i < typeMap->count; i++) {
                                 if (str_isEqual(typeMap->elements[i].left, resInfo->typeName)) {
                                     mapName = typeMap->elements[i].right;
@@ -867,13 +867,13 @@ Str8 shd_generateHeader(Arena* arena, ShaderFileInfo* fileInfo, Str8 prefix, Cod
 
             for (u32 inputIdx = 0; inputIdx < renderProgram->vs.inputs.count; inputIdx++) {
                 shd_ShaderParam* input = renderProgram->vs.inputs.elements + inputIdx;
-                static Str8 typeNames[] = {
+                static S8 typeNames[] = {
                     str_lit("f32"),
                     str_lit("Vec2"),
                     str_lit("Vec3"),
                     str_lit("Vec4"),
                 };
-                Str8 typeName = typeNames[input->type];
+                S8 typeName = typeNames[input->type];
                 str_fmt(arena, str8("   {0}{1} {2};\n"), prefix, typeName, input->shortName);
 
                 //input->
@@ -891,7 +891,7 @@ Str8 shd_generateHeader(Arena* arena, ShaderFileInfo* fileInfo, Str8 prefix, Cod
             // writer ResGroups (Uniforms)
             /*
             typedef struct RenderProgram {
-                Str8 name;
+                S8 name;
                 Shader vs;
                 Shader ps;
                 ResBlocks resBlocks[6];
@@ -904,7 +904,7 @@ Str8 shd_generateHeader(Arena* arena, ShaderFileInfo* fileInfo, Str8 prefix, Cod
             for (u32 idx = 0; idx < countOf(codeInfo->resGroups); idx++) {
                 ResGroupInfo* info = codeInfo->resGroups + idx;
 
-                Str8 resBlockName = codeInfo->resGroupNames[idx];
+                S8 resBlockName = codeInfo->resGroupNames[idx];
                 for (u32 idx = 0; idx < fileInfo->resGroups.count; idx++) {
                     shd_ResGroup* resGroup = fileInfo->resGroups.elements + idx;
                     if (str_isEqual(resGroup->name, resBlockName)) {
@@ -952,7 +952,7 @@ Str8 shd_generateHeader(Arena* arena, ShaderFileInfo* fileInfo, Str8 prefix, Cod
     return generatedCode;
 }
 
-bx shd_parseFromFile(Arena* arena, ShaderFileInfo* outFileInfo, Str8 shaderFileName, Str8 shaderFile) {
+bx shd_parseFromFile(Arena* arena, ShaderFileInfo* outFileInfo, S8 shaderFileName, S8 shaderFile) {
     //Arena* arena = os_tempMemory();
     log_trace("Compile...");
     
@@ -972,9 +972,9 @@ bx shd_parseFromFile(Arena* arena, ShaderFileInfo* outFileInfo, Str8 shaderFileN
         //log_warn(str8("category: \""), scf.category, "\"");
         if (str_isEqual(scf.category, str8("RenderProgram"))) {
             // record RenderProgram
-            Str8 name = {};
-            Str8 vsEntry = {};
-            Str8 psEntry = {};
+            S8 name = {};
+            S8 vsEntry = {};
+            S8 psEntry = {};
             for (running = scf_next(&scf); running && scf.valueType != scf_type_category; running = scf_next(&scf)) {
                 if (str_isEqual(scf.key, str8("name"))) {
                     name = scf.valueStr;
@@ -999,13 +999,13 @@ bx shd_parseFromFile(Arena* arena, ShaderFileInfo* outFileInfo, Str8 shaderFileN
             }
             arrInit(arena, &codeInfo->replaceBlocks, 20);
 
-            Str8 cname = {};
-            Str8 cresGroup0 = {};
-            Str8 cresGroup1 = {};
-            Str8 cresGroup2 = {};
-            Str8 cresGroup3 = {};
-            Str8 cdynResGroup0 = {};
-            Str8 cdynResGroup1 = {};
+            S8 cname = {};
+            S8 cresGroup0 = {};
+            S8 cresGroup1 = {};
+            S8 cresGroup2 = {};
+            S8 cresGroup3 = {};
+            S8 cdynResGroup0 = {};
+            S8 cdynResGroup1 = {};
 
             // run ini parser till we run into code
             for (running = scf_next(&scf); running && scf.valueType != scf_type_category; running = scf_next(&scf)) {
@@ -1035,7 +1035,7 @@ bx shd_parseFromFile(Arena* arena, ShaderFileInfo* outFileInfo, Str8 shaderFileN
 
             // Parse shader code metadata
             log_trace("Parse code...");
-            Str8 code = str_subStr(scf.str, scf.needle, scf.str.size);
+            S8 code = str_subStr(scf.str, scf.needle, scf.str.size);
             codeInfo->code = code;
             tn_Tokenizer tokenizer = tn_createTokenize(code, scf.fileName);
             
@@ -1424,7 +1424,7 @@ bx shd_parseFromFile(Arena* arena, ShaderFileInfo* outFileInfo, Str8 shaderFileN
 }
 
 bx shd_generateShaders(Arena* arena, dxc_Instance* dxcInstance, ShaderFileInfo* shaderFileInfo, CodeInfo* codeInfo) {
-    Str8 generatedCode = {0};
+    S8 generatedCode = {0};
     str_record(generatedCode, arena) {
         // Generate code for
         u64 lastOffset = ((u64)codeInfo->code.content);
@@ -1468,8 +1468,8 @@ bx shd_generateShaders(Arena* arena, dxc_Instance* dxcInstance, ShaderFileInfo* 
 
         for (u32 resGroupIdx = 0; resGroupIdx < countOf(codeInfo->resGroups); resGroupIdx++) {
             ResGroupInfo* resGroupInfo = &codeInfo->resGroups[resGroupIdx];
-            Str8 resGroupName = codeInfo->resGroupNames[resGroupIdx];
-            Str8 resBlockName = resGroupIdx >= dynGroup0 ? str8("rx_dynamicResBlocks") : str8("rx_staticResBlocks");
+            S8 resGroupName = codeInfo->resGroupNames[resGroupIdx];
+            S8 resBlockName = resGroupIdx >= dynGroup0 ? str8("rx_dynamicResBlocks") : str8("rx_staticResBlocks");
             
             // referenced group
             ResGroupInfo* namedResGroup = resGroupInfo;
@@ -1528,7 +1528,7 @@ bx shd_generateShaders(Arena* arena, dxc_Instance* dxcInstance, ShaderFileInfo* 
             if (codeInfo->resGroups[resGroupIdx].count == 0) continue;
             str_join(arena, str8("\n"));
             str_join(arena, resGroupIdx >= dynGroup0 ? str8("// DynResGroup") : str8("// ResGroup"), resGroupIdx >= dynGroup0 ? (resGroupIdx - dynGroup0) : resGroupIdx,str8("\n"));
-            Str8 resBlockName = resGroupIdx >= dynGroup0 ? str8("rx_dynamicResBlocks") : str8("rx_staticResBlocks");
+            S8 resBlockName = resGroupIdx >= dynGroup0 ? str8("rx_dynamicResBlocks") : str8("rx_staticResBlocks");
             uint32_t byteOffset = 0;
             // constants
             {
@@ -1585,7 +1585,7 @@ bx shd_generateShaders(Arena* arena, dxc_Instance* dxcInstance, ShaderFileInfo* 
     //log_trace(str8("\ngenerated code:\n"), generatedCode, str8("\n gen done"));
     //log_trace("call dxc...\n");
     StrPair defs = {};
-    Str8 params = str_lit("-spirv");
+    S8 params = str_lit("-spirv");
     // compile code with dxc
 
     // https://github.com/floooh/sokol-tools/blob/master/src/shdc/spirvcross.cc
@@ -1645,11 +1645,11 @@ i32 os_main(i32 argc, char* argv[]) {
 
     arg_Ctx argCtx = arg_makeCtx(&options[0], countOf(options), argv, argc);
     
-    Str8 headerPrefix = str8("");
-    Str8 headerTargetPath = STR_EMPTY;
-    Str8 shaderFilePath = STR_EMPTY;
-    // Str8 shaderFileContent = STR_EMPTY;
-    Str8 shaderFileName = STR_EMPTY;
+    S8 headerPrefix = str8("");
+    S8 headerTargetPath = STR_EMPTY;
+    S8 shaderFilePath = STR_EMPTY;
+    // S8 shaderFileContent = STR_EMPTY;
+    S8 shaderFileName = STR_EMPTY;
 
     {
         // scan arguments
@@ -1707,7 +1707,7 @@ i32 os_main(i32 argc, char* argv[]) {
 
     dxc_Instance* dxcInstance = dxc_create(arena, &dll);
 
-    Str8 shaderFileContent = os_fileRead(arena, shaderFilePath);
+    S8 shaderFileContent = os_fileRead(arena, shaderFilePath);
 
     if (shaderFileContent.size == 0) {
         return 1;
@@ -1725,7 +1725,7 @@ i32 os_main(i32 argc, char* argv[]) {
 
     if (!str_isEmpty(headerTargetPath)) {
         
-        Str8Pair constTypeList[] = {
+        S8Pair constTypeList[] = {
             {str8("float"), str8("f32")},
             {str8("float2"), str8("Vec2")},
             {str8("float3"), str8("Vec3")},
@@ -1735,13 +1735,13 @@ i32 os_main(i32 argc, char* argv[]) {
             {str8("Texture2D"), str8("rx_texture")},
             {str8("SamplerState"), str8("rx_sampler")},
         };
-        Str8PairArray typeMap = {};
+        S8PairArray typeMap = {};
         typeMap.elements = &constTypeList[0];
         typeMap.count = countOf(constTypeList);
 
 
         // generate header containing meta information & shader
-        Str8 generatedHeader = shd_generateHeader(arena, &fileInfo, headerPrefix, &fileInfo.codeInfos.elements[0], &typeMap);
+        S8 generatedHeader = shd_generateHeader(arena, &fileInfo, headerPrefix, &fileInfo.codeInfos.elements[0], &typeMap);
 
 
         //for (u32 idx = 0; idx < fileInfo.renderPrograms.count; ++idx) {

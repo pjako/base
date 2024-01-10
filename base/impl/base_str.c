@@ -4,15 +4,15 @@
 #include "base/base_mem.h"
 #include "base/base_str.h"
 
-Str8 str_makeSized(Arena* arena, u8* arr, u32 size) {
-   Str8 str;
+S8 str_makeSized(Arena* arena, u8* arr, u32 size) {
+   S8 str;
    str.size = size;
    str.content = mem_arenaPushArray(arena, u8, size);
    mem_copy(str.content, arr, str.size);
    return str;
 }
 
-i64  str_find(Str8 str, Str8 findExp) {
+i64  str_find(S8 str, S8 findExp) {
     for (u64 idx = 0; (idx + findExp.size)  < str.size; idx++) {
         for (u64 fi = 0; str.content[idx + fi] != str.content[fi]; fi++) {
             continue;
@@ -22,7 +22,7 @@ i64  str_find(Str8 str, Str8 findExp) {
     return -1;
 }
 
-i64  str_findChar(Str8 str, char c) {
+i64  str_findChar(S8 str, char c) {
     for (u64 idx = 0; idx < str.size; idx++) {
         if (str.content[idx] == c) {
             return idx;
@@ -30,7 +30,7 @@ i64  str_findChar(Str8 str, char c) {
     }
     return -1;
 }
-API i64 str_lastIndexOfChar(Str8 str, char c) {
+API i64 str_lastIndexOfChar(S8 str, char c) {
    for (i64 idx = i64_cast(str.size) - 1; idx >= 0; idx--) {
       if (str.content[idx] == c) {
          return idx;
@@ -39,12 +39,12 @@ API i64 str_lastIndexOfChar(Str8 str, char c) {
    return -1;
 }
 
-bool str_startsWithChar(Str8 str, char startChar) {
+bool str_startsWithChar(S8 str, char startChar) {
     if (str.size == 0 || str.content[0] != startChar) return false;
     return true;
 }
 
-bx str_hasPrefix(Str8 str, Str8 prefix) {
+bx str_hasPrefix(S8 str, S8 prefix) {
    if (prefix.size > str.size) {
       return false;
    }
@@ -56,7 +56,7 @@ bx str_hasPrefix(Str8 str, Str8 prefix) {
    return true;
 }
 
-bx str_hasSuffix(Str8 str, Str8 endsWith) {
+bx str_hasSuffix(S8 str, S8 endsWith) {
    if (str.size < endsWith.size) return false;
    u8* l = str.content + (str.size - endsWith.size);
    u8* r = endsWith.content;
@@ -68,7 +68,7 @@ bx str_hasSuffix(Str8 str, Str8 endsWith) {
    return true;
 }
 
-void str_toLowerAscii(Str8 str) {
+void str_toLowerAscii(S8 str) {
     for (u64 idx = 0; str.size > idx; idx++) {
         char c = str.content[idx];
         if (c >= 'A' && c <= 'Z') {
@@ -77,7 +77,7 @@ void str_toLowerAscii(Str8 str) {
     }
 }
 
-void str_toUpperAscii(Str8 str) {
+void str_toUpperAscii(S8 str) {
     for (u64 idx = 0; str.size > idx; idx++) {
         char c = str.content[idx];
         if (c >= 'a' && c <= 'Z') {
@@ -86,7 +86,7 @@ void str_toUpperAscii(Str8 str) {
     }
 }
 
-Str8 str_subStr(Str8 str, u64 start, u64 size) {
+S8 str_subStr(S8 str, u64 start, u64 size) {
     if (str.size == 0) {
         return str;
     }
@@ -94,30 +94,30 @@ Str8 str_subStr(Str8 str, u64 start, u64 size) {
         return STR_NULL;
     }
 
-    Str8 subStr;
+    S8 subStr;
     subStr.content = str.content + start;
     subStr.size = minVal(str.size - start, size);
     return subStr;
 }
 
-API Str8 str_from(Str8 str, u64 from) {
+API S8 str_from(S8 str, u64 from) {
    if (from >= str.size) {
       //ASSERT(!"start out of str range");
       return STR_NULL;
    }
    u64 start = minVal(str.size - 1, from);
-   Str8 result;
+   S8 result;
    result.content = &str.content[start];
    result.size = str.size - start;
    return result;
 }
 
-API Str8 str_to(Str8 str, u64 to) {
+API S8 str_to(S8 str, u64 to) {
    str.size = minVal(to, str.size);
    return str;
 }
 
-u64 str_length(Str8 str) {
+u64 str_length(S8 str) {
    char* s = (char*) str.content;
    const char* t = (const char*) str.content;
    u64 length = 0;
@@ -148,7 +148,7 @@ u64 str_length(Str8 str) {
    return length;
 }
 
-bool str_isEqual(Str8 left, Str8 right) {
+bool str_isEqual(S8 left, S8 right) {
     if (left.size != right.size) return false;
     for (u64 idx = 0; idx < left.size; idx++) {
       if (left.content[idx] != right.content[idx]) {
@@ -174,13 +174,13 @@ bool str_isAlphaChar(char c) {
     return (((c >= 'a') && (c <= 'z')) || ((c >= 'A') && (c <= 'Z')));
 }
 
-f32  str_parseF32 (Str8 str) {
+f32  str_parseF32 (S8 str) {
    f32 val = 0.f;
    str_parseF32N(str, &val);
    return val;
 }
 
-u64  str_parseF32N(Str8 str, f32* f) {
+u64  str_parseF32N(S8 str, f32* f) {
    i64 left = 0;
    u64 offset = str_parseS64N(str, &left);
    if (offset == 0) {
@@ -189,7 +189,7 @@ u64  str_parseF32N(Str8 str, f32* f) {
    }
    *f = f32_cast(left);
    if (str.size > (offset + 2) && str.content[offset + 1] == '.') {
-      Str8 sub = str_subStr(str, offset + 1, str.size);
+      S8 sub = str_subStr(str, offset + 1, str.size);
       i64 right = 0;
       u64 offsetRight = str_parseS64N(sub, &right);
       if (offsetRight != 0 && right > 0) {
@@ -200,13 +200,13 @@ u64  str_parseF32N(Str8 str, f32* f) {
    return offset;
 }
 
-i64  str_parseS64 (Str8 str) {
+i64  str_parseS64 (S8 str) {
    i64 val = 0;
    str_parseS64N(str, &val);
    return val;
 }
 
-u64  str_parseS64N(Str8 str, i64* s) {
+u64  str_parseS64N(S8 str, i64* s) {
    u64 out = 0;
    u64 idx = 1;
    if (str.size == 0) {
@@ -232,13 +232,13 @@ u64  str_parseS64N(Str8 str, i64* s) {
 
 }
 
-u32  str_parseU32 (Str8 str) {
+u32  str_parseU32 (S8 str) {
    u32 u = 0;
    str_parseU32N(str, &u);
    return u;
 }
 
-u64 str_parseU32N(Str8 str, u32* u) {
+u64 str_parseU32N(S8 str, u32* u) {
    u64 out = 0;
    u64 idx = 0;
    for (; str.size > idx; idx++) {
@@ -258,9 +258,9 @@ u64 str_parseU32N(Str8 str, u32* u) {
    return idx;
 }
 
-Str8 str_copyNullTerminated(Arena* arena, Str8 str) {
+S8 str_copyNullTerminated(Arena* arena, S8 str) {
    mms size = str_isNullTerminated(str) ? str.size : str.size + 1;
-   Str8 result = {
+   S8 result = {
       .size = size,
       .content = (u8*) mem_arenaPush(arena, size)
    };
@@ -270,8 +270,8 @@ Str8 str_copyNullTerminated(Arena* arena, Str8 str) {
    return result;
 }
 
-Str8 str_alloc(Arena* arena, mms size) {
-   Str8 result = {
+S8 str_alloc(Arena* arena, mms size) {
+   S8 result = {
       .size = size,
       .content = (u8*) mem_arenaPush(arena, size)
    };
@@ -279,17 +279,17 @@ Str8 str_alloc(Arena* arena, mms size) {
    return result;
 }
 
-Str8 str_copy(Arena* arena, Str8 sourceStr) {
+S8 str_copy(Arena* arena, S8 sourceStr) {
    if (sourceStr.size == 0) {
       return STR_NULL;
    }
-   Str8 result = str_alloc(arena, sourceStr.size);
+   S8 result = str_alloc(arena, sourceStr.size);
    mem_copy(result.content, sourceStr.content, sourceStr.size);
 
    return result;
 }
 
-u64 str_findFirst(Str8 str, Str8 findStr, u64 offset) {
+u64 str_findFirst(S8 str, S8 findStr, u64 offset) {
    u64 i = 0;
    if (findStr.size > 0) {
       i = str.size;
@@ -300,7 +300,7 @@ u64 str_findFirst(Str8 str, Str8 findStr, u64 offset) {
          for (; i < onePastLast; i++) {
             if (str.content[i] == c) {
                if ((str.size - i) >= findStr.size) {
-                  Str8 sub = {.content = str.content + i, .size = findStr.size};
+                  S8 sub = {.content = str.content + i, .size = findStr.size};
                   if (str_isEqual(sub, findStr)) {
                      break;
                   }
@@ -315,7 +315,7 @@ u64 str_findFirst(Str8 str, Str8 findStr, u64 offset) {
    return i;
 }
 
-u64 str_containsSubStringCount(Str8 str, Str8 findStr) {
+u64 str_containsSubStringCount(S8 str, S8 findStr) {
    u64 ct = 0;
    u64 idx = 0;
    while (true) {
@@ -330,13 +330,13 @@ u64 str_containsSubStringCount(Str8 str, Str8 findStr) {
    return ct;
 }
 
-Str8 str_replaceAll(Arena* arena, Str8 str, Str8 replaceStr, Str8 replacement) {
+S8 str_replaceAll(Arena* arena, S8 str, S8 replaceStr, S8 replacement) {
    if (replaceStr.size == 0) return str;
    u64 replaceable = str_containsSubStringCount(str, replaceStr);
    if (replaceable == 0) return str;
 
    u64 new_size = (str.size - replaceable * replaceStr.size) + (replaceable * replacement.size);
-   Str8 ret = str_alloc(arena, new_size);
+   S8 ret = str_alloc(arena, new_size);
 
    b8 replaced;
    u64 o = 0;
@@ -344,7 +344,7 @@ Str8 str_replaceAll(Arena* arena, Str8 str, Str8 replaceStr, Str8 replacement) {
       replaced = false;
       if (str.content[i] == replaceStr.content[0]) {
          if ((str.size - i) >= replaceStr.size) {
-               Str8 sub = { .content = str.content + i, .size = replaceStr.size };
+               S8 sub = { .content = str.content + i, .size = replaceStr.size };
                if (str_isEqual(sub, replaceStr)) {
                   // replace this one
                   memmove(ret.content + o, replacement.content, replacement.size);
@@ -369,7 +369,7 @@ Str8 str_replaceAll(Arena* arena, Str8 str, Str8 replaceStr, Str8 replacement) {
 ///////////////////////////////////////
 // UTF-8 functions
 
-u64 str_utf8Count(Str8 str) {
+u64 str_utf8Count(S8 str) {
     u64 length = 0;
     u64 idx = 0;
     while (idx < str.size) {
@@ -401,7 +401,7 @@ u64 str_utf8Count(Str8 str) {
 ////////////////////////////
 // NOTE(pjako): hash
 
-API u32 str_hash32(Str8 str) {
+API u32 str_hash32(S8 str) {
     u32 hash = 5381;
     i32 c;
     for (u64 i = 0; i < str.size; i++) {
@@ -410,7 +410,7 @@ API u32 str_hash32(Str8 str) {
     return hash;
 }
 
-API u64 str_hash64(Str8 str) {
+API u64 str_hash64(S8 str) {
     u32 hash1 = 5381;
     u32 hash2 = 52711;
     u64 i = str.size;
@@ -423,16 +423,16 @@ API u64 str_hash64(Str8 str) {
     return (hash1 >> 0) * 4096 + (hash2 >> 0);
 }
 
-Str8 str_fromCharPtr(u8* charArr, u64 size) {
-   Str8 str;
+S8 str_fromCharPtr(u8* charArr, u64 size) {
+   S8 str;
    str.content = charArr;
    str.size = size;
 
    return str;
 }
 
-Str8 str_fromNullTerminatedCharPtr(char* charArr) {
-   Str8 str;
+S8 str_fromNullTerminatedCharPtr(char* charArr) {
+   S8 str;
    str.content = (u8*) charArr;
    str.size = 0;
 
@@ -548,7 +548,7 @@ u32 str_encodeUtf8(u8 *dst, u32 codepoint){
     return(size);
 }
 
-Str8 str_fromS16(Arena* arena, S16 str) {
+S8 str_fromS16(Arena* arena, S16 str) {
    u8 *memory = mem_arenaPushArrayZero(arena, u8, str.size * 3 + 1);
 
    u8  *dptr = memory;
@@ -569,11 +569,11 @@ Str8 str_fromS16(Arena* arena, S16 str) {
    u64 unusedCount = allocCount - stringCount - 1;
    //mem_arenaPopAmount(arena, unusedCount * sizeof(*memory));
 
-   Str8 result = {memory, stringCount};
+   S8 result = {memory, stringCount};
    return(result);
 }
 
-S16 str_toS16(Arena *arena, Str8 str) {
+S16 str_toS16(Arena *arena, S8 str) {
    u64 allocSize = str.size * 4 + 2;
    u16 *memory = mem_arenaPushArray(arena, u16, allocSize);
 
@@ -601,7 +601,7 @@ S16 str_toS16(Arena *arena, Str8 str) {
    return result;
 }
 
-S32 str_toS32(Arena *arena, Str8 str) {
+S32 str_toS32(Arena *arena, S8 str) {
    u64 allocSize = str.size * 4 + 2;
    u32 *memory = mem_arenaPushArray(arena, u32, allocSize);
 
@@ -632,11 +632,11 @@ S32 str_toS32(Arena *arena, Str8 str) {
 ////////////////////////////
 // NOTE(pjako): fomat/join
 
-LOCAL void str_recordStr(Arena* arena, Str8 str) {
+LOCAL void str_recordStr(Arena* arena, S8 str) {
    mem_copy(mem_arenaPush(arena, str.size), str.content, str.size);
 }
 
-LOCAL void str_recordCustom(Arena* arena, str_CustomVal* customVal, Str8 format) {
+LOCAL void str_recordCustom(Arena* arena, str_CustomVal* customVal, S8 format) {
    customVal->buildStrFn(arena, format, customVal->usrPtr);
 }
 
@@ -676,7 +676,7 @@ LOCAL void str_recordF64(Arena* arena, f64 floatVal) {
    mem_copy(mem_arenaPush(arena, length - decPos), &startChar[decPos], length - decPos);
 }
 // TODO: consider fast coversation alternative: https://github.com/fmtlib/format-benchmark/blob/master/src/u2985907.h
-LOCAL void str_recordU64(Arena* arena, u64 value, bx isNegativ, Str8 format) {
+LOCAL void str_recordU64(Arena* arena, u64 value, bx isNegativ, S8 format) {
    if (isNegativ) {
       u8* ptr = mem_arenaPush(arena, 1);
       ptr[0] = '-';
@@ -699,7 +699,7 @@ LOCAL void str_recordU64(Arena* arena, u64 value, bx isNegativ, Str8 format) {
 
 LOCAL i32 str__ufast_utoa10(u32 value, char* str);
 
-LOCAL void str_recordU32(Arena* arena, u32 value, bx isNegativ, Str8 format) {
+LOCAL void str_recordU32(Arena* arena, u32 value, bx isNegativ, S8 format) {
    if (isNegativ) {
       u8* ptr = mem_arenaPush(arena, 1);
       ptr[0] = '-';
@@ -721,25 +721,25 @@ LOCAL void str_recordChar(Arena* arena, char value) {
    ptr[0] = value;
 }
 
-API Str8 str_joinVargs(Arena* arena, u32 argCount, va_list inValist) {
+API S8 str_joinVargs(Arena* arena, u32 argCount, va_list inValist) {
    va_list valist;
    va_copy(valist, inValist);
    //va_start(valist, argCount);
 
-   Str8 strOut;
+   S8 strOut;
    str_record(strOut, arena) {
       for (u32 idx = 0; idx < argCount; idx++) {
          str_Value arg = va_arg(valist, str_Value);
          switch (arg.type) {
-            case str_argType_custom:   str_recordCustom(arena, &arg.customVal, (Str8) {0, 0}); break;
+            case str_argType_custom:   str_recordCustom(arena, &arg.customVal, (S8) {0, 0}); break;
             case str_argType_char:     str_recordChar(arena, arg.charVal); break;
             case str_argType_str:      str_recordStr(arena, arg.strVal); break;
             case str_argType_f32:      str_recordf32_cast(arena, arg.f32Val); break;
             case str_argType_f64:      str_recordF64(arena, arg.f64Val); break;
-            case str_argType_u32:      str_recordU32(arena, arg.u32Val, false, (Str8){0, 0}); break;
-            case str_argType_u64:      str_recordU64(arena, arg.u64Val, false, (Str8){0, 0}); break;
-            case str_argType_i32:      str_recordU32(arena, absVal(arg.i32Val), arg.i32Val >= 0 ? false : true, (Str8){0, 0}); break;
-            case str_argType_i64:      str_recordU64(arena, absVal(arg.i64Val), arg.i64Val >= 0 ? false : true, (Str8){0, 0}); break;
+            case str_argType_u32:      str_recordU32(arena, arg.u32Val, false, (S8){0, 0}); break;
+            case str_argType_u64:      str_recordU64(arena, arg.u64Val, false, (S8){0, 0}); break;
+            case str_argType_i32:      str_recordU32(arena, absVal(arg.i32Val), arg.i32Val >= 0 ? false : true, (S8){0, 0}); break;
+            case str_argType_i64:      str_recordU64(arena, absVal(arg.i64Val), arg.i64Val >= 0 ? false : true, (S8){0, 0}); break;
          }
       }
    }
@@ -747,19 +747,19 @@ API Str8 str_joinVargs(Arena* arena, u32 argCount, va_list inValist) {
    return strOut;
 }
 
-Str8 str_joinRaw(Arena* arena, u32 argCount, ...) {
+S8 str_joinRaw(Arena* arena, u32 argCount, ...) {
    va_list valist;
    va_start(valist, argCount);
    return str_joinVargs(arena, argCount, valist);
 }
 
-Str8 str_fmtRaw(Arena* arena, Str8 fmt, u32 argCount, ...) {
+S8 str_fmtRaw(Arena* arena, S8 fmt, u32 argCount, ...) {
    va_list valist;
    va_start(valist, argCount);
    return str_fmtVargs(arena, fmt, argCount, valist);
 }
 
-bx str__insertValue(Arena* arena, u32 insertCount, Str8 valueFormat, u32 argCount, va_list inValist) {
+bx str__insertValue(Arena* arena, u32 insertCount, S8 valueFormat, u32 argCount, va_list inValist) {
    va_list valist;
    va_copy(valist, inValist);
    i32 insertIndex = -1;
@@ -789,10 +789,10 @@ bx str__insertValue(Arena* arena, u32 insertCount, Str8 valueFormat, u32 argCoun
          }
       }
    } else {
-      // figure out Str8 key and search for it
+      // figure out S8 key and search for it
       u32 count = 0;
       for (; valueFormat.content[count] != ':' && valueFormat.content[count] != '}'; count++);
-      Str8 key;
+      S8 key;
       if (count > 1) {
          key.content = valueFormat.content;
          key.size = count;
@@ -820,7 +820,7 @@ bx str__insertValue(Arena* arena, u32 insertCount, Str8 valueFormat, u32 argCoun
    }
    va_end(valist);
 
-   Str8 format;
+   S8 format;
    format.content = NULL;
    format.size = 0;
 
@@ -850,8 +850,8 @@ bx str__insertValue(Arena* arena, u32 insertCount, Str8 valueFormat, u32 argCoun
    return true;
 }
 
-Str8 str_fmtVargs(Arena* arena, Str8 fmt, u32 argCount, va_list list) {
-   Str8 strOut;
+S8 str_fmtVargs(Arena* arena, S8 fmt, u32 argCount, va_list list) {
+   S8 strOut;
    str_record(strOut, arena) {
       char lastChar = 0;
       char currentChar = 0;
@@ -863,7 +863,7 @@ Str8 str_fmtVargs(Arena* arena, Str8 fmt, u32 argCount, va_list list) {
          currentChar = fmt.content[idx];
          if (insertStartIdx != -1) {
             if (currentChar == '}' && lastChar != '\\') {
-               Str8 fmtStr;
+               S8 fmtStr;
                fmtStr.content = fmt.content + insertStartIdx + 1;
                fmtStr.size = idx - (insertStartIdx + 1);
                if (str__insertValue(arena, insertCount, fmtStr, argCount, list)) {
@@ -1455,7 +1455,7 @@ LOCAL i32 str__f32ToCharArr(char const** start, u32 *len, char* out, i32* decima
    return ng;
 }
 
-Str8 str_floatToStr(f64 value, Str8 storeStr, i32* decimalPos, i32 fracDigits) {
+S8 str_floatToStr(f64 value, S8 storeStr, i32* decimalPos, i32 fracDigits) {
    fracDigits = fracDigits >= 0 ? fracDigits : 15;
    fracDigits = minVal(fracDigits, 15);
    const char* startChar = NULL;
@@ -1464,13 +1464,13 @@ Str8 str_floatToStr(f64 value, Str8 storeStr, i32* decimalPos, i32 fracDigits) {
    i32 decPos = 0;
    // (char const** start, u32 *len, char* out, i32* decimal_pos, f64 value, i32 frac_digits)
    i32 start = str__f32ToCharArr(&startChar, &length, (char*) storeStr.content, decimalPos, value, fracDigits);
-   Str8 outStr;
+   S8 outStr;
    outStr.content = length == 0 ? NULL : storeStr.content + start;
    outStr.size = length;
    return outStr;
 }
 
-Str8 str_u32ToHex(Arena* arena, u32 value) {
+S8 str_u32ToHex(Arena* arena, u32 value) {
    static const u8 digits[] = "0123456789ABCDEF";
    static const u32 hexLen = 4 << 1;
    u8 strTmp[4 << 1];
@@ -1484,7 +1484,7 @@ Str8 str_u32ToHex(Arena* arena, u32 value) {
       strTmp[i] = digits[(value >> j) & 0x0f];
       i += 1;
    }
-   Str8 raw;
+   S8 raw;
    raw.content = &strTmp[0];
    raw.size = i == 0 ? 1 : i;
 

@@ -31,11 +31,11 @@
 #define DLL_EXTENSION ".so"
 #endif
 
-os_Dl* os_dlOpen(Str8 filePath) {
+os_Dl* os_dlOpen(S8 filePath) {
     u8 fileName[1024];
     u32 size = minVal(countOf(fileName) - 1, filePath.size);
     mem_copy(fileName, filePath.content, size);
-    Str8 extension = str_lit(DLL_EXTENSION);
+    S8 extension = str_lit(DLL_EXTENSION);
     if (!str_hasSuffix(filePath, extension)) {
         ASSERT(sizeOf(fileName) > extension.size + size);
         mem_copy(&fileName[size], extension.content, extension.size);
@@ -197,7 +197,7 @@ u64 os_timeMicrosecondsNow(void) {
 
 /// File/Dir
 
-Str8 os_fileRead(Arena* arena, Str8 fileName) {
+S8 os_fileRead(Arena* arena, S8 fileName) {
     os_FileProperties fileProps = os_fileProperties(fileName);
     if (fileProps.size == 0) {
         return str_lit("");
@@ -219,7 +219,7 @@ Str8 os_fileRead(Arena* arena, Str8 fileName) {
     return result ? str_fromCharPtr((u8*) mem, fileProps.size) : str_lit("");
 }
 
-bx os_fileWrite(Str8 fileName, Str8 data) {
+bx os_fileWrite(S8 fileName, S8 data) {
     // max file length + max file path length + '\0'
     u8 path[255 + 4096 + 1];
     ASSERT(sizeof(path) > (fileName.size + 1));
@@ -237,7 +237,7 @@ bx os_fileWrite(Str8 fileName, Str8 data) {
     return result;
 }
 
-bx os_fileDelete(Str8 fileName) {
+bx os_fileDelete(S8 fileName) {
     u8 path[255 + 4096 + 1];
     ASSERT(sizeof(path) > (fileName.size + 1));
     ASSERT(fileName.content);
@@ -248,7 +248,7 @@ bx os_fileDelete(Str8 fileName) {
     return remove((const char*) path) == 0;
 }
 
-bx os_fileExists(Str8 fileName) {
+bx os_fileExists(S8 fileName) {
     u8 path[255 + 4096 + 1];
     ASSERT(sizeof(path) > (fileName.size + 1));
     ASSERT(fileName.content);
@@ -261,7 +261,7 @@ bx os_fileExists(Str8 fileName) {
 
 
 
-bx os_dirCreate(Str8 dirname) {
+bx os_dirCreate(S8 dirname) {
     mem_defineMakeStackArena(tmpMem, 1024 * sizeof(u32) + 1);
     if (!str_isNullTerminated(dirname)) {
         dirname = str_copyNullTerminated(tmpMem, dirname);
@@ -273,7 +273,7 @@ bx os_dirCreate(Str8 dirname) {
 	return o == -1 ? false : true;
 }
 
-bx os_dirDelete(Str8 dirname) {
+bx os_dirDelete(S8 dirname) {
     mem_defineMakeStackArena(tmpMem, 1024 * sizeof(u32) + 1);
     if (!str_isNullTerminated(dirname)) {
         dirname = str_copyNullTerminated(tmpMem, dirname);
@@ -283,8 +283,8 @@ bx os_dirDelete(Str8 dirname) {
 	return o == -1 ? false : true;
 }
 
-Str8 os_filepath(Arena* arena, os_systemPath path) {
-	Str8 result = {0};
+S8 os_filepath(Arena* arena, os_systemPath path) {
+	S8 result = {0};
 	
 	switch (path) {
 		case os_systemPath_currentDir: {
@@ -326,7 +326,7 @@ Str8 os_filepath(Arena* arena, os_systemPath path) {
 	return result;
 }
 
-os_FileProperties os_fileProperties(Str8 fileName) {
+os_FileProperties os_fileProperties(S8 fileName) {
     // max file length + max file path length + '\0'
     u8 path[255 + 4096 + 1];
     ASSERT(sizeof(path) > (fileName.size + 1));
@@ -387,14 +387,14 @@ os_FileProperties os_fileProperties(Str8 fileName) {
 }
 
 
-void* os_execute(Arena* tmpArena, Str8 execPath, Str8* args, u32 argCount) {
+void* os_execute(Arena* tmpArena, S8 execPath, S8* args, u32 argCount) {
     pid_t pid = fork();
     if (pid != 0) {
         return (void*)((uintptr_t)pid);
     }
     mem_scoped(scratch, tmpArena) {
-        Str8 exec = str_join(scratch.arena, execPath, '\0');
-        Str8 argsUnix;
+        S8 exec = str_join(scratch.arena, execPath, '\0');
+        S8 argsUnix;
         str_record(argsUnix, scratch.arena) {
             for (u32 idx = 0; idx < argCount; idx++) {
                 str_join(scratch.arena, args[idx], '\0');
@@ -455,7 +455,7 @@ u32 os__mutexLockRet(os_Mutex* mutex) {
     return 0;
 }
 
-void os_log(Str8 msg) {
+void os_log(S8 msg) {
     if (msg.content == NULL || msg.size == 0) {
         return;
     }
@@ -493,7 +493,7 @@ static void* os_threadEntry(void* arg) {
     return cast.ptr;
 }
 
-bx os_threadCreate(os_Thread* thread, os_threadFunc threadFunc, void* userData, u32 stackSize, Str8 name) {
+bx os_threadCreate(os_Thread* thread, os_threadFunc threadFunc, void* userData, u32 stackSize, S8 name) {
     os__ThreadInternal* ti = (os__ThreadInternal*) thread->internal;
 
     int result;
@@ -556,8 +556,8 @@ void os_threadShutdown(os_Thread* thread) {
     os_semaphoreDestroy(&thread->sem);
 }
 
-Str8 os_workingPath(Arena* arena) {
-    Str8 str;
+S8 os_workingPath(Arena* arena) {
+    S8 str;
     u32 maxSize = PATH_MAX * sizeof(char);
     char* cwd = mem_arenaPushArray(arena, char, PATH_MAX);
     if (getcwd(cwd, maxSize) != 0) {
@@ -573,7 +573,7 @@ Str8 os_workingPath(Arena* arena) {
     return str;
 }
 #if 0
-Str8 os_execPath(Arena* arena) {
+S8 os_execPath(Arena* arena) {
     i32 length, dirnameLength;
     char* path = NULL;
 
@@ -582,7 +582,7 @@ Str8 os_execPath(Arena* arena) {
         path = mem_arenaPushArray(arena, char, length);
         wai_getExecutablePath(path, length, &dirnameLength);
     }
-    Str8 str;
+    S8 str;
     str.content = (u8*) path;
     str.size = dirnameLength;
 
@@ -812,8 +812,8 @@ DenseTime os_win32DenseTimeFromFileTime(FILETIME *fileTime){
     return result;
 }
 
-Str8 os_fileRead(Arena* arena, Str8 fileName) {
-    Str8 result;
+S8 os_fileRead(Arena* arena, S8 fileName) {
+    S8 result;
 
     HANDLE file = INVALID_HANDLE_VALUE;
     mem_scoped(scratch, arena) {
@@ -858,7 +858,7 @@ Str8 os_fileRead(Arena* arena, Str8 fileName) {
     return result;
 }
 
-bool os_fileWrite(Str8 fileName, Str8 data) {
+bool os_fileWrite(S8 fileName, S8 data) {
     // max file length + max file path length + '\0'
     mem_defineMakeStackArena(arena, 1024 * sizeOf(u32));
     
@@ -882,14 +882,14 @@ bool os_fileWrite(Str8 fileName, Str8 data) {
 }
 
 
-bx os_dirCreate(Str8 dirname) {
+bx os_dirCreate(S8 dirname) {
     mem_defineMakeStackArena(tmpMem, 1024 * sizeof(u32) + 1);
     S16 dirname16 = str_toS16(tmpMem, dirname);
 	b32 result = CreateDirectoryW((WCHAR*) dirname16.content, 0);
 	return result;
 }
 
-bx os_dirDelete(Str8 dirname) {
+bx os_dirDelete(S8 dirname) {
     mem_defineMakeStackArena(tmpMem, 1024 * sizeof(u32) + 1);
     S16 dirname16 = str_toS16(tmpMem, dirname);
 	b32 result = RemoveDirectoryW((WCHAR*) dirname16.content);
@@ -946,7 +946,7 @@ static OS_DataAccessFlags w32_access_from_attributes(DWORD attribs) {
 }
 #endif
 
-os_FileProperties os_fileProperties(Str8 fileName) {
+os_FileProperties os_fileProperties(S8 fileName) {
     // max file length + max file path length + '\0'
     u8 path[255 + 4096 + 1];
     ASSERT(sizeof(path) > (fileName.size + 1));
@@ -1040,8 +1040,8 @@ os_FileProperties os_fileProperties(Str8 fileName) {
     #endif
 }
 
-Str8 os_filepath(Arena* arena, os_systemPath path) {
-	Str8 result = {0};
+S8 os_filepath(Arena* arena, os_systemPath path) {
+	S8 result = {0};
 
     DWORD tmpName[2048 * 2];
     DWORD tmpCount = countOf(tmpName);
@@ -1064,8 +1064,8 @@ Str8 os_filepath(Arena* arena, os_systemPath path) {
             DWORD size = GetModuleFileNameW(0, (WCHAR*)try_buffer, cap);
             ASSERT(size == tmpCount && GetLastError() == ERROR_INSUFFICIENT_BUFFER && "Increase tmpName size");
             path16.size = size;
-            Str8 fullPath = str_fromS16(tmpArena, path16);
-			Str8 binaryPath = os_getDirectoryFromFilepath(fullPath);
+            S8 fullPath = str_fromS16(tmpArena, path16);
+			S8 binaryPath = os_getDirectoryFromFilepath(fullPath);
             result = binaryPath;
 		} break;
 		case os_systemPath_userData: {
@@ -1088,7 +1088,7 @@ Str8 os_filepath(Arena* arena, os_systemPath path) {
 	return result;
 }
 
-Str8 os_filepath(Arena* arena, os_systemPath path) {
+S8 os_filepath(Arena* arena, os_systemPath path) {
 	string result = {0};
 	switch (path) {
 		case SystemPath_CurrentDir: {
@@ -1175,7 +1175,7 @@ Str8 os_filepath(Arena* arena, os_systemPath path) {
 	return result;
 }
 
-void* os_execute(Arena* tmpArena, Str8 execPath, Str8* args, u32 argCount) {
+void* os_execute(Arena* tmpArena, S8 execPath, S8* args, u32 argCount) {
     STARTUPINFOA si;
     mem_structSetZero(&si);
     si.cb = sizeof(STARTUPINFOA);
@@ -1184,8 +1184,8 @@ void* os_execute(Arena* tmpArena, Str8 execPath, Str8* args, u32 argCount) {
     mem_structSetZero(&pi);
     bx ok = false;
     mem_scoped(scratch, tmpArena) {
-        Str8 exec = str_join(scratch.arena, execPath, '\0');
-        Str8 argsWin;
+        S8 exec = str_join(scratch.arena, execPath, '\0');
+        S8 argsWin;
         str_record(argsWin, scratch.arena) {
             for (u32 idx = 0; idx < argCount; idx++) {
                 str_join(scratch.arena, args[idx], ' ');
@@ -1230,7 +1230,7 @@ void os_mutexDestroy(os_Mutex* mutex) {
     DeleteCriticalSection((LPCRITICAL_SECTION) &mutex->internal[0]);
 }
 
-void os_log(Str8 msg) {
+void os_log(S8 msg) {
     if (msg.content == NULL || msg.size == 0) {
         return;
     }
@@ -1309,7 +1309,7 @@ static DWORD WINAPI os__threadEntry(LPVOID arg) {
     return result;
 }
 
-bool os_threadCreate(os_Thread* thread, os_threadFunc threadFunc, void* userData, u32 stackSize, Str8 name) {
+bool os_threadCreate(os_Thread* thread, os_threadFunc threadFunc, void* userData, u32 stackSize, S8 name) {
     os__ThreadInternal* internal = (os__ThreadInternal*) thread->internal;
 
     os_semaphoreInit(&thread->sem);
@@ -1344,7 +1344,7 @@ i32 os_threadGetExitCode(os_Thread* thread) {
     return thread->exitCode;
 }
 
-void os_threadSetName(os_Thread* thread, Str8 name) {
+void os_threadSetName(os_Thread* thread, S8 name) {
     os__ThreadInternal* internal = (os__ThreadInternal*) thread->internal;
     // Try to use the new thread naming API from Win10 Creators update onwards if we have it
     typedef HRESULT (WINAPI SetThreadDescriptionProc)(HANDLE, PCWSTR);
@@ -1387,7 +1387,7 @@ void os_threadSetName(os_Thread* thread, Str8 name) {
 #endif // COMPILER_MSVC
 }
 
-os_Dl* os_dlOpen(Str8 filePath) {
+os_Dl* os_dlOpen(S8 filePath) {
     HINSTANCE hInst;
     char fileName[1024];
     u32 size = minVal(countOf(fileName) - 1, filePath.size);

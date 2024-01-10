@@ -12,10 +12,10 @@
 s32 os_main(s32 argc, char* argv[]) {
     Arena* arena = os_tempMemory();
 
-    Str8 paths[] = {str8("engine/base"), str8("engine/os"), str8("engine/graphics")};
+    S8 paths[] = {str8("engine/base"), str8("engine/os"), str8("engine/graphics")};
 
     for (u32 idx = 0; idx < countOf(paths)) {
-        Str8 codeFile = os_fileRead(mem.arena, shaderFileName);
+        S8 codeFile = os_fileRead(mem.arena, shaderFileName);
 
     }
 

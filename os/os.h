@@ -39,18 +39,18 @@ API u64 os_timeMicrosecondsNow(void);
 /////////////////////////
 // executable path
 #if 0
-API Str8 os_execPath(Arena* arena);
+API S8 os_execPath(Arena* arena);
 #endif
-API Str8 os_workingPath(Arena* arena);
+API S8 os_workingPath(Arena* arena);
 
 
 /////////////////////////
 // File handling
 
-API Str8 os_fileRead(Arena* arena, Str8 fileName);
-API bx os_fileWrite(Str8 fileName, Str8 data);
-API bx os_fileDelete(Str8 fileName);
-API bx os_fileExists(Str8 fileName);
+API S8 os_fileRead(Arena* arena, S8 fileName);
+API bx os_fileWrite(S8 fileName, S8 data);
+API bx os_fileDelete(S8 fileName);
+API bx os_fileExists(S8 fileName);
 typedef enum os_systemPath {
 	os_systemPath_currentDir,
 	os_systemPath_binary,
@@ -58,14 +58,14 @@ typedef enum os_systemPath {
 	os_systemPath_tempData,
 } os_systemPath;
 
-API Str8 os_filepath(Arena* arena, os_systemPath path);
+API S8 os_filepath(Arena* arena, os_systemPath path);
 
-INLINE Str8 os_getDirectoryFromFilepath(Str8 filepath) {
+INLINE S8 os_getDirectoryFromFilepath(S8 filepath) {
     i64 lastSlash = str_lastIndexOfChar(filepath, '/');
     if (lastSlash == -1) {
         lastSlash = str_lastIndexOfChar(filepath, '\\');
     }
-    Str8 result = filepath;
+    S8 result = filepath;
     if (lastSlash != -1) {
         result.size = lastSlash - 1;
     }
@@ -93,7 +93,7 @@ typedef struct os_FileProperties {
     DenseTime lastChangeTime;
 } os_FileProperties;
 
-API os_FileProperties os_fileProperties(Str8 fileName);
+API os_FileProperties os_fileProperties(S8 fileName);
 
 
 /////////////////////////
@@ -113,10 +113,10 @@ typedef enum os_fsAction {
 typedef enum os_fsPathWatchFlag {os_fsPathTrackFlag_none = 0x0} os_fsPathWatchFlag;
 typedef flags32 os_fsPathWatchFlags;
 
-typedef void(os_fsPathWatchCallback)(os_fsPathWatchId id, Str8 path, os_fsAction fsAction, void* custom);
+typedef void(os_fsPathWatchCallback)(os_fsPathWatchId id, S8 path, os_fsAction fsAction, void* custom);
 
 typedef struct os_fsPathWatchCtx os_fsPathWatchCtx;
-API os_fsPathWatchId os_fsWatchPathStart(os_fsPathWatchCtx* ctx, Str8 folder, os_fsPathWatchFlags trackFlags, os_fsPathWatchCallback* callback, void* custom);
+API os_fsPathWatchId os_fsWatchPathStart(os_fsPathWatchCtx* ctx, S8 folder, os_fsPathWatchFlags trackFlags, os_fsPathWatchCallback* callback, void* custom);
 API void os_fsWatchPathStop(os_fsPathWatchCtx* ctx, os_fsPathWatchId handle);
 
 API os_fsPathWatchCtx* os_fsWatchPathCreatCtx(Arena* arena);
@@ -127,14 +127,14 @@ API void os_fsWatchPathTick(os_fsPathWatchCtx* ctx);
 /////////////////////////
 // Execute
 
-API void* os_execute(Arena* tmpArena, Str8 execPath, Str8* args, u32 argCount);
+API void* os_execute(Arena* tmpArena, S8 execPath, S8* args, u32 argCount);
 
 /////////////////////////
 // Dynamic library
 
 typedef struct os_Dl os_Dl;
 
-API os_Dl* os_dlOpen(Str8 filePath);
+API os_Dl* os_dlOpen(S8 filePath);
 API void   os_dlClose(os_Dl* handle);
 API void*  os_dlSym(os_Dl* handle, const char* symbol);
 
@@ -146,7 +146,7 @@ API void os_yield(void);
 
 /////////////////////////
 // Logging
-void os_log(Str8 msg);
+void os_log(S8 msg);
 
 /////////////////////////
 // Mutex
@@ -188,11 +188,11 @@ typedef struct os_Thread {
     bool               running;
 } os_Thread;
 
-API bool os_threadCreate(os_Thread* thread, os_threadFunc threadFunc, void* userData, u32 stackSize, Str8 name);
+API bool os_threadCreate(os_Thread* thread, os_threadFunc threadFunc, void* userData, u32 stackSize, S8 name);
 API void os_threadShutdown(os_Thread* thread);
 API bool os_threadIsRunning(os_Thread* thread);
 API i32  os_threadGetExitCode(os_Thread* thread);
-API void os_threadSetName(os_Thread* thread, Str8 str);
+API void os_threadSetName(os_Thread* thread, S8 str);
 
 /////////////////////////
 // Fiber

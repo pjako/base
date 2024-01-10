@@ -162,7 +162,7 @@ bool scf_next(scf_Global* scf) {
     return false;
 }
 
-scf_Global scf_parse(Str8 scfStr, Str8 fileName) {
+scf_Global scf_parse(S8 scfStr, S8 fileName) {
     scf_Global scf = {0};
     scf.fileName = fileName;
     scf.str = scfStr;
