@@ -142,9 +142,11 @@ set(SHD_BIN_PATH "${TOOLS_DIR}/shdc")
 function(shd_shader target_name target_header_path source_files)
     message(STATUS "Found shd: ${SHD_BIN_PATH}")
     #set(joined_files "")
+
     foreach(file ${source_files})
         list(APPEND shd_files "${PROJECT_SOURCE_DIR}/${file}")
     endforeach()
+
     list(JOIN shd_files "," joined_files)
 
     set(output_header "${PROJECT_SOURCE_DIR}/${target_header_path}")
@@ -154,13 +156,14 @@ function(shd_shader target_name target_header_path source_files)
         OUTPUT ${output_header}
         COMMAND ${SHD_BIN_PATH}
         ARGS -s ${joined_files} -h ${output_header}
-        DEPENDS ${source_files}
+        DEPENDS ${shd_files}
         WORKING_DIRECTORY ${TOOLS_DIR}
         COMMENT "Compiling: ${output_header}"
         VERBATIM
     )
+    #message(STATUS "Header file: ${output_header}")
     if(APPLE)
-        target_sources(${target_name} PRIVATE ${target_header_path})
+        target_sources(${target_name} PRIVATE ${output_header})
     else()
         target_sources(${target_name} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/${target_header_path}")
     endif()
