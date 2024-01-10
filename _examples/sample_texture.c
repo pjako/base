@@ -72,8 +72,9 @@ void g_init(void) {
             s8(
             "#version 330\n"
             "layout(location=0) in vec4 position;\n"
-            "layout(location=1) in vec4 color0;\n"
+            "layout(location=1) in vec2 texcoords0;\n"
             "out vec4 color;\n"
+            "out vec2 uvs;\n"
             "layout (std140) uniform resGroup1 { float offset; };"
             "void main() {\n"
             "  gl_Position = position + vec4(offset, 0, 0, 0);\n"
@@ -84,6 +85,7 @@ void g_init(void) {
             s8(
             "#version 330\n"
             "in vec4 color;\n"
+            "in vec2 uvs;\n"
             "out vec4 frag_color;\n"
             "void main() {\n"
             "  frag_color = color;\n"
