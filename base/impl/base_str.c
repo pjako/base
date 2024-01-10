@@ -258,6 +258,106 @@ u64 str_parseU32N(Str8 str, u32* u) {
    return idx;
 }
 
+Str8 str_copyNullTerminated(Arena* arena, Str8 str) {
+   mms size = str_isNullTerminated(str) ? str.size : str.size + 1;
+   Str8 result = {
+      .size = size,
+      .content = (u8*) mem_arenaPush(arena, size)
+   };
+   mem_copy(result.content, str.content, str.size);
+   result.content[result.size - 1] = '\0';
+
+   return result;
+}
+
+Str8 str_alloc(Arena* arena, mms size) {
+   Str8 result = {
+      .size = size,
+      .content = (u8*) mem_arenaPush(arena, size)
+   };
+
+   return result;
+}
+
+
+
+u64 str_findFirst(Str8 str, Str8 findStr, u64 offset) {
+   u64 i = 0;
+   if (findStr.size > 0) {
+      i = str.size;
+      if (str.size >= findStr.size) {
+         i = offset;
+         i8 c = findStr.content[0];
+         u64 onePastLast = str.size - findStr.size + 1;
+         for (; i < onePastLast; i++) {
+            if (str.content[i] == c) {
+               if ((str.size - i) >= findStr.size) {
+                  Str8 sub = {.content = str.content + i, .size = findStr.size};
+                  if (str_isEqual(sub, findStr)) {
+                     break;
+                  }
+               }
+            }
+         }
+         if (i == onePastLast) {
+            i = str.size;
+         }
+      }
+   }
+   return i;
+}
+
+u64 str_containsSubStringCount(Str8 str, Str8 findStr) {
+   u64 ct = 0;
+   u64 idx = 0;
+   while (true) {
+      idx = str_findFirst(str, findStr, idx);
+      if (idx == str.size) {
+         break;
+      }
+
+      ct++;
+      idx++;
+   }
+   return ct;
+}
+
+Str8 str_replaceAll(Arena* arena, Str8 str, Str8 replaceStr, Str8 replacement) {
+   if (replaceStr.size == 0) return str;
+   u64 replaceable = str_containsSubStringCount(str, replaceStr);
+   if (replaceable == 0) return str;
+
+   u64 new_size = (str.size - replaceable * replaceStr.size) + (replaceable * replacement.size);
+   Str8 ret = str_alloc(arena, new_size);
+
+   b8 replaced;
+   u64 o = 0;
+   for (u64 i = 0; i < str.size;) {
+      replaced = false;
+      if (str.content[i] == replaceStr.content[0]) {
+         if ((str.size - i) >= replaceStr.size) {
+               Str8 sub = { .content = str.content + i, .size = replaceStr.size };
+               if (str_isEqual(sub, replaceStr)) {
+                  // replace this one
+                  memmove(ret.content + o, replacement.content, replacement.size);
+                  replaced = true;
+               }
+         }
+      }
+      
+      if (replaced) {
+         o += replacement.size;
+         i += replaceStr.size;
+         continue;
+      }
+      
+      ret.content[o] = str.content[i];
+      o++; i++;
+   }
+
+   return ret;
+}
+
 ///////////////////////////////////////
 // UTF-8 functions
 
@@ -441,7 +541,7 @@ u32 str_encodeUtf8(u8 *dst, u32 codepoint){
 }
 
 Str8 str_fromStr16(Arena* arena, Str16 str) {
-   u8 *memory = mem_arenaPushArray(arena, u8, str.size * 3 + 1);
+   u8 *memory = mem_arenaPushArrayZero(arena, u8, str.size * 3 + 1);
 
    u8  *dptr = memory;
    u16 *ptr  = str.content;
@@ -490,6 +590,34 @@ Str16 str_toStr16(Arena *arena, Str8 str) {
    //mem_arenaPopAmount(arena, unusedCount);
 
    Str16 result = {memory, stringCount};
+   return result;
+}
+
+Str32 str_toStr32(Arena *arena, Str8 str) {
+   u64 allocSize = str.size * 4 + 2;
+   u32 *memory = mem_arenaPushArray(arena, u32, allocSize);
+
+   u32 *dptr = memory;
+   u8 *ptr = str.content;
+   u8 *opl = str.content + str.size;
+   u32* wstr = (u32*) memory;
+
+   for (; ptr < opl;) {
+      str_StringDecode decode = str_decodeUtf8(ptr, (u64)(opl - ptr));
+      ptr  = ptr + decode.size;
+      *dptr = decode.codepoint;
+      dptr = dptr + 1;
+   }
+
+   *dptr = 0;
+   dptr += 1;
+   *dptr = 0;
+
+   u64 stringCount = (u64)(dptr - memory);
+   u64 unusedCount = allocSize - stringCount - 1;
+   //mem_arenaPopAmount(arena, unusedCount);
+
+   Str32 result = {memory, stringCount};
    return result;
 }
 

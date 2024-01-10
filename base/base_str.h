@@ -39,12 +39,21 @@ INLINE Str8 str_makeViewSized(u8* c, u64 size) {
     str.content = c;
     return str;
 }
+#define str_fromCppStd(STDSTRING) str_makeViewSized((u8*) (STDSTRING).c_str(), (STDSTRING).size())
 
 #define STRINGIFY(...) #__VA_ARGS__
 #define str_cpToStaticNullTerminated(STR, STATSTR) for (u32 i = 0; i < (STR).size) (STATSTR)[i] = (STR).content[i]; (STATSTR)[(STR).size] = '\0'
 #define str_isEmpty(STR) ((STR).size == 0)
 
+INLINE bx str_isNullTerminated(Str8 str) {
+    return str.content[str.size - 1] == '\0';
+}
+
 API Str8 str_makeSized(Arena* arena, u8* arr, u32 size);
+API Str8 str_alloc(Arena* arena, mms size);
+API Str8 str_copyNullTerminated(Arena* arena, Str8 str);
+
+
 API void str_toLowerAscii(Str8 str);
 API void str_toUpperAscii(Str8 str);
 API Str8 str_subStr(Str8 str, u64 start, u64 size);
@@ -84,6 +93,12 @@ API bool str_isAlphaChar(char c);
 API bool str_isEndOfLineChar(char c);
 
 
+#pragma mark - String manipulation
+
+API u64 str_containsSubStringCount(Str8 str, Str8 findStr);
+API u64 str_findFirst(Str8 str, Str8 findStr, u64 offset);
+API Str8 str_replaceAll(Arena* arena, Str8 str, Str8 replaceStr, Str8 replacement);
+
 #pragma mark - UTF-8 functions
 
 API u64 str_utf8Count(Str8 str);
@@ -106,7 +121,8 @@ API Str8  str_fromNullTerminatedCharPtr(char* str);
 
 #pragma mark - Utf8 to Utf16
 
-API Str16 str_toStr16(Arena* arena, Str8  str);
+API Str16 str_toStr16(Arena* arena, Str8 str);
+API Str32 str_toStr32(Arena *arena, Str8 str);
 API Str8  str_fromStr16(Arena* arena, Str16 str);
 
 
