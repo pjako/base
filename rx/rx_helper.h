@@ -44,8 +44,8 @@ INLINE void rx_renderCmdBuilderInit(Arena* arena, rx_RenderCmdBuilder* builder, 
 #define rx_renderCmdBuilderSetResGroup1(BUILDER, RESGROUP)            if ((BUILDER)->resGroup1.id != RESGROUP.id)           {(BUILDER)->resGroup1 = (RESGROUP); (BUILDER)->changedFlags |= rx_renderCmd_resGroup1;}
 #define rx_renderCmdBuilderSetResGroup2(BUILDER, RESGROUP)            if ((BUILDER)->resGroup2.id != RESGROUP.id)           {(BUILDER)->resGroup2 = (RESGROUP); (BUILDER)->changedFlags |= rx_renderCmd_resGroup2;}
 #define rx_renderCmdBuilderSetResGroup3(BUILDER, RESGROUP)            if ((BUILDER)->resGroup3.id != RESGROUP.id)           {(BUILDER)->resGroup3 = (RESGROUP); (BUILDER)->changedFlags |= rx_renderCmd_resGroup3;}
-#define rx_renderCmdBuilderSetDynResGroup0(BUILDER, RESGROUP)         if ((BUILDER)->dynResGroup0 != RESGROUP)              {(BUILDER)->dynResGroup0 = (RESGROUP); (BUILDER)->changedFlags |= rx_renderCmd_dynResGroup0;}
-#define rx_renderCmdBuilderSetDynResGroup1(BUILDER, RESGROUP)         if ((BUILDER)->dynResGroup1 != RESGROUP)              {(BUILDER)->dynResGroup1 = (RESGROUP); (BUILDER)->changedFlags |= rx_renderCmd_dynResGroup1;}
+#define rx_renderCmdBuilderSetDynResGroup0(BUILDER, RESGROUP)         if (1)                                                {(BUILDER)->dynResGroup0 = (RESGROUP); (BUILDER)->changedFlags |= rx_renderCmd_dynResGroup0;}
+#define rx_renderCmdBuilderSetDynResGroup1(BUILDER, RESGROUP)         if (1)                                                {(BUILDER)->dynResGroup1 = (RESGROUP); (BUILDER)->changedFlags |= rx_renderCmd_dynResGroup1;}
 #define rx_renderCmdBuilderSetInstanceOffset(BUILDER, INSTANCEOFFSET) if ((BUILDER)->instanceOffset != INSTANCEOFFSET)      {(BUILDER)->instanceOffset = (INSTANCEOFFSET); (BUILDER)->changedFlags |= rx_renderCmd_instaceOffest;}
 #define rx_renderCmdBuilderSetInstanceCount(BUILDER, INSTANCECOUNT)   if ((BUILDER)->instanceCount != INSTANCECOUNT)        {(BUILDER)->instanceCount = (INSTANCECOUNT); (BUILDER)->changedFlags |= rx_renderCmd_instanceCount;}
 

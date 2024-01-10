@@ -695,7 +695,7 @@ typedef struct rx_BumpAllocatorDesc {
 // The gpu arena is a ringbuffer, depending on api, gpu and buffer type it usese a constantly mapped gpu buffer
 // or cpu staging buffer to store & push data to the gpu.
 // The passed gpu buffer
-API rx_bumpAllocator rx_makeArena(const rx_BumpAllocatorDesc* desc);
+API rx_bumpAllocator rx_makeBumpAllocator(const rx_BumpAllocatorDesc* desc);
 API u64 rx_bumpAllocatorPushData(rx_bumpAllocator arena, rx_Range data);
 // resets the arena
 API void rx_bumpAllocatorReset(rx_bumpAllocator arena);
