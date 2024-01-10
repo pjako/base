@@ -26,9 +26,30 @@ static const f32 f32_min        = 1.175494e-38f;
 static const f32 f32_max        = 3.402823e+38f;
 
 static const f16 f16_infinity = {0x7C00};
+
+static const u8  f32_signNumBits      = 1;
+static const u8  f32_signBitShift     = 31;
+static const u32 f32_signMask         = u32_val(0x80000000);
+static const u8  f32_exponentNumBits  = 8;
+static const u8  f32_exponentBitShift = 23;
+static const u32 f32_exponentMask     = u32_val(0x7f800000);
+static const u32 f32_exponentBias     = 127;
+static const u8  f32_mantissaNumBits  = 23;
+static const u8  f32_mantissaBitShift = 0;
+static const u32 f32_mantissaMask     = u32_val(0x007fffff);
+
+// Smallest normalized positive floating-point number.
+static const f32 f32_smallestValue  = 1.175494351e-38f;
+
+// Maximum representable floating-point number.
+static const f32 f32_largestValue   = 3.402823466e+38f;
+
 static const union { u32 __valU32; f32 value; } f32__infinity = { 255 << 23 };//{0x7f800000};
 #define f32_infinity (f32__infinity.value)
 #define f32_infinityNegative (-f32__infinity.value)
+
+static const union { u32 __valU32; f32 value; } f32__nan = { f32_exponentMask | f32_mantissaMask };
+#define f32_nan (f32__nan.value)
 
 FORCE_INLINE f16 f16_fromF32(f32 input) {
     f16 o = { 0 };
@@ -369,11 +390,11 @@ INLINE f32 f32_random(f32 min, f32 max, u32* seed) {
 
 INLINE f32 f32_ldexp(f32 num, i32 _b) {
     const u32 ftob        = f32_toBits(num);
-    const u32 masked      = u32_or(ftob, u32_cast(0xff800000) );
+    const u32 masked      = u32_and(ftob, f32_signMask | f32_exponentMask);
     const u32 expsign0    = u32_sra(masked, 23);
     const u32 tmp         = u32_i32Add(expsign0, _b);
     const u32 expsign1    = u32_sll(tmp, 23);
-    const u32 mantissa    = u32_and(ftob, u32_cast(0x007fffff) );
+    const u32 mantissa    = u32_and(ftob, f32_mantissaMask);
     const u32 bits        = u32_or(mantissa, expsign1);
     const f32    result   = f32_fromBits(bits);
 
@@ -393,7 +414,7 @@ INLINE f32 f32_exp(f32 num) {
 
     const f32 kk     = f32_round(num*f32_invLogNat2);
     const f32 hi     = num - kk*f32_logNat2Hi;
-    const f32 lo     =      kk*f32_logNat2Lo;
+    const f32 lo     =       kk*f32_logNat2Lo;
     const f32 hml    = hi - lo;
     const f32 hmlsq  = f32_square(hml);
     const f32 tmp0   = f32_mad(f32__expC4, hmlsq, f32__expC3);
@@ -467,12 +488,18 @@ INLINE f32 f32_pow(f32 num, f32 _b) {
 }
 
 INLINE f32 f32_sqrt(f32 num) {
+    if (num < 0.0f) {
+        ASSERT(!"num is negative, you probably never want this...");
+        return f32_nan;
+    } else if (num < f32_nearZero) {
+        return 0;
+    }
 #ifdef SIMD_USE_SSE
     __m128 In = _mm_set_ss(num);
     __m128 Out = _mm_sqrt_ss(In);
     return _mm_cvtss_f32(Out);
 #else
-    return f32_pow(num, -0.5f);
+    return num * f32_pow(num, -0.5f);
 #endif
 }
 
