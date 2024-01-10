@@ -217,6 +217,7 @@ typedef union Mat4 {
         Vec4 row0, row1, row2, row3;
     };
     f32 store[16];
+    f32 store4x4[4][4];
     f32x16 simd;
 #if CPP_ENV
     inline f32 &operator[](const int &index) {
