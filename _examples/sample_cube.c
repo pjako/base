@@ -94,43 +94,46 @@ void g_init(void) {
         .gpuBuffer = state->uniformBuffer
     });
 
-    // buffers
-
-    // vertex buffer for static geometry, goes into vertex-buffer-slot 0
-    const f32 r = 0.05f;
-
-
     // cube vertex buffer
-    float vertices[] = {
-        -1.0, -1.0, -1.0,   1.0, 0.0, 0.0, 1.0,
-         1.0, -1.0, -1.0,   1.0, 0.0, 0.0, 1.0,
-         1.0,  1.0, -1.0,   1.0, 0.0, 0.0, 1.0,
-        -1.0,  1.0, -1.0,   1.0, 0.0, 0.0, 1.0,
 
-        -1.0, -1.0,  1.0,   0.0, 1.0, 0.0, 1.0,
-         1.0, -1.0,  1.0,   0.0, 1.0, 0.0, 1.0,
-         1.0,  1.0,  1.0,   0.0, 1.0, 0.0, 1.0,
-        -1.0,  1.0,  1.0,   0.0, 1.0, 0.0, 1.0,
-
-        -1.0, -1.0, -1.0,   0.0, 0.0, 1.0, 1.0,
-        -1.0,  1.0, -1.0,   0.0, 0.0, 1.0, 1.0,
-        -1.0,  1.0,  1.0,   0.0, 0.0, 1.0, 1.0,
-        -1.0, -1.0,  1.0,   0.0, 0.0, 1.0, 1.0,
-
-        1.0, -1.0, -1.0,    1.0, 0.5, 0.0, 1.0,
-        1.0,  1.0, -1.0,    1.0, 0.5, 0.0, 1.0,
-        1.0,  1.0,  1.0,    1.0, 0.5, 0.0, 1.0,
-        1.0, -1.0,  1.0,    1.0, 0.5, 0.0, 1.0,
-
-        -1.0, -1.0, -1.0,   0.0, 0.5, 1.0, 1.0,
-        -1.0, -1.0,  1.0,   0.0, 0.5, 1.0, 1.0,
-         1.0, -1.0,  1.0,   0.0, 0.5, 1.0, 1.0,
-         1.0, -1.0, -1.0,   0.0, 0.5, 1.0, 1.0,
-
-        -1.0,  1.0, -1.0,   1.0, 0.0, 0.5, 1.0,
-        -1.0,  1.0,  1.0,   1.0, 0.0, 0.5, 1.0,
-         1.0,  1.0,  1.0,   1.0, 0.0, 0.5, 1.0,
-         1.0,  1.0, -1.0,   1.0, 0.0, 0.5, 1.0
+    Rgba cubeColorFront = rgba_pink;
+    Rgba cubeColorBack = rgba_black;
+    Rgba cubeColorLeft = rgba_green;
+    Rgba cubeColorRight = rgba_yellow;
+    Rgba cubeColorBottom = rgba_red;
+    Rgba cubeColorTop = rgba_blue;
+    
+    struct {Vec3 pos; Rgba color;} vertices[] = {
+        // front
+        { .pos = vec3_make(-1.0, -1.0, -1.0), .color = cubeColorFront },
+        { .pos = vec3_make( 1.0, -1.0, -1.0), .color = cubeColorFront },
+        { .pos = vec3_make( 1.0,  1.0, -1.0), .color = cubeColorFront },
+        { .pos = vec3_make(-1.0,  1.0, -1.0), .color = cubeColorFront },
+        // back
+        { .pos = vec3_make(-1.0, -1.0,  1.0), .color = cubeColorBack },
+        { .pos = vec3_make( 1.0, -1.0,  1.0), .color = cubeColorBack },
+        { .pos = vec3_make( 1.0,  1.0,  1.0), .color = cubeColorBack },
+        { .pos = vec3_make(-1.0,  1.0,  1.0), .color = cubeColorBack },
+        // left
+        { .pos = vec3_make(-1.0, -1.0, -1.0), .color = cubeColorLeft },
+        { .pos = vec3_make(-1.0,  1.0, -1.0), .color = cubeColorLeft },
+        { .pos = vec3_make(-1.0,  1.0,  1.0), .color = cubeColorLeft },
+        { .pos = vec3_make(-1.0, -1.0,  1.0), .color = cubeColorLeft },
+        // right
+        { .pos = vec3_make(1.0, -1.0,  -1.0), .color = cubeColorRight },
+        { .pos = vec3_make(1.0,  1.0,  -1.0), .color = cubeColorRight },
+        { .pos = vec3_make(1.0,  1.0,   1.0), .color = cubeColorRight },
+        { .pos = vec3_make(1.0, -1.0,   1.0), .color = cubeColorRight },
+        // bottom
+        { .pos = vec3_make(-1.0, -1.0, -1.0), .color = cubeColorBottom },
+        { .pos = vec3_make(-1.0, -1.0,  1.0), .color = cubeColorBottom },
+        { .pos = vec3_make( 1.0, -1.0,  1.0), .color = cubeColorBottom },
+        { .pos = vec3_make( 1.0, -1.0, -1.0), .color = cubeColorBottom },
+        // top
+        { .pos = vec3_make(-1.0,  1.0, -1.0), .color = cubeColorTop },
+        { .pos = vec3_make(-1.0,  1.0,  1.0), .color = cubeColorTop },
+        { .pos = vec3_make( 1.0,  1.0,  1.0), .color = cubeColorTop },
+        { .pos = vec3_make( 1.0,  1.0, -1.0), .color = cubeColorTop }
     };
 
     state->vertexBuffer = rx_makeBuffer(&(rx_BufferDesc) {
@@ -259,10 +262,11 @@ void g_update(void) {
     Mat4 view = mat4_lookAt(vec3_make(0.0f, 1.5f, 6.0f), vec3_make(0.0f, 0.0f, 0.0f), vec3_make(0.0f, 1.0f, 0.0f));
     Mat4 view_proj = mat4_multiply(proj, view);
     //state->rx += 1.0f * t; state->ry += 2.0f * t;
-    Mat4 rxm = mat4_rotate(frameTimeInSeconds * 60.0f, vec3_make(1.0f, 0.0f, 0.0f));
-    Mat4 rym = mat4_rotate(frameTimeInSeconds * 60.0f, vec3_make(0.0f, 1.0f, 0.0f));
+    Mat4 rxm = mat4_rotate(frameTimeInSeconds * 35.0f, vec3_make(1.0f, 0.0f, 0.0f));
+    Mat4 rym = mat4_rotate(frameTimeInSeconds * 35.0f, vec3_make(0.0f, 1.0f, 0.0f));
+    Mat4 rzm = mat4_rotate(frameTimeInSeconds * 35.0f, vec3_make(0.0f, 1.0f, 0.0f));
 
-    Mat4 model = mat4_multiply(rxm, rym);
+    Mat4 model = mat4_multiply(mat4_multiply(rxm, rym), rzm);
     Mat4 mvp = mat4_multiply(view_proj, model);
 
 
