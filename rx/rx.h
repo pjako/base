@@ -21,7 +21,8 @@ enum {
     RX_MAX_SHADERSTAGE_BINDING = 16,
     RX_MAX_SHADERSTAGE_BUFFERS = 16,
     RX_MAX_VERTEX_ATTRIBUTES = 16,
-    RX_MAX_SWAP_TEXTURES = 4
+    RX_MAX_SWAP_TEXTURES = 4,
+    RX_MAX_RESOURCES_PER_RES_GROUP = 12
 };
 
 typedef enum rx_error {
@@ -33,7 +34,7 @@ typedef enum rx_error {
 
 typedef struct rx_Range {
     mms size;
-    void* ptr;
+    void* content;
 } rx_Range;
 
 typedef union rx_buffer {
@@ -98,27 +99,27 @@ typedef union rx_resGroupLayout {
     };
 #endif
 } rx_resGroupLayout;
+
 typedef union rx_resGroup {
     u32 id;
 //#ifdef RX_INTERNAL
     struct {
         u16 idx;
-        u32 gen         : 15;
-        bx hasPassDep   : 1;
+        u16 gen : 15;
+        bx hasPassDep : 1;
     };
 //#endif
 } rx_resGroup;
 
-typedef union rx_dynResGroup {
+typedef union rx_renderPipeline {
     u32 id;
-//#ifdef RX_INTERNAL
+#ifdef RX_INTERNAL
     struct {
         u16 idx;
-        u32 gen         : 15;
-        bx hasPassDep   : 1;
+        u16 gen;
     };
-//#endif
-} rx_dynResGroup;
+#endif
+} rx_renderPipeline;
 
 typedef union rx_renderPass {
     u32 id;
@@ -140,15 +141,6 @@ typedef union rx_computePass {
 #endif
 } rx_computePass;
 
-typedef union rx_renderPipeline {
-    u32 id;
-#ifdef RX_INTERNAL
-    struct {
-        u16 idx;
-        u16 gen;
-    };
-#endif
-} rx_renderPipeline;
 
 #ifndef RX_DEFAULT_MAX_BUFFERS
 #define RX_DEFAULT_MAX_BUFFERS 64
@@ -171,6 +163,12 @@ typedef union rx_renderPipeline {
 #ifndef RX_DEFAULT_MAX_PER_FRAME_PASSES
 #define RX_DEFAULT_MAX_PER_FRAME_PASSES 64
 #endif
+#ifndef RX_DEFAULT_MAX_RES_GROUPS
+#define RX_DEFAULT_MAX_RES_GROUPS 64
+#endif
+#ifndef RX_DEFAULT_MAX_RES_GROUP_LAYOUTS
+#define RX_DEFAULT_MAX_RES_GROUP_LAYOUTS 64
+#endif
 #ifndef RX_DEFAULT_MAX_RENDER_PIPELINES
 #define RX_DEFAULT_MAX_RENDER_PIPELINES 64
 #endif
@@ -186,6 +184,12 @@ typedef union rx_renderPipeline {
 #endif
 #ifndef RX_DEFAULT_MAX_PER_RES_GROUPS
 #define RX_DEFAULT_MAX_PER_RES_GROUPS 128
+#endif
+#ifndef RX_DEFAULT_MAX_STREAMING_UNIFORM_SIZE
+#define RX_DEFAULT_MAX_STREAMING_UNIFORM_SIZE MEGABYTE(5)
+#endif
+#ifndef RX_DEFAULT_MAX_DYNAMIC_UNIFORM_SIZE
+#define RX_DEFAULT_MAX_DYNAMIC_UNIFORM_SIZE MEGABYTE(5)
 #endif
 
 typedef struct rx_SetupDesc {
@@ -204,9 +208,12 @@ typedef struct rx_SetupDesc {
     u32 maxRenderShaders;
     u32 maxRenderPipelines;
     u32 maxResGroups;
+    u32 maxResGroupLayouts;
     u32 maxSwapChains;
     u32 maxUniquePasses;
     u32 maxPassesPerFrame;
+    u32 streamingUniformSize;
+    u32 dynamicUniformSize;
 } rx_SetupDesc;
 
 API void rx_setup(rx_SetupDesc* desc);
@@ -452,22 +459,44 @@ typedef enum rx_sampleCount {
 // ResGroup
 
 typedef struct rx_ResLayoutDesc {
-    u32 type : 4;
-    u32 countOrSize : 16;
-} rx_ResDesc;
+    u32 type;
+    u32 countOrSize;
+    u32 slot;
+} rx_ResLayoutDesc;
 
 typedef struct rx_ResGroupLayoutDesc {
-    rx_ResDesc resources[12];
+    u32 uniformSize;
+    rx_ResLayoutDesc resources[12];
 } rx_ResGroupLayoutDesc;
+
+API rx_resGroupLayout rx_makeResGroupLayout(rx_ResGroupLayoutDesc* desc);
+
+typedef struct rx_ResUpdate {
+   rx_texture texture;
+   rx_sampler sampler;
+} rx_ResUpdate;
+
+typedef struct rx_ResGroupUpdateDesc {
+    rx_buffer target;
+    rx_Range uniformContent;
+    rx_ResUpdate resources[RX_MAX_RESOURCES_PER_RES_GROUP];
+} rx_ResGroupUpdateDesc;
+
+
+typedef enum rx_resGroupUsage {
+    rx_resGroupUsage_dynamic,
+    rx_resGroupUsage_streaming
+} rx_resGroupUsage;
 
 typedef struct rx_ResGroupDesc {
     rx_resGroupLayout layout;
-    struct {
-        u32 offset;
-        rx_buffer buffer;
-        rx_texture texture;
-    } resources[12];
+    u64 offset;
+    rx_resGroupUsage usage;
+    rx_ResGroupUpdateDesc initalContent;
 } rx_ResGroupDesc;
+
+API rx_resGroup rx_makeResGroup(rx_ResGroupDesc* desc);
+API void rx_updateResGroup(rx_resGroup resGroup, rx_ResGroupUpdateDesc* desc);
 
 API flags64 rx_getResGroupPassDepFlags(rx_resGroup resGroup);
 

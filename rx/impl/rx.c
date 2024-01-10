@@ -62,7 +62,8 @@ typedef unsigned int  GLuint;
 #endif
 #endif
 
-
+// todo: embed the library
+#include "offalloc.c"
 
 #if OS_APPLE
 #if __has_feature(objc_arc)
@@ -86,6 +87,7 @@ typedef struct rx_Buffer {
 #if RX_OGL
         struct {
             GLuint handle;
+            rx_bufferUsageFlags usage;
         } gl;
 #endif
     };
@@ -183,11 +185,46 @@ typedef struct rx_RenderPipeline {
     u32 gen : 16;
 } rx_RenderPipeline;
 
+typedef enum rx__resType {
+    rx__resType_none,
+    rx__resType_texture,
+    rx__resType_sampler,
+} rx__resType;
+
+typedef struct rx_ResGroupRes {
+    union {
+        u32 id;
+        rx_texture texture;
+        rx_sampler sampler;
+    };
+    rx__resType type : 2;
+} rx_ResGroupRes;
+
 typedef struct rx_ResGroup {
+    union {
+        struct {
+            rx_ResGroupRes resources[RX_MAX_RESOURCES_PER_RES_GROUP];
+        } gl;
+    };
+    rx_resGroupLayout layout;
+    rx_buffer target;
+    u32 targetOffset;
+    u32 uniformSize;
+    rx_resGroupUsage usage : 2;
     u64 lastUpdateFrameIdx;
     flags64 passDepFlags;
     u32 gen : 16;
 } rx_ResGroup;
+
+typedef struct rx_ResGroupLayout {
+    union {
+        struct {
+            rx_ResLayoutDesc resources[12];
+        } gl;
+    };
+    u32 gen : 16;
+    u32 uniformSize;
+} rx_ResGroupLayout;
 
 typedef struct rx_SwapChain {
     rx_texture textures[RX_MAX_SWAP_TEXTURES];
@@ -212,9 +249,11 @@ typedef struct rx_IndexQueue {
 
 #define rx_arrDef(TYPE) struct {TYPE* elements; u32 count; u32 capacity;}
 #define rx_arrInit(ARENA, ARR, COUNT) (ARR)->elements = mem_arenaPush((ARENA), sizeOf((ARR)->elements[0]) * (COUNT) ); (ARR)->capacity = (COUNT)
-#define rx__poolDef(TYPE) struct {TYPE* elements; u32 capacity; rx_IndexQueue freeIndicies;}
-#define rx__poolInit(ARENA, POOL, COUNT) (POOL)->elements = mem_arenaPush((ARENA), sizeOf((POOL)->elements[0]) * (COUNT) ); (POOL)->capacity = (COUNT); rx__queueInit((ARENA), &(POOL)->freeIndicies, (COUNT), (COUNT))
+#define rx__poolDef(TYPE) struct {TYPE* elements; u32 capacity; rx_IndexQueue freeIndicies; rx_IndexQueue trashedIndicies; u64 frameOffets[4];}
+#define rx__poolInit(ARENA, POOL, COUNT) (POOL)->elements = mem_arenaPush((ARENA), sizeOf((POOL)->elements[0]) * (COUNT) ); (POOL)->capacity = (COUNT); rx__queueInit((ARENA), &(POOL)->freeIndicies, (COUNT), (COUNT)); rx__queueInit((ARENA), &(POOL)->trashedIndicies, (COUNT), (COUNT)); mem_structSetZero((POOL)->frameOffets)
 // rx_poolInit(ctx->.arena, &ctx->buffers, descWithDefaults.maxBuffers);
+// unsave queue
+#define rx__frameQueueDef(TYPE, CAPACITY, OFFSETCOUNTS) struct {TYPE* indicies; u64 currIdx; u64 capacity; u64 offsets[OFFSETCOUNTS];}
 
 typedef struct rx_ColorTarget {
     rx_texture target;
@@ -370,6 +409,7 @@ typedef struct rx_Limits {
     u32 maxImageSize3d;
     u32 glMaxCombinedTextureImageUnits;
     u32 maxImageArrayLayers;
+    u32 uniformBufferAlignment;
 } rx_Limits;
 
 typedef struct rx_Ctx {
@@ -385,6 +425,7 @@ typedef struct rx_Ctx {
     rx__poolDef(rx_RenderShader) renderShaders;
     rx__poolDef(rx_RenderPipeline) renderPipelines;
     rx__poolDef(rx_ResGroup) resGroups;
+    rx__poolDef(rx_ResGroupLayout) resGroupLayouts;
     rx__poolDef(rx_SwapChain) swapChains;
 
 
@@ -1098,10 +1139,55 @@ LOCAL rx_texture rx__allocTexture(rx_Ctx* ctx) {
     return handle;
 }
 
+LOCAL rx_resGroupLayout rx__allocResGroupLayout(rx_Ctx* ctx) {
+    u32 idx = rx__queuePull(&ctx->resGroupLayouts.freeIndicies);
+    ASSERT(idx != RX__INVALID_INDEX && "No free ResGroups available");
+    if (idx == RX__INVALID_INDEX) {
+        return (rx_resGroupLayout) {0};
+    }
+
+    rx_ResGroupLayout* resGroupLayout = &ctx->resGroupLayouts.elements[idx];
+    u32 gen = maxVal(1, (resGroupLayout->gen + 1) % u16_max);
+
+    mem_structSetZero(resGroupLayout);
+
+    resGroupLayout->gen = gen;
+
+    rx_resGroupLayout handle = {0};
+    handle.idx = idx;
+    handle.gen = resGroupLayout->gen;
+
+    return handle;
+}
+
+LOCAL rx_resGroup rx__allocResGroup(rx_Ctx* ctx) {
+    u32 idx = rx__queuePull(&ctx->resGroups.freeIndicies);
+    ASSERT(idx != RX__INVALID_INDEX && "No free ResGroups available");
+    if (idx == RX__INVALID_INDEX) {
+        return (rx_resGroup) {0};
+    }
+
+    rx_ResGroup* resGroup = &ctx->resGroups.elements[idx];
+    u32 gen = maxVal(1, (resGroup->gen + 1) % u16_max);
+
+    mem_structSetZero(resGroup);
+
+
+    resGroup->gen = gen;
+
+    rx_resGroup handle = {0};
+    handle.idx = idx;
+    handle.gen = resGroup->gen;
+
+    return handle;
+}
+
+
+
 LOCAL rx_swapChain rx__allocSwapChain(rx_Ctx* ctx) {
     ASSERT(ctx);
     u32 idx = rx__queuePull(&ctx->swapChains.freeIndicies);
-    ASSERT(idx != RX__INVALID_INDEX && "No free textures views available");
+    ASSERT(idx != RX__INVALID_INDEX && "No free Swap Chains views available");
     if (idx == RX__INVALID_INDEX) {
         return (rx_swapChain) {0};
     }
@@ -1173,6 +1259,16 @@ LOCAL rx_ResGroup* rx__getResGroup(rx_Ctx* ctx, rx_resGroup resGroupHandle) {
 
     rx_ResGroup* resGroup = &ctx->resGroups.elements[resGroupHandle.idx];
     ASSERT(resGroup->gen == resGroupHandle.gen);
+    return resGroup;
+}
+
+LOCAL rx_ResGroupLayout* rx__getResGroupLayout(rx_Ctx* ctx, rx_resGroupLayout resGroupLayoutHandle) {
+    ASSERT(ctx);
+    ASSERT(resGroupLayoutHandle.id != 0);
+    ASSERT(resGroupLayoutHandle.idx < ctx->resGroups.capacity);
+
+    rx_ResGroupLayout* resGroup = &ctx->resGroupLayouts.elements[resGroupLayoutHandle.idx];
+    ASSERT(resGroup->gen == resGroupLayoutHandle.gen);
     return resGroup;
 }
 
@@ -1719,9 +1815,24 @@ typedef struct rx_OpenGlCtx {
     struct {
         GLuint vertexBuffer;
         GLuint indexBuffer;
+        GLuint uniformBuffer;
         GLuint storedVertexBuffer;
         GLuint storedIndexBuffer;
+        GLuint storedUniformBuffer;
     } cache;
+
+    struct {
+        struct {
+            rx_buffer buffer;
+            u32 currentOffset;
+            u32 capacity;
+        } streaming;
+        struct {
+            rx_buffer buffer;
+            oa_allocator_t* allocator;
+            u32 capacity;
+        } dynamic;
+    } uniform;
 } rx_OpenGlCtx;
 
 #if defined(RX_USE_WIN32_GL_LOADER)
@@ -1785,6 +1896,10 @@ LOCAL void rx__glInitLimits(rx_OpenGlCtx* ctx) {
     glGetIntegerv(GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS, &glInt);
     rx__oglCheckErrors();
     limits->glMaxCombinedTextureImageUnits = glInt;
+
+    glGetIntegerv(GL_UNIFORM_BUFFER_OFFSET_ALIGNMENT, &glInt);
+    rx__oglCheckErrors();
+    limits->uniformBufferAlignment = glInt;
 }
 
 
@@ -1886,6 +2001,31 @@ LOCAL void rx__setupBackend(rx_Ctx* baseCtx, const rx_SetupDesc* desc) {
     #elif defined(RX_GLES3)
         rx__glInitCapsGlES3(ctx);
     #endif
+
+    ASSERT(desc->streamingUniformSize > 0);
+    ctx->uniform.streaming.currentOffset = 0;
+    ctx->uniform.streaming.capacity = desc->streamingUniformSize;
+    ctx->uniform.streaming.buffer = rx_makeBuffer(&(rx_BufferDesc) {
+        .usage = rx_bufferUsage_uniform | rx_bufferUsage_stream,
+        .size = desc->streamingUniformSize
+    });
+
+    ASSERT(desc->dynamicUniformSize > 0);
+    ctx->uniform.streaming.capacity = desc->dynamicUniformSize;
+    ctx->uniform.dynamic.buffer = rx_makeBuffer(&(rx_BufferDesc) {
+        .usage = rx_bufferUsage_uniform | rx_bufferUsage_dynamic,
+        .size = desc->dynamicUniformSize
+    });
+    struct {
+        struct {
+            rx_buffer buffer;
+            u32 currentOffset;
+        } streaming;
+        struct {
+            rx_buffer buffer;
+            oa_allocator_t* allocator;
+        } dynamic;
+    } uniform;
 }
 
 LOCAL rx_Ctx* rx__create(Arena* arena, rx_SetupDesc* desc) {
@@ -1944,31 +2084,70 @@ LOCAL void rx__activateContext(rx_Ctx* baseCtx) {
 }
 
 LOCAL void rx__glCacheBindBuffer(rx_OpenGlCtx* ctx, GLenum target, GLuint buffer) {
-    ASSERT((target == GL_ARRAY_BUFFER) || (target == GL_ELEMENT_ARRAY_BUFFER));
-    if (target == GL_ARRAY_BUFFER) {
-        if (ctx->cache.vertexBuffer != buffer) {
-            ctx->cache.vertexBuffer = buffer;
-            glBindBuffer(target, buffer);
-            //_sg_stats_add(gl.num_bind_buffer, 1);
-        }
-    } else {
-        if (ctx->cache.indexBuffer != buffer) {
-            ctx->cache.indexBuffer = buffer;
-            glBindBuffer(target, buffer);
-            //_sg_stats_add(gl.num_bind_buffer, 1);
-        }
+    switch (target) {
+        case GL_ARRAY_BUFFER: {
+            if (ctx->cache.vertexBuffer != buffer) {
+                ctx->cache.vertexBuffer = buffer;
+                glBindBuffer(target, buffer);
+            }
+        } break;
+        case GL_ELEMENT_ARRAY_BUFFER: {
+            if (ctx->cache.indexBuffer != buffer) {
+                ctx->cache.indexBuffer = buffer;
+                glBindBuffer(target, buffer);
+            }
+        } break;
+        case GL_UNIFORM_BUFFER: {
+            if (ctx->cache.uniformBuffer != buffer) {
+                ctx->cache.uniformBuffer = buffer;
+                glBindBuffer(target, buffer);
+            }
+        } break;
+        default: ASSERT(!"Unknown buffer type");
     }
 }
 
 LOCAL void rx__glCacheStoreBufferBinding(rx_OpenGlCtx* ctx, GLenum target) {
-    if (target == GL_ARRAY_BUFFER) {
-        ctx->cache.storedVertexBuffer = ctx->cache.vertexBuffer;
-    } else {
-        ctx->cache.storedIndexBuffer = ctx->cache.indexBuffer;
+    switch (target) {
+        case GL_ARRAY_BUFFER: {
+            ctx->cache.storedVertexBuffer = ctx->cache.vertexBuffer;
+        } break;
+        case GL_ELEMENT_ARRAY_BUFFER: {
+            ctx->cache.storedIndexBuffer = ctx->cache.indexBuffer;
+        } break;
+        case GL_UNIFORM_BUFFER: {
+            ctx->cache.storedUniformBuffer = ctx->cache.uniformBuffer;
+        } break;
+        default: ASSERT(!"Unknown buffer type");
     }
 }
 
 LOCAL void rx__glCacheRestoreBufferBinding(rx_OpenGlCtx* ctx, GLenum target) {
+    switch (target) {
+        case GL_ARRAY_BUFFER: {
+            if (ctx->cache.storedVertexBuffer != 0) {
+                // we only care about restoring valid ids
+                rx__glCacheBindBuffer(ctx, target, ctx->cache.storedVertexBuffer);
+                ctx->cache.storedVertexBuffer = 0;
+            }
+        } break;
+        case GL_ELEMENT_ARRAY_BUFFER: {
+            if (ctx->cache.storedIndexBuffer != 0) {
+                // we only care about restoring valid ids
+                rx__glCacheBindBuffer(ctx, target, ctx->cache.storedIndexBuffer);
+                ctx->cache.storedIndexBuffer = 0;
+            }
+        } break;
+        case GL_UNIFORM_BUFFER: {
+            if (ctx->cache.storedUniformBuffer != 0) {
+                // we only care about restoring valid ids
+                rx__glCacheBindBuffer(ctx, target, ctx->cache.storedUniformBuffer);
+                ctx->cache.storedUniformBuffer = 0;
+            }
+        } break;
+        default: ASSERT(!"Unknown buffer type");
+    }
+
     if (target == GL_ARRAY_BUFFER) {
         if (ctx->cache.storedVertexBuffer != 0) {
             // we only care about restoring valid ids
@@ -1990,6 +2169,9 @@ LOCAL GLenum rx__glBufferTarget(rx_bufferUsage usage) {
     }
     if ((usage & rx_bufferUsage_index) != 0) {
         return GL_ELEMENT_ARRAY_BUFFER;
+    }
+    if ((usage & rx_bufferUsage_uniform) != 0) {
+        return GL_UNIFORM_BUFFER;
     }
     ASSERT(!"Unsupported buffer type");
     return 0;
@@ -2017,6 +2199,7 @@ LOCAL bx rx__glMakeBuffer(rx_Ctx* baseCtx, rx_Buffer* buffer, rx_BufferDesc* des
     glGenBuffers(1, &glBuffer);
     ASSERT(glBuffer != 0); 
     buffer->gl.handle = glBuffer;
+    buffer->gl.usage = desc->usage;
     rx__oglCheckErrors();
 
     rx__glCacheStoreBufferBinding(ctx, glTarget);
@@ -2029,13 +2212,26 @@ LOCAL bx rx__glMakeBuffer(rx_Ctx* baseCtx, rx_Buffer* buffer, rx_BufferDesc* des
     return true;
 }
 
+typedef enum ogl_error {
+    ogl_GL_NO_ERROR =                       0,
+    ogl_GL_INVALID_ENUM =                   0x0500,
+    ogl_GL_INVALID_VALUE =                  0x0501,
+    ogl_GL_INVALID_OPERATION =              0x0502,
+    ogl_GL_STACK_OVERFLOW =                 0x0503,
+    ogl_GL_STACK_UNDERFLOW =                0x0504,
+    ogl_GL_OUT_OF_MEMORY =                  0x0505,
+    ogl_error__forceU32 = RX_U32_MAX
+} ogl_error;
+
+
 LOCAL void rx__glUpdateBuffer(rx_Ctx* baseCtx, rx_Buffer* buffer, mms offset, rx_Range range) {
     ASSERT(baseCtx && buffer);
     rx_OpenGlCtx* ctx = (rx_OpenGlCtx*) baseCtx;
     GLenum glTarget = rx__glBufferTarget(buffer->usage);
     rx__glCacheStoreBufferBinding(ctx, glTarget);
     rx__glCacheBindBuffer(ctx, glTarget, buffer->gl.handle);
-    glBufferSubData(glTarget, offset, (GLsizeiptr)range.size, range.ptr);
+    rx__oglCheckErrors();
+    glBufferSubData(glTarget, offset, (GLsizeiptr)range.size, range.content);
     rx__oglCheckErrors();
     rx__glCacheRestoreBufferBinding(ctx, glTarget);
     rx__oglCheckErrors();
@@ -2229,8 +2425,22 @@ LOCAL bx rx__glMakeRenderShader(rx_Ctx* baseCtx, rx_RenderShader* renderShader, 
 
     renderShader->gl.handle = glProgam;
 
+
+    GLuint resGroupIndex[5];
     // resolve uniforms
-    // TODO
+    resGroupIndex[0] = glGetUniformBlockIndex(glProgam, "resGroup0");
+    resGroupIndex[1] = glGetUniformBlockIndex(glProgam, "resGroup1");
+    resGroupIndex[2] = glGetUniformBlockIndex(glProgam, "resGroup2");
+    resGroupIndex[3] = glGetUniformBlockIndex(glProgam, "resGroup3");
+    resGroupIndex[4] = glGetUniformBlockIndex(glProgam, "resGroup4");
+
+
+
+    for (u32 idx = 0; idx < countOf(resGroupIndex); idx++) {
+        if (resGroupIndex[idx] != GL_INVALID_INDEX) {
+            glUniformBlockBinding(glProgam, resGroupIndex[idx], idx);
+        }
+    }
 
     // resolve combined image samplers
 
@@ -2242,6 +2452,84 @@ LOCAL bx rx__glMakeRenderShader(rx_Ctx* baseCtx, rx_RenderShader* renderShader, 
     rx__oglCheckErrors();
 
     return true;
+}
+
+LOCAL void rx__glMakeResGroupLayout(rx_Ctx* baseCtx, rx_ResGroupLayout* resGroupLayout, const rx_ResGroupLayoutDesc* desc) {
+    ASSERT(baseCtx && resGroupLayout && desc);
+    rx_OpenGlCtx* ctx = (rx_OpenGlCtx*) baseCtx;
+
+    for (u32 idx = 0; idx < countOf(desc->resources); idx++) {
+        resGroupLayout->gl.resources[idx] = desc->resources[idx];
+    }
+}
+
+LOCAL void rx__glInternalUpdateResGroup(rx_Ctx* baseCtx, rx_ResGroup* resGroup, rx_ResGroupUpdateDesc* desc) {
+    ASSERT(baseCtx && resGroup && desc);
+
+}
+
+LOCAL void rx__glUpdateResGroup(rx_Ctx* baseCtx, rx_ResGroup* resGroup, const rx_ResGroupUpdateDesc* desc, bx isNew) {
+    ASSERT(baseCtx && resGroup && desc);
+    rx_OpenGlCtx* ctx = (rx_OpenGlCtx*) baseCtx;
+    if (resGroup->uniformSize) {
+        u32 size = resGroup->uniformSize;
+        u32 offset = resGroup->targetOffset;
+        rx_buffer target = desc->target;
+        if (target.id == 0) {
+            switch (resGroup->usage) {
+                case rx_resGroupUsage_dynamic: {
+                    target = ctx->uniform.dynamic.buffer;
+                    ASSERT(!"ALLOC uniform space");
+                    //offset = ctx->uniform.dynamic.currentOffset;
+                    //ctx->uniform.dynamic.currentOffset += size;
+                } break;
+                case rx_resGroupUsage_streaming: {
+                    target = ctx->uniform.streaming.buffer;
+                    if (!isNew && resGroup->lastUpdateFrameIdx == baseCtx->frameIdx) {
+                        // updating a res group twice a frame, just reused the existing slot
+                        offset = resGroup->targetOffset;
+                    } else {
+                        offset = ctx->uniform.streaming.currentOffset;
+                        offset = alignUp(ctx->uniform.streaming.currentOffset, baseCtx->limits.uniformBufferAlignment);
+
+                        ctx->uniform.streaming.currentOffset = offset + size;
+                    }
+
+                } break;
+                default: ASSERT(!"Unknown usage type");
+            }
+        }
+        resGroup->targetOffset = offset;
+        resGroup->target = target;
+        rx_Buffer* uniformBuffer = rx__getBuffer(baseCtx, target);
+        rx__glUpdateBuffer(baseCtx, uniformBuffer, offset, desc->uniformContent);
+    }
+    flags64 dependencies = 0;
+    for (u32 idx = 0; idx < countOf(resGroup->gl.resources); idx++) {
+        if (desc->resources[idx].texture.id != 0) {
+            if (desc->resources[idx].texture.passIdx != 0) {
+                dependencies |= 1 << desc->resources[idx].texture.passIdx;
+            }
+            resGroup->gl.resources[idx].texture = desc->resources[idx].texture;
+            resGroup->gl.resources[idx].type    = rx__resType_texture;
+        } else if (desc->resources[idx].sampler.id != 0) {
+            resGroup->gl.resources[idx].sampler = desc->resources[idx].sampler;
+            resGroup->gl.resources[idx].type    = rx__resType_sampler;
+        } else {
+            resGroup->gl.resources[idx].type    = rx__resType_none;
+        }
+    }
+    resGroup->passDepFlags = dependencies;
+    resGroup->lastUpdateFrameIdx = baseCtx->frameIdx;
+}
+
+LOCAL void rx__glMakeResGroup(rx_Ctx* baseCtx, rx_ResGroup* resGroup, const rx_ResGroupDesc* desc) {
+    ASSERT(baseCtx && resGroup && desc);
+    rx_OpenGlCtx* ctx = (rx_OpenGlCtx*) baseCtx;
+    rx_ResGroupLayout* resGroupLayout = rx__getResGroupLayout(baseCtx, resGroup->layout);
+    resGroup->uniformSize = resGroupLayout->uniformSize;
+    resGroup->usage = desc->usage;
+    rx__glUpdateResGroup(baseCtx, resGroup, &desc->initalContent, true);
 }
 
 LOCAL GLenum rx__glVertexformatType(rx_vertexFormat fmt) {
@@ -2962,6 +3250,9 @@ LOCAL void rx__glExcuteDrawList(rx_OpenGlCtx* ctx, rx_GlStateCache* glStateCache
             uint32_t flags = drawList->commands[currentOffset++];
             bx needsToRebindVertexAttributes = false;
             if (flags != 0) {
+                i32 dynamicSlots[2] = {-1, -1};
+                u32 dynamicSlotUniformSize[2] = {0, 0};
+                GLuint dynamicUniformBufferHandle = 0;
                 if ((flags & rx_renderCmd_pipeline) != 0) {
                     uint32_t id = drawList->commands[currentOffset++];
                     if (id != currentPipeline.id) {
@@ -3018,41 +3309,50 @@ LOCAL void rx__glExcuteDrawList(rx_OpenGlCtx* ctx, rx_GlStateCache* glStateCache
                     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, idxBuf->gl.handle);
                 }
                 // TODO(PJ): ResGroups
-#if 0
+
                 if ((flags & (rx_renderCmd_resGroup1 | rx_renderCmd_resGroup2 | rx_renderCmd_resGroup3 | rx_renderCmd_dynResGroup0 | rx_renderCmd_dynResGroup1)) != 0) {
-                    if ((flags & rx_renderCmd_resGroup1) != 0) {
-                        uint32_t id = drawList->commands[currentOffset++];
-                        rx_resGroup resGroup = {id};
-                        rx__ResourceGroup* resourceGroup = rx__getResourceGroup(ctx, resGroup);
-                        pushIndicies[1] = resourceGroup->offset;
-                    }
+                    const u32 resFlags[] = {rx_renderCmd_resGroup1, rx_renderCmd_resGroup2, rx_renderCmd_resGroup3};
+                    const u32 resSlots[] = {1, 2, 3};
+                    for (u32 idx = 0; idx < countOf(resFlags); idx++) {
+                        if ((flags & resFlags[idx]) != 0) {
+                            uint32_t id = drawList->commands[currentOffset++];
+                            rx_resGroup resGroup = {id};
+                            rx_ResGroup* resourceGroup = rx__getResGroup(&ctx->base, resGroup);
+                            if (resourceGroup->target.id != 0) {
+                                rx__oglCheckErrors();
+                                rx_Buffer* targetBuffer = rx__getBuffer(&ctx->base, resourceGroup->target);
+                                glBindBufferRange(
+                                    GL_UNIFORM_BUFFER,
+                                    resSlots[idx],
+                                    targetBuffer->gl.handle,
+                                    resourceGroup->targetOffset,
+                                    resourceGroup->uniformSize
+                                );
 
-                    if ((flags & rx_renderCmd_resGroup2) != 0) {
-                        uint32_t id = drawList->commands[currentOffset++];
-                        rx_resGroup resGroup = {id};
-                        rx__ResourceGroup* resourceGroup = rx__getResourceGroup(ctx, resGroup);
-                        pushIndicies[2] = resourceGroup->offset;
+                                ogl_error error = (ogl_error) glGetError();
+                                ASSERT(error == 0);
+                                rx__oglCheckErrors();
+                            }
+                        }
                     }
-
-                    if ((flags & rx_renderCmd_resGroup3) != 0) {
-                        uint32_t id = drawList->commands[currentOffset++];
-                        rx_resGroup resGroup = {id};
-                        rx__ResourceGroup* resourceGroup = rx__getResourceGroup(ctx, resGroup);
-                        pushIndicies[3] = resourceGroup->offset;
+                    const u32 dynResFlags[] = {rx_renderCmd_dynResGroup0, rx_renderCmd_dynResGroup1};
+                    for (u32 idx = 0; idx < countOf(dynResFlags); idx++) {
+                        if ((flags & dynResFlags[idx]) != 0) {
+                            ASSERT(dynamicSlots[idx] != -1);
+                            ASSERT(dynamicSlotUniformSize[idx] > 0);
+                            ASSERT(!"Implement me");
+                            uint32_t offset = drawList->commands[currentOffset++];
+                            
+                            glBindBufferRange(
+                                GL_UNIFORM_BUFFER,
+                                dynResFlags[idx],
+                                dynamicUniformBufferHandle,
+                                offset,
+                                dynamicSlotUniformSize[idx]
+                            );
+                        }
                     }
-
-                    if ((flags & rx_renderCmd_dynResGroup0) != 0) {
-                        uint32_t id = drawList->commands[currentOffset++];
-                        pushIndicies[4] = id - 1;
-                    }
-
-                    if ((flags & rx_renderCmd_dynResGroup1) != 0) {
-                        uint32_t id = drawList->commands[currentOffset++];
-                        //pushIndicies[5] = id - 1;
-                    }
-                    ctx->halApi.cmdSetPushConstants(halRenderPass, rx_shaderStage_all, 0, pushIndicies, sizeof(pushIndicies));
                 }
-#endif
 
                 if ((flags & rx_renderCmd_instanceOffset) != 0) {
                     instanceOffset = drawList->commands[currentOffset++];
@@ -3564,6 +3864,13 @@ LOCAL void rx__glExcuteGraph(rx_Ctx* baseCtx, rx_FrameGraph* frameGraph) {
     glFlush();
 }
 
+LOCAL void rx__glNextFrame(rx_Ctx* baseCtx) {
+    ASSERT(baseCtx);
+    rx_OpenGlCtx* ctx = (rx_OpenGlCtx*) baseCtx;
+    //ctx->uniform.streaming.currentOffset = 0;
+}
+
+#if 0
 LOCAL void rx__glCommit(rx_Ctx* baseCtx) {
     ASSERT(baseCtx);
     rx_OpenGlCtx* ctx = (rx_OpenGlCtx*) baseCtx;
@@ -3591,6 +3898,7 @@ LOCAL void rx__glCommit(rx_Ctx* baseCtx) {
     glFlush();
     //[ctx->nsGlLayer display];
 }
+#endif
 
 #endif
 
@@ -3617,19 +3925,21 @@ void rx_setup(rx_SetupDesc* desc) {
     descWithDefaults.maxSamplers = rx_valueOrDefault(descWithDefaults.maxBuffers, RX_DEFAULT_MAX_SAMPLERS);
     descWithDefaults.maxTextures = rx_valueOrDefault(descWithDefaults.maxTextures, RX_DEFAULT_MAX_TEXTURES);
     descWithDefaults.maxTextureViews = rx_valueOrDefault(descWithDefaults.maxTextureViews, RX_DEFAULT_MAX_TEXTURE_VIEWS);
+    descWithDefaults.maxResGroups = rx_valueOrDefault(descWithDefaults.maxResGroups, RX_DEFAULT_MAX_RES_GROUPS);
+    descWithDefaults.maxResGroupLayouts = rx_valueOrDefault(descWithDefaults.maxResGroupLayouts, RX_DEFAULT_MAX_RES_GROUP_LAYOUTS);
     descWithDefaults.maxRenderPipelines = rx_valueOrDefault(descWithDefaults.maxRenderPipelines, RX_DEFAULT_MAX_RENDER_PIPELINES);
     descWithDefaults.maxPasses = rx_valueOrDefault(descWithDefaults.maxPasses, RX_DEFAULT_MAX_PASSES);
-    descWithDefaults.maxResGroups = rx_valueOrDefault(descWithDefaults.maxResGroups, RX_DEFAULT_MAX_PER_RES_GROUPS);
     descWithDefaults.maxSwapChains = rx_valueOrDefault(descWithDefaults.maxSwapChains, RX_DEFAULT_MAX_SWAP_CHAINS);
     descWithDefaults.maxPerFramePasses = rx_valueOrDefault(descWithDefaults.maxPerFramePasses, RX_DEFAULT_MAX_SWAP_CHAINS);
     descWithDefaults.maxUniquePasses = rx_valueOrDefault(descWithDefaults.maxUniquePasses, RX_DEFAULT_MAX_UNIQUE_PASSES);
     descWithDefaults.maxPassesPerFrame = rx_valueOrDefault(descWithDefaults.maxPassesPerFrame, RX_DEFAULT_MAX_PASSES_PER_FRAME);
+    descWithDefaults.streamingUniformSize = rx_valueOrDefault(descWithDefaults.streamingUniformSize, RX_DEFAULT_MAX_STREAMING_UNIFORM_SIZE);
+    descWithDefaults.dynamicUniformSize = rx_valueOrDefault(descWithDefaults.dynamicUniformSize, RX_DEFAULT_MAX_DYNAMIC_UNIFORM_SIZE);
 
     BaseMemory baseMem = os_getBaseMemory();
     Arena* arena = mem_makeArena(&baseMem, MEGABYTE(6));
 
     rx_Ctx* ctx = rx__ctx = rx__create(arena, &descWithDefaults);
-    rx__setupBackend(ctx, &descWithDefaults);
     ctx->arena = arena;
 
     rx__poolInit(ctx->arena, &ctx->buffers, descWithDefaults.maxBuffers);
@@ -3638,6 +3948,7 @@ void rx_setup(rx_SetupDesc* desc) {
     rx__poolInit(ctx->arena, &ctx->renderShaders, descWithDefaults.maxRenderShaders);
     rx__poolInit(ctx->arena, &ctx->renderPipelines, descWithDefaults.maxRenderPipelines);
     rx__poolInit(ctx->arena, &ctx->resGroups, descWithDefaults.maxResGroups);
+    rx__poolInit(ctx->arena, &ctx->resGroupLayouts, descWithDefaults.maxResGroupLayouts);
     
     rx__poolInit(ctx->arena, &ctx->swapChains, descWithDefaults.maxSwapChains);
 
@@ -3656,6 +3967,7 @@ void rx_setup(rx_SetupDesc* desc) {
 
     rx__initFrameGaph(ctx->arena, &ctx->frameGraph, descWithDefaults.maxPassesPerFrame, maxQueues);    
 
+    rx__setupBackend(ctx, &descWithDefaults);
 #if 0
     arrMake(ctx->arena, &ctx->buffers, descWithDefaults.maxBuffers);
     arrMake(ctx->arena, &ctx->textures, descWithDefaults.maxTextures);
@@ -3735,7 +4047,7 @@ rx_buffer rx_makeBuffer(const rx_BufferDesc* desc) {
 
 void rx_updateBuffer(rx_buffer buffer, mms offset, rx_Range range) {
     ASSERT(rx__ctx);
-    ASSERT(range.ptr && "upload ptr is NULL");
+    ASSERT(range.content && "upload ptr is NULL");
     ASSERT(range.size > 0 && "upload size is zero");
     rx_Ctx* ctx = rx__ctx;
     rx_Buffer* bufferContent = &ctx->buffers.elements[buffer.idx];
@@ -3830,6 +4142,95 @@ rx_renderShader rx_makeRenderShader(const rx_RenderShaderDesc* desc) {
 
     return handle;
 }
+
+LOCAL rx_ResGroupLayoutDesc rx__resGroupLayoutDescDefaults(const rx_ResGroupLayoutDesc* desc) {
+    rx_ResGroupLayoutDesc descWithDefaults = *desc;
+
+    u32 computedOffset[countOf(descWithDefaults.resources)] = {0};
+    bx useComputedSlotPoints = true;
+    for (u32 idx = 0; idx < countOf(descWithDefaults.resources); idx++) {
+        // only if all offsets are zero we compute offesets automatically
+        if (descWithDefaults.resources[idx].slot != 0) {
+            useComputedSlotPoints = false;
+            break;
+        }
+    }
+
+    if (useComputedSlotPoints) {
+        for (u32 idx = 0; idx < countOf(descWithDefaults.resources); idx++) {
+            descWithDefaults.resources[idx].slot = idx;
+        }
+    }
+
+    return descWithDefaults;
+}
+
+rx_resGroupLayout rx_makeResGroupLayout(rx_ResGroupLayoutDesc* desc) {
+    ASSERT(rx__ctx);
+    ASSERT(desc);
+
+    rx_Ctx* ctx = rx__ctx;
+    rx_resGroupLayout resGroupLayoutHandle = rx__allocResGroupLayout(ctx);
+
+    if (resGroupLayoutHandle.id == 0) {
+        return resGroupLayoutHandle;
+    }
+
+    rx_ResGroupLayout* resGroupLayout = rx__getResGroupLayout(ctx, resGroupLayoutHandle);
+    resGroupLayout->uniformSize = desc->uniformSize;
+
+    rx_ResGroupLayoutDesc descWithDefaults = rx__resGroupLayoutDescDefaults(desc);
+
+    rx_callBknFn(MakeResGroupLayout, ctx, resGroupLayout, &descWithDefaults);
+
+    return resGroupLayoutHandle;
+}
+
+rx_resGroup rx_makeResGroup(rx_ResGroupDesc* desc) {
+    ASSERT(rx__ctx);
+    ASSERT(desc);
+    ASSERT(desc->layout.id != 0);
+
+    rx_Ctx* ctx = rx__ctx;
+    rx_resGroup resGroupHandle = rx__allocResGroup(ctx);
+
+    if (resGroupHandle.id == 0) {
+        return resGroupHandle;
+    }
+
+    //rx_ResGroupDesc descWithDefaults = rx__resGroupDescDefaults(desc);
+
+    rx_ResGroup* resGroup = rx__getResGroup(ctx, resGroupHandle);
+    resGroup->layout = desc->layout;
+
+    rx_callBknFn(MakeResGroup, ctx, resGroup, desc);
+
+    return resGroupHandle;
+}
+
+void rx_updateResGroup(rx_resGroup handle, rx_ResGroupUpdateDesc* desc) {
+    ASSERT(rx__ctx);
+    ASSERT(desc);
+    ASSERT(handle.id);
+    rx_Ctx* ctx = rx__ctx;
+
+    rx_ResGroup* resGroup = rx__getResGroup(ctx, handle);
+
+    rx_callBknFn(UpdateResGroup, ctx, resGroup, desc, false);
+}
+
+flags64 rx_getResGroupPassDepFlags(rx_resGroup resGroupHandle) {
+    ASSERT(rx__ctx && resGroupHandle.id);
+    rx_Ctx* ctx = rx__ctx;
+    if (!resGroupHandle.hasPassDep) {
+        return 0;
+    }
+    rx_ResGroup* resGroup = rx__getResGroup(ctx, resGroupHandle);
+    ASSERT(resGroup->lastUpdateFrameIdx == ctx->frameIdx);
+    
+    return resGroup->passDepFlags;
+}
+
 
 LOCAL rx_RenderPipelineDesc rx__renderPipelineDescDefaults(const rx_RenderPipelineDesc* desc) {
     rx_RenderPipelineDesc descWithDefaults = *desc;
@@ -3949,19 +4350,6 @@ rx_renderPipeline rx_makeRenderPipeline(rx_RenderPipelineDesc* desc) {
     return handle;
 }
 
-flags64 rx_getResGroupPassDepFlags(rx_resGroup resGroupHandle) {
-    ASSERT(rx__ctx && resGroupHandle.id);
-    rx_Ctx* ctx = rx__ctx;
-    if (!resGroupHandle.hasPassDep) {
-        return 0;
-    }
-    rx_ResGroup* resGroup = rx__getResGroup(ctx, resGroupHandle);
-    ASSERT(resGroup->lastUpdateFrameIdx == ctx->frameIdx);
-    
-    return resGroup->passDepFlags;
-}
-
-
 #define rx__passFrameGen(CTX) (maxVal(1, (CTX->frameIdx + 1) % u16_max))
 rx_renderPass rx_makeRenderPass(rx_RenderPassDesc* renderPassDesc, rx_RenderPassResult* resultTextureViews) {
     ASSERT(rx__ctx && renderPassDesc);
@@ -4051,6 +4439,7 @@ rx_texture rx_getCurrentSwapTexture(void) {
     rx_texture texture = rx_callBknFn(GetCurrentSwapTexture, ctx, swapChain);
     return texture;
 }
+
 void rx_setRenderPassDrawList(rx_renderPass renderPass, rx_DrawArea* arenas, u32 areaCount, rx_DrawList* drawList) {
     ASSERT(rx__ctx);
     rx_Ctx* ctx = rx__ctx;
@@ -4089,13 +4478,17 @@ LOCAL void rx__resetFrameData(rx_Ctx* ctx) {
     ctx->passes.count = 0;
 }
 
+LOCAL void rx__nextFrame(rx_Ctx* ctx) {
+    ctx->frameIdx += 1;
+    rx__resetFrameData(ctx);
+    rx_callBknFn(NextFrame, ctx);
+}
+
 API void rx_commit(void) {
     ASSERT(rx__ctx);
     rx_Ctx* ctx = rx__ctx;
     rx__buildAndPresent(ctx);
-    //rx_callBknFn(Commit, ctx);
-    // with commiting the frame it also starts the next frame
-    rx__resetFrameData(ctx);
+    rx__nextFrame(ctx);
     ctx->frameIdx += 1;
 }
 

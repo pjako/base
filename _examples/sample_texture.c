@@ -21,7 +21,9 @@ typedef struct g_State {
     app_window window;
     rx_buffer vertexBuffer;
     //rx_buffer indexBuffer;
+    rx_resGroupLayout resGroupLayout;
     rx_renderPipeline renderPipeline;
+    rx_resGroup resGroup;
 } g_State;
 
 void g_init(void) {
@@ -33,7 +35,7 @@ void g_init(void) {
     app_setUserData(state);
 
     state->window = app_makeWindow(&(app_WindowDesc) {
-        .title  = s8("Triangle"),
+        .title  = s8("Sampe texture"),
         .width  = 375,
         .height = 668
     });
@@ -72,8 +74,9 @@ void g_init(void) {
             "layout(location=0) in vec4 position;\n"
             "layout(location=1) in vec4 color0;\n"
             "out vec4 color;\n"
+            "layout (std140) uniform resGroup1 { float offset; };"
             "void main() {\n"
-            "  gl_Position = position;\n"
+            "  gl_Position = position + vec4(offset, 0, 0, 0);\n"
             "  color = color0;\n"
             "}\n"
             ),
@@ -86,6 +89,11 @@ void g_init(void) {
             "  frag_color = color;\n"
             "}\n"
             )
+    });
+
+    // ResGroupLayout
+    state->resGroupLayout = rx_makeResGroupLayout(&(rx_ResGroupLayoutDesc) {
+        .uniformSize = sizeof(f32)
     });
 
     // pipeline
@@ -105,6 +113,18 @@ void g_init(void) {
         },
     });
 
+    f32 offset = 0;
+    state->resGroup = rx_makeResGroup(&(rx_ResGroupDesc) {
+        .layout = state->resGroupLayout,
+        .usage  = rx_resGroupUsage_streaming,
+        .initalContent = {
+            .uniformContent = {
+                .size = sizeOf(offset),
+                .content = &offset
+            }
+        }
+    });
+
     // show window!
 
     app_showWindow(state->window);
@@ -115,12 +135,15 @@ void g_event(app_AppEvent* event) {
 
 }
 
+
 void g_update(void) {
     g_State* state = (g_State*) app_getUserData();
 
     Vec2i windowSize = app_getWindowSize(state->window);
     
     rx_texture texture = rx_getCurrentSwapTexture();
+
+
 
     rx_renderPass renderPass = rx_makeRenderPass(&(rx_RenderPassDesc) {
         .colorTargets[0].target = texture,
@@ -130,11 +153,21 @@ void g_update(void) {
         .height = windowSize.y
     }, NULL);
 
+
+    static f32 offset;
+    rx_updateResGroup(state->resGroup, &(rx_ResGroupUpdateDesc) {
+        .uniformContent = {
+            .content = &offset,
+            .size = sizeOf(offset)
+        }
+    });
+
     mem_scoped(tmpMem, state->arena) {
         rx_RenderCmdBuilder cmdBuilder;
         rx_renderCmdBuilderInit(tmpMem.arena, &cmdBuilder, 100);
         rx_renderCmdBuilderSetPipeline(&cmdBuilder, state->renderPipeline);
         rx_renderCmdBuilderSetVertexBuffer0(&cmdBuilder, state->vertexBuffer);
+        rx_renderCmdBuilderSetResGroup1(&cmdBuilder, state->resGroup);
         rx_renderCmdBuilderDraw(&cmdBuilder, 0, 6, 0, 0);
 
         rx_DrawArea arenas = {
@@ -147,6 +180,8 @@ void g_update(void) {
         // finish the frame
         rx_commit();
     }
+
+    offset += 0.015;
 
 }
 
