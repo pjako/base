@@ -223,7 +223,7 @@ typedef union Mat4 {
 #endif
 } Mat4;
 
-typedef union Mat4x3 {
+typedef union Mat43 {
     struct {
         f32 m00, m01, m02;
         f32 m10, m11, m12;
@@ -239,7 +239,7 @@ typedef union Mat4x3 {
         return store[maxVal(0, minVal(index, countOf(store)))];
     }
 #endif
-} Mat4x3;
+} Mat43;
 
 typedef union Rgba8 {
     struct {
@@ -402,6 +402,6 @@ ct_def(Vec3);
 ct_def(Vec4);
 ct_def(Quat);
 ct_def(Mat4);
-ct_def(Mat4x3);
+ct_def(Mat43);
 
 #endif // _BASE_TYPES_

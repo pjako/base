@@ -173,6 +173,7 @@ typedef enum app_keyCode {
     app_keyCode_menu             = 348,
     app_keyCodes__count          = 512
 } app_keyCode;
+
 typedef enum app_appEventType {
     app_appEventType_invalid,
     app_appEventType_keyDown,
@@ -221,17 +222,18 @@ typedef struct app_AppEvent {
         Vec2 scroll;
         app_mouseButton  button;
     } mouse;
-
+#if 0
     struct {
         Str8 path;
         app_fsAction action;
     } pathChange;
-
+#endif
 } app_AppEvent;
 
 typedef struct app_ApplicationDesc {
     void* user;
     bx highDpi;
+    mms appMemoryBudget;
     void (*init) (void);
     void (*update) (void);
     void (*event) (app_AppEvent* event);
@@ -255,8 +257,15 @@ API void app_startApplication(void);
 API void app_stopApplication (void);
 #endif
 
+typedef enum app_windowGfxApi {
+    app_windowGfxApi_openGl,
+    //app_windowGfxApi_metal,
+} app_windowGfxApi;
+
 typedef struct app_WindowDesc {
     Str8 title;
+    app_windowGfxApi gfxApi;
+    u32 sampleCount;
     u32 x;
     u32 y;
     u32 width;
@@ -295,9 +304,10 @@ API app_threadId    app_startThread(void(*entry)(i32 id, void* userData), void* 
 API void            app_stopThread(app_threadId id);
 
 // Filewatch (based on file watch in os.h)
-
+#if 0
 API app_fsPathWatchId   app_fsWatchPathStart(Str8 folder, app_fsPathWatchFlags trackFlags);
 API void                app_fsWatchPathStop(app_fsPathWatchId handle);
+#endif
 
 #ifdef __cplusplus
 } /* extern "C" */

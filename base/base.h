@@ -234,7 +234,7 @@
 
 #define isPowerOf2(x) (((x) != 0u) && ((x) & ((x) - 1)) == 0u)
 
-#define u32_nextPowerOfTwo(VAL) assert(VAL > 0); VAL--; VAL |= VAL >> 1; VAL |= VAL >> 2; VAL |= VAL >> 4; VAL |= VAL >> 8; VAL |= VAL >> 16; VAL += 1
+#define u32_nextPowerOfTwo(VAL) ASSERT(VAL > 0); VAL--; VAL |= VAL >> 1; VAL |= VAL >> 2; VAL |= VAL >> 4; VAL |= VAL >> 8; VAL |= VAL >> 16; VAL += 1
 
 #define sizeOf(S) ((i64)sizeof(S))
 #define countOf(V) (sizeOf(V) / sizeOf((V)[0]))

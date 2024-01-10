@@ -39,21 +39,24 @@ else()
 endif()
 
 add_library(app STATIC ${APP_HEADERS} ${APP_SRC})
-target_link_libraries(app os base)
-set_target_properties(app PROPERTIES LINKER_LANGUAGE C)
+target_link_libraries(app base os log)
 
 if(APPLE)
-    target_compile_options(app PUBLIC "-fobjc-arc -ObjC -dead_strip -lpthread")
+    target_compile_options(app PUBLIC "-objC -fobjc-arc -lpthread") # -dead_strip
     target_link_libraries(
         app
         "-framework QuartzCore"
         "-framework Cocoa"
         "-framework MetalKit"
         "-framework Metal"
+     #   "-framework OpenGLES"
+        "-framework OpenGL"
     )
+else()
+set_target_properties(app PROPERTIES LINKER_LANGUAGE C)
 endif()
 
-# OS
+# Parser
 
 file(GLOB PARSER_HEADERS "parser/*.h")
 file(GLOB PARSER_SRC "parser/impl/*.c")
@@ -61,9 +64,76 @@ file(GLOB PARSER_SRC "parser/impl/*.c")
 add_library(parser STATIC ${PARSER_HEADERS} ${PARSER_SRC})
 set_target_properties(parser PROPERTIES LINKER_LANGUAGE C)
 
-# tests
+# RX
 
+file(GLOB RX_HEADERS "rx/*.h")
+if(APPLE)
+    file(GLOB RX_SRC "rx/impl/*.m")
+else()
+    file(GLOB RX_SRC "rx/impl/*.c")
+endif()
+
+add_library(rx STATIC ${RX_HEADERS} ${RX_SRC})
+target_link_libraries(rx os base)
+
+if(APPLE)
+    target_compile_options(app PUBLIC "-objC -fobjc-arc -lpthread") # -dead_strip
+    target_link_libraries(
+        rx
+        "-framework QuartzCore"
+        "-framework Cocoa"
+        "-framework MetalKit"
+        "-framework Metal"
+       # "-framework OpenGLES"
+        "-framework OpenGL"
+    )
+    else()
+    set_target_properties(app PROPERTIES LINKER_LANGUAGE C)
+    endif()
+
+# SHD
+
+add_library(spirvCross STATIC
+    shd/impl/deps/spirv_cross/spirv_cfg.cpp
+    shd/impl/deps/spirv_cross/spirv_cpp.cpp
+    shd/impl/deps/spirv_cross/spirv_cross_c.cpp
+    shd/impl/deps/spirv_cross/spirv_cross_parsed_ir.cpp
+    shd/impl/deps/spirv_cross/spirv_cross_util.cpp
+    shd/impl/deps/spirv_cross/spirv_cross.cpp
+    shd/impl/deps/spirv_cross/spirv_glsl.cpp
+    shd/impl/deps/spirv_cross/spirv_hlsl.cpp
+    shd/impl/deps/spirv_cross/spirv_msl.cpp
+    shd/impl/deps/spirv_cross/spirv_parser.cpp
+    shd/impl/deps/spirv_cross/spirv_reflect.cpp
+)
+
+set_property(TARGET spirvCross PROPERTY CXX_STANDARD 20)
+
+add_executable(shdc shd/impl/dxc_wrapper.cc shd/impl/shd_main.cc)
+set_property(TARGET shdc PROPERTY CXX_STANDARD 20)
+target_link_libraries(shdc base os parser log spirv_cross)
+
+function(app app_name)
+    if(APPLE)
+        add_executable(${app_name} MACOSX_BUNDLE ${ARGN})
+    elseif(WIN32)
+        add_executable(${app_name} WIN32 ${ARGN})
+    elseif(ANDROID)
+        add_executable(${app_name} SHARED ${ARGN})
+    else()
+        add_executable(${app_name} ${ARGN})
+    endif()
+endfunction()
+
+
+# tests
 add_subdirectory(_tests)
+
+
+# examples
+add_subdirectory(_examples)
+
+
 #include_directories(_tests)
 #if(PROJECT_IS_TOP_LEVEL)
 #endif()

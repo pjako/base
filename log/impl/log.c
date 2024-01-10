@@ -1,5 +1,6 @@
 #include "base/base.h"
 #include "base/base_types.h"
+#include "base/base_mem.h"
 #include "base/base_str.h"
 #include "os/os.h"
 #include "log/log.h"
@@ -35,9 +36,9 @@ void log__writeTimestamp(Arena* arena, log_Severity severity, Str8 fileName, u64
     #ifndef STRLOG_NO_COLOR
     Str8 COL0 = str_lit("\x1b[0m\x1b[90m");
     Str8 COL1 = str_lit("\x1b[0m");
-    str_join(arena, timeStr, " ", severityColor, severityStr, " ", COL0, relativeFilePath, ":", line, ":", COL1, " ");
+    str_join(arena, timeStr, s8(" "), severityColor, severityStr, s8(" "), COL0, relativeFilePath, s8(":"), line, s8(":"), COL1, s8(" "));
     #else
-    str_join(arena, timeStr, " ", severityStr, " ", relativeFilePath, ":", line, ": ");
+    str_join(arena, timeStr, s8(" "), severityStr, s8(" "), relativeFilePath, s8(":"), line, s8(": "));
     #endif
 }
 
@@ -49,7 +50,7 @@ void log__msg(Arena* mem, log_Severity severity, Str8 fileName, u64 line, u32 ar
         str_record(logStr, scratch.arena) {
             log__writeTimestamp(scratch.arena, severity, fileName, line);
             str_joinVargs(scratch.arena, argCount, valist);
-            str_join(scratch.arena, "\r\n", STR_TERMINATOR);
+            str_join(scratch.arena, s8("\r\n"), STR_TERMINATOR);
         }
         os_log(logStr);
     }
@@ -63,7 +64,7 @@ void log__msgFmt(Arena* mem, log_Severity severity, Str8 fileName, u64 line, Str
         str_record(logStr, scratch.arena) {
             log__writeTimestamp(scratch.arena, severity, fileName, line);
             str_fmtVargs(scratch.arena, template, argCount, valist);
-            str_join(scratch.arena, "\r\n", STR_TERMINATOR);
+            str_join(scratch.arena, s8("\r\n"), STR_TERMINATOR);
         }
         os_log(logStr);
     }
