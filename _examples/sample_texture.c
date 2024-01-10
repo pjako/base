@@ -88,10 +88,10 @@ void g_init(void) {
 
     f32 vertexData[] = {
         // positions            // colors
-        -0.5f, -0.5f, 0.0f,  1.0f, 1.0f, 1.0f,   0.0f, 0.0f,   /* Vertex 0 */
-        -0.5f,  0.5f, 0.0f,  1.0f, 1.0f, 1.0f,   0.0f, 1.0f,   /* Vertex 1 */
-        0.5f,  0.5f, 0.0f,   1.0f, 1.0f, 1.0f,   1.0f, 1.0f,   /* Vertex 2 */
-        0.5f, -0.5f, 0.0f,   1.0f, 1.0f, 1.0f,   1.0f, 0.0f    /* Vertex 3 */
+        -0.5f, -0.5f, 0.0f,     0.0f, 0.0f,   /* Vertex 0 */
+        -0.5f,  0.5f, 0.0f,     0.0f, 1.0f,   /* Vertex 1 */
+        0.5f,  0.5f, 0.0f,      1.0f, 1.0f,   /* Vertex 2 */
+        0.5f, -0.5f, 0.0f,      1.0f, 0.0f    /* Vertex 3 */
     };
 
     state->vertexBuffer = rx_makeBuffer(&(rx_BufferDesc) {
@@ -121,9 +121,9 @@ void g_init(void) {
 
     // texture
 
-    static const uint32_t textureDataRGBA[4] = {
-        0xFF0000FF, 0xFF000000, /* Encoding is 0xAABBGGRR. */
-        0xFF00FF00, 0xFFFF0000
+    Rgba8 textureData[] = {
+        rgba8_aqua, rgba8_lightGoldenRodYellow,
+        rgba8_forestGreen, rgba8_darkSalmon
     };
 
     state->texture = rx_makeTexture(&(rx_TextureDesc) {
@@ -133,8 +133,8 @@ void g_init(void) {
         .size.width = 2,
         .size.height = 2,
         .data.subimage[0][0] = {
-            .content = (u8*) &textureDataRGBA[0],
-            .size    = sizeof(textureDataRGBA)
+            .content = (u8*) &textureData[0],
+            .size    = sizeof(textureData)
         }
     });
 
@@ -154,11 +154,11 @@ void g_init(void) {
     // ResGroupLayout
     state->resGroupLayout = rx_makeResGroupLayout(&(rx_ResGroupLayoutDesc) {
         .resources[0] = {
-            .type = rx_resType_sampler
-        },
-        .resources[1] = {
             .type = rx_resType_texture2d
         },
+        .resources[1] = {
+            .type = rx_resType_sampler
+        }
     });
 
     // pipeline
@@ -168,13 +168,14 @@ void g_init(void) {
         .program.shader = sampleShader,
         .rasterizer.cullMode = rx_cullMode_back,
         .primitiveTopology = rx_primitiveTopology_triangleList,
+        .indexFormat = rx_indexType_u32,
         // pos
         .layout.attrs[0] = {
             .format = rx_vertexFormat_f32x3,
         },
-        // color
+        // uv
         .layout.attrs[1] = {
-            .format = rx_vertexFormat_f32x4,
+            .format = rx_vertexFormat_f32x2,
         },
     });
 
@@ -187,11 +188,11 @@ void g_init(void) {
         .initalContent = {
             .storeArena = state->uniformGpuArena,
             .resources[0] = {
-                .sampler = state->sampler
+                .texture = state->texture
             },
             .resources[1] = {
-                .texture = state->texture
-            }
+                .sampler = state->sampler
+            },
         }
     });
 
@@ -208,18 +209,17 @@ void g_event(app_AppEvent* event) {
 
 void g_update(void) {
     g_State* state = (g_State*) app_getUserData();
-
-    Vec2i windowSize = app_getWindowSize(state->window);
+    Vec2 windowFrameBufferSize = app_getWindowFrameBufferSizeF32(state->window);
     
     rx_texture texture = rx_getCurrentSwapTexture();
 
 
     rx_renderPass renderPass = rx_makeRenderPass(&(rx_RenderPassDesc) {
         .colorTargets[0].target = texture,
-        .colorTargets[0].clearColor = rgba_red,
+        .colorTargets[0].clearColor = rgba_chocolate,
         // Only needed on legacy apis (OpenGL/WebGL) for the "default pass"
-        .width = windowSize.x,
-        .height = windowSize.y
+        .width = windowFrameBufferSize.x,
+        .height = windowFrameBufferSize.y
     }, NULL);
 
 
@@ -230,6 +230,7 @@ void g_update(void) {
         rx_renderCmdBuilderInit(tmpMem.arena, &cmdBuilder, 100);
         rx_renderCmdBuilderSetPipeline(&cmdBuilder, state->renderPipeline);
         rx_renderCmdBuilderSetVertexBuffer0(&cmdBuilder, state->vertexBuffer);
+        rx_renderCmdBuilderSetIndexBuffer(&cmdBuilder, state->indexBuffer);
         rx_renderCmdBuilderSetResGroup1(&cmdBuilder, state->resGroup);
         u64 offset = rx_bumpAllocatorPushData(state->streamingUniforms.gpuArena, (rx_Range) {
             .content = &offset,
@@ -251,7 +252,6 @@ void g_update(void) {
     }
 
     offset += 0.015;
-
 }
 
 void g_cleanup(void) {

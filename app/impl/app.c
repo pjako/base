@@ -696,7 +696,7 @@ LOCAL void app__keyEvent(app_appEventType type, app_keyCode key, bx repeat, u32 
     can dynamically update the DPI scaling factor when a window is moved
     between HighDPI / LowDPI screens.
 */
-LOCAL void app__updateDimesion(AppWindow* appleWindow) {
+LOCAL void app__updateDimensions(AppWindow* appleWindow) {
     if (appleWindow.highDpi) {
         appleWindow.dpiScale = [appleWindow screen].backingScaleFactor;
     } else {
@@ -738,7 +738,7 @@ LOCAL void app__updateDimesion(AppWindow* appleWindow) {
         CGSize drawable_size = { (f32) appleWindow.frameBufferWidth, (f32) appleWindow.frameBufferHeight };
         CGRect frame = appleWindow.gfxView.frame;
         frame.size = drawable_size;
-        appleWindow.gfxView.frame = frame;
+        //appleWindow.gfxView.frame = frame;
         if (!appleWindow.firstFrame) {
             app__appleCtx->event.window.id = appleWindow.windowId;
             app__appleCtx->frameBufferWidth = appleWindow.frameBufferWidth;
@@ -882,13 +882,13 @@ static CVReturn app__appleDisplayLinkCallback(CVDisplayLinkRef displayLink,
 
 - (void)windowDidResize:(NSNotification*)notification {
     unusedVars(notification);
-    app__updateDimesion(self);
+    app__updateDimensions(self);
 }
 
 - (void)windowDidChangeScreen:(NSNotification*)notification {
     unusedVars(notification);
     //_sapp_timing_reset(&_sapp.timing);
-    app__updateDimesion(self);
+    app__updateDimensions(self);
 }
 
 - (void)windowDidMiniaturize:(NSNotification*)notification {
@@ -1487,7 +1487,7 @@ static uint32_t app__appleCreateWindow(app_WindowDesc* desc) {
     [window layoutIfNeeded];
     [window display];
     [app__appleCtx->windows addObject:window];
-    app__updateDimesion(window);
+    app__updateDimensions(window);
 
 
     return [app__appleCtx->windows count] - 1;
@@ -1545,6 +1545,15 @@ Vec2i app_getWindowSize(app_window window) {
     Vec2i size;
     size.x = (i32) f32_round(fSize.x);
     size.y = (i32) f32_round(fSize.y);
+
+    return size;
+}
+
+Vec2 app_getWindowFrameBufferSizeF32(app_window window) {
+    AppWindow* osWindow = app__appleCtx->windows[window.id - 1];
+    Vec2 size;
+    size.x = osWindow.frameBufferWidth;
+    size.y = osWindow.frameBufferHeight;
 
     return size;
 }

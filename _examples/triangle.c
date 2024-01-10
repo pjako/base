@@ -118,7 +118,7 @@ void g_event(app_AppEvent* event) {
 void g_update(void) {
     g_State* state = (g_State*) app_getUserData();
 
-    Vec2i windowSize = app_getWindowSize(state->window);
+    Vec2 windowFrameBufferSize = app_getWindowFrameBufferSizeF32(state->window);
     
     rx_texture texture = rx_getCurrentSwapTexture();
 
@@ -126,8 +126,8 @@ void g_update(void) {
         .colorTargets[0].target = texture,
         .colorTargets[0].clearColor = rgba_red,
         // Only needed on legacy apis (OpenGL/WebGL) for the "default pass"
-        .width = windowSize.x,
-        .height = windowSize.y
+        .width = windowFrameBufferSize.x,
+        .height = windowFrameBufferSize.y
     }, NULL);
 
     mem_scoped(tmpMem, state->arena) {
