@@ -3,9 +3,11 @@
 #include "base/base_mem.h"
 #include "base/base_math.h"
 #include "base/base_str.h"
+#include "base/base_time.h"
 #include "base/base_color.h"
 #include "os/os.h"
 #include "app/app.h"
+#include "log/log.h"
 #include "rx/rx.h"
 #include "rx/rx_helper.h"
 
@@ -25,6 +27,7 @@ typedef struct g_State {
     app_window window;
     rx_buffer vertexBuffer;
     rx_buffer indexBuffer;
+    rx_buffer perInstancePosAndVelocityVertexBuffer;
     rx_sampler sampler;
     rx_texture texture;
     rx_resGroupLayout resGroupLayout;
@@ -40,6 +43,10 @@ typedef struct g_State {
         rx_resGroup resGroup;
     } streamingUniforms;
 
+    u64 lastFrameTimeCount;
+    f32 ry;
+
+    u32 seed;
     u32 curNumParticles;
     Vec3 pos[MAX_PARTICLES];
     Vec3 vel[MAX_PARTICLES];
@@ -47,15 +54,15 @@ typedef struct g_State {
 
 void g_init(void) {
     BaseMemory baseMem = os_getBaseMemory();
-    Arena* mainArena = mem_makeArena(&baseMem, MEGABYTE(1));
+    Arena* mainArena = mem_makeArena(&baseMem, MEGABYTE(20));
     g_State* state = mem_arenaPushStruct(mainArena, g_State);
     app_setUserData(state);
     state->arena = mainArena;
 
     state->window = app_makeWindow(&(app_WindowDesc) {
-        .title  = s8("Sample texture"),
-        .width  = 375,
-        .height = 668
+        .title  = s8("Instancing Sample"),
+        .width  = 600,
+        .height = 400
     });
 
     rx_setup(&(rx_SetupDesc) {
@@ -113,10 +120,10 @@ void g_init(void) {
 
     rx_updateBuffer(state->vertexBuffer, 0, (rx_Range) {
         .size = sizeOf(vertexData),
-        .content = vertexData
+        .content = (void*) vertexData
     });
 
-    const i32 indexData[] = {
+    const u32 indexData[] = {
         0, 1, 2,    0, 2, 3,    0, 3, 4,    0, 4, 1,
         5, 1, 2,    5, 2, 3,    5, 3, 4,    5, 4, 1
     };
@@ -128,7 +135,13 @@ void g_init(void) {
 
     rx_updateBuffer(state->indexBuffer, 0, (rx_Range) {
         .size = sizeOf(indexData),
-        .content = indexData
+        .content = (void*) indexData
+    });
+
+    state->perInstancePosAndVelocityVertexBuffer = rx_makeBuffer(&(rx_BufferDesc) {
+        .label = s8("PerInstancePosAndVelocity"),
+        .usage = rx_bufferUsage_vertex | rx_bufferUsage_stream,
+        .size = MAX_PARTICLES * sizeof(Vec3)
     });
 
     // texture
@@ -160,17 +173,12 @@ void g_init(void) {
     // shader
 
 
-    rx_RenderShaderDesc texShaderDesc = shd_SampleInstancingProgramShaderDesc(rx_queryBackend());
+    rx_RenderShaderDesc texShaderDesc = SampleInstancingProgramShaderDesc(rx_queryBackend());
     rx_renderShader sampleShader = rx_makeRenderShader(&texShaderDesc);
 
     // ResGroupLayout
     state->resGroupLayout = rx_makeResGroupLayout(&(rx_ResGroupLayoutDesc) {
-        .resources[0] = {
-            .type = rx_resType_texture2d
-        },
-        .resources[1] = {
-            .type = rx_resType_sampler
-        }
+        .uniformSize = sizeOf(Mat4)
     });
 
     // pipeline
@@ -186,10 +194,12 @@ void g_init(void) {
             // pos
             .attrs[0] = {
                 .format = rx_vertexFormat_f32x3,
+                .bufferIndex = 0
             },
             // color
             .attrs[1] = {
                 .format = rx_vertexFormat_f32x4,
+                .bufferIndex = 0
             },
             // instancePos
             .attrs[2] = {
@@ -199,25 +209,8 @@ void g_init(void) {
         },
         .depthStencil = {
             .depthCompareFunc = rx_compareFunc_lessEqual,
-            .depthWriteEnabled = true,
+            .depthWriteEnabled = false,
         },
-    });
-
-    // dynamic state
-
-    f32 offset = 0;
-    state->resGroup = rx_makeResGroup(&(rx_ResGroupDesc) {
-        .layout = state->resGroupLayout,
-        .usage  = rx_resGroupUsage_dynamic,
-        .initalContent = {
-            .storeArena = state->uniformGpuArena,
-            .resources[0] = {
-                .texture = state->texture
-            },
-            .resources[1] = {
-                .sampler = state->sampler
-            },
-        }
     });
 
     // show window!
@@ -230,13 +223,28 @@ void g_event(app_AppEvent* event) {
 
 }
 
-
+#include <stdlib.h>
 void g_update(void) {
     g_State* state = (g_State*) app_getUserData();
+
+    
+    u64 timeCount = tm_currentCount();
+    if (state->lastFrameTimeCount == 0) {
+        state->lastFrameTimeCount = timeCount;
+    }
+    u64 timeCountDiffSinceLastFrame = (timeCount - state->lastFrameTimeCount);
+    state->lastFrameTimeCount = timeCount;
+    
+    tm_FrequencyInfo frequencyInfo = tm_getPerformanceFrequency();
+    u64 frameTime = tm_countToNanoseconds(frequencyInfo, timeCountDiffSinceLastFrame);
+    u64 roundedFrameTime = tm_roundToCommonRefreshRate(frameTime);
+    f32 frameTimeInSeconds = 1.0f / 60.0f;// (f32) tm_countToSeconds(roundedFrameTime);
+
+
+    Vec2 windowSize = app_getWindowSizeF32(state->window);
     Vec2 windowFrameBufferSize = app_getWindowFrameBufferSizeF32(state->window);
     
     rx_texture texture = rx_getCurrentSwapTexture();
-
 
     rx_renderPass renderPass = rx_makeRenderPass(&(rx_RenderPassDesc) {
         .colorTargets[0].target = texture,
@@ -246,72 +254,106 @@ void g_update(void) {
         .height = windowFrameBufferSize.y
     }, NULL);
 
-
-    static f32 offsets[2];
-    static f32 dir = 1;
-
-
-    const f32 frame_time = (f32)(app_frameDurationAverage());
-
-
-    u32 seed = 443322;
+    u32 seed = state->seed + 1;
 
     // emit new particles
     for (int i = 0; i < NUM_PARTICLES_EMITTED_PER_FRAME; i++) {
         if (state->curNumParticles < MAX_PARTICLES) {
-            state->pos[state->curNumParticles] = v3_make(
-                0.0,
-                0.0,
-                0.0
+            state->pos[state->curNumParticles] = vec3_zero();
+            state->vel[state->curNumParticles] = vec3_make(
+                //f32_random(0.0f, 1.0f, &seed) - 0.5f,
+                //f32_random(0.0f, 0.5f, &seed) * 0.5f + 2.0f,
+                //f32_random(0.0f, 1.0f, &seed) - 0.5f
+                f32_random(0.0f, 0.5f, &seed) - 0.5f,
+                f32_random(0.0f, 0.5f, &seed) * 0.5f + 2.0f,
+                f32_random(0.0f, 0.5f, &seed) - 0.5f
             );
-            state->vel[state->curNumParticles] = v3_make(
-                f32_random(0.0f, 1.0f, &seed) - 0.5f,
-                f32_random(0.0f, 1.0f, &seed) * 0.5f + 2.0f,
-                f32_random(0.0f, 1.0f, &seed) - 0.5f
-            );
+
             state->curNumParticles++;
         } else {
             break;
         }
     }
 
+    state->seed = seed;
+
     // update particle positions
+    #if 1
     for (int i = 0; i < state->curNumParticles; i++) {
-        state->vel[i].y -= 1.0f * frame_time;
-        state->pos[i].x += state->vel[i].y * frame_time;
-        state->pos[i].y += state->vel[i].y * frame_time;
-        state->pos[i].z += state->vel[i].z * frame_time;
+        state->vel[i].y -= 1.0f * frameTimeInSeconds;
+        state->pos[i] = vec3_add(state->pos[i], vec3_multiply(state->vel[i], vec3_splat(frameTimeInSeconds)));
+
         // bounce back from 'ground'
         if (state->pos[i].y < -2.0f) {
             state->pos[i].y = -1.8f;
             state->vel[i].y = -state->vel[i].y;
-            state->vel[i] = v3_mult(state->vel[i], v3_make(0.8f, 0.8f, 0.8f));
+            state->vel[i] = vec3_multiply(state->vel[i], vec3_splat(0.8f));
         }
     }
+    #endif
 
     // update instance data
-    sg_update_buffer(state->bind.vertex_buffers[1], &(rx_Range) {
+    rx_updateBuffer(state->perInstancePosAndVelocityVertexBuffer, 0, (rx_Range) {
         .content = state->pos,
-        .size = (size_t)state->curNumParticles * sizeof(Vec3)
+        .size = (size_t)state->curNumParticles * sizeOf(state->pos[0])
     });
 
+    // model-view-projection matrix
+    Mat4 proj = mat4_perspective(60.0f, windowSize.x / windowSize.y, 0.01f, 50.0f);
+    Mat4 view = mat4_lookAt(vec3_make(0.0f, 1.5f, 12.0f), vec3_make(0.0f, 0.0f, 0.0f), vec3_make(0.0f, 1.0f, 0.0f));
+    Mat4 viewProj = mat4_multiply(proj, view);
+    //state->ry += 60.0f * frameTimeInSeconds;
+
+#if 0
+
+    // model-view-projection matrix
+    hmm_mat4 proj = HMM_Perspective(60.0f, sapp_widthf()/sapp_heightf(), 0.01f, 50.0f);
+    hmm_mat4 view = HMM_LookAt(HMM_Vec3(0.0f, 1.5f, 12.0f), HMM_Vec3(0.0f, 0.0f, 0.0f), HMM_Vec3(0.0f, 1.0f, 0.0f));
+    hmm_mat4 view_proj = HMM_MultiplyMat4(proj, view);
+    state.ry += 60.0f * frame_time;
+    vs_params_t vs_params;
+    vs_params.mvp = HMM_MultiplyMat4(view_proj, HMM_Rotate(state.ry, HMM_Vec3(0.0f, 1.0f, 0.0f)));
 
 
-
+    shd_ResGroup1 resGroup1;
+    resGroup1.mvp = HMM_MultiplyMat4(viewProj, HMM_Rotate(state->ry, HMM_Vec3(0.0f, 1.0f, 0.0f)));
+#endif
+    Mat4 mvp = mat4_multiply(viewProj, mat4_rotate(state->ry, vec3_make(0.0f, 1.0f, 0.0f)));
+    TransformDataResGroup dynResGroup = {
+        .mvp = mvp
+    };
     mem_scoped(tmpMem, state->arena) {
         rx_RenderCmdBuilder cmdBuilder;
         rx_renderCmdBuilderInit(tmpMem.arena, &cmdBuilder, 100);
+
+        #if 0
+        shd_SampleInstancingProgramCmdBuilder instancingProgBuilder = shd_sampleInstancingProgramCmdBuilder(rx_queryBackend(), cmdBuilder, state->renderPipeline);
+
+        shd_sampleInstanceProgramCmdBuilder_setPipeline(&cmdBuilder, state->renderPipeline);
+
+        shd_sampleInstanceProgramCmdBuilder_setVertexBuffer0(&instancingProgBuilder, state->vertexBuffer);
+        shd_sampleInstanceProgramCmdBuilder_builderSetIndexBuffer(&instancingProgBuilder, state->indexBuffer);
+        shd_sampleInstanceProgramCmdBuilder_setDynGroup0(&instancingProgBuilder, dynGroup0);
+        shd_sampleInstanceProgramCmdBuilder_draw(&instancingProgBuilder, 0, 6, 0, 0);
+        #endif
+
+        /**/
         rx_renderCmdBuilderSetPipeline(&cmdBuilder, state->renderPipeline);
+
         rx_renderCmdBuilderSetVertexBuffer0(&cmdBuilder, state->vertexBuffer);
         rx_renderCmdBuilderSetIndexBuffer(&cmdBuilder, state->indexBuffer);
-        rx_renderCmdBuilderSetResGroup1(&cmdBuilder, state->resGroup);
+
+        // per instance buffer
+        rx_renderCmdBuilderSetVertexBuffer1(&cmdBuilder, state->perInstancePosAndVelocityVertexBuffer);
+
         // check if uploading works
         u64 offset = rx_bumpAllocatorPushData(state->streamingUniforms.gpuArena, (rx_Range) {
-            .content = &offsets[0],
-            .size = sizeOf(offsets)
+            .content = (void*) &dynResGroup,
+            .size = sizeOf(dynResGroup)
         });
         rx_renderCmdBuilderSetDynResGroup0(&cmdBuilder, offset);
-        rx_renderCmdBuilderDraw(&cmdBuilder, 0, 6, 0, 0);
+        rx_renderCmdBuilderSetInstanceCount(&cmdBuilder, state->curNumParticles);
+        rx_renderCmdBuilderDraw(&cmdBuilder, 0, 24, 0, 0);
 
         rx_DrawArea areas = {
             .resGroupDynamicOffsetBuffers = state->streamingUniforms.resGroup,
@@ -323,11 +365,6 @@ void g_update(void) {
         
         // finish the frame
         rx_commit();
-    }
-
-    offsets[0] += 0.015f * dir;
-    if (f32_abs(offsets[0]) >= 1.0f) {
-        dir *= -1.0f;
     }
 }
 
