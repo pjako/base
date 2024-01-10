@@ -275,7 +275,9 @@
 #if COMPILER_MSVC
 #define ASSERT(C) while(!(C)) __assume(0)
 #else
-#define ASSERT(C) while(!(C)) __builtin_unreachable()
+#include "assert.h"
+#define ASSERT(C) assert(C)
+// while(!(C)) __builtin_unreachable()
 #endif
 
 #define BASE_STRING_JOIN_IMMEDIATE(ARG1, ARG2) ARG1 ## ARG2

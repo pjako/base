@@ -76,26 +76,21 @@ LOCAL void app__uninitApp(app__Ctx* ctx, app_ApplicationDesc* appDesc) {
 
 @class AppleWindow;
 
-@interface AppMetalView : NSView
+@interface AppView : NSView
 -(CALayer*) makeBackingLayer;
-@property(nonatomic, strong) CALayer* metalLayer;
+@property(nonatomic, strong) CALayer* caLayer;
 @property(nonatomic, strong) NSTrackingArea* trackingArea;
 @end
 
-#if OS_OSX
-@interface AppGlView : NSOpenGLView
-#else
-@interface AppGlView : GLKView
-#endif
+@interface MetalAppView : AppView
 @end
 
-@interface AppInputView : NSView
+@interface GlAppView : AppView
 @end
+
 
 @interface AppWindow : AppleWindow
-@property(nonatomic, strong) AppMetalView* metalView;
-@property(nonatomic, strong) AppGlView*    glView;
-@property(nonatomic, strong) AppInputView* inputView;
+@property(nonatomic, strong) AppView*      gfxView;
 @property(nonatomic)         u32           windowId;
 @property(nonatomic)         u32           frameBufferWidth;
 @property(nonatomic)         u32           frameBufferHeight;
@@ -643,7 +638,7 @@ LOCAL void app__updateDimesion(AppWindow* appleWindow) {
         appleWindow.dpiScale = 1.0f;
     }
 
-    const NSRect bounds = [appleWindow.metalView bounds];
+    const NSRect bounds = [appleWindow.gfxView bounds];
 
 
     appleWindow.windowWidth = bounds.size.width; //(i32) f32_round(bounds.size.width);
@@ -658,7 +653,7 @@ LOCAL void app__updateDimesion(AppWindow* appleWindow) {
     app__appleCtx->windowHeight = appleWindow.windowHeight;
 
 
-    const CGSize fb_size = appleWindow.metalView.metalLayer.frame.size;
+    const CGSize fb_size = appleWindow.gfxView.caLayer.frame.size;
     const i32 cur_fb_width = (int)roundf(fb_size.width);
     const i32 cur_fb_height = (int)roundf(fb_size.height);
     const bx dim_changed = (appleWindow.frameBufferWidth != cur_fb_width) || (appleWindow.frameBufferHeight != cur_fb_height);
@@ -676,9 +671,9 @@ LOCAL void app__updateDimesion(AppWindow* appleWindow) {
     }
     if (dim_changed) {
         CGSize drawable_size = { (f32) appleWindow.frameBufferWidth, (f32) appleWindow.frameBufferHeight };
-        CGRect frame = appleWindow.metalView.frame;
+        CGRect frame = appleWindow.gfxView.frame;
         frame.size = drawable_size;
-        appleWindow.metalView.frame = frame;
+        appleWindow.gfxView.frame = frame;
         if (!appleWindow.firstFrame) {
             app__appleCtx->event.window.id = appleWindow.windowId;
             app__appleCtx->frameBufferWidth = appleWindow.frameBufferWidth;
@@ -819,11 +814,13 @@ static CVReturn app__appleDisplayLinkCallback(CVDisplayLinkRef displayLink,
                                     void* target);
 
 
-@implementation AppGlView
-@end
 
+@implementation AppView
 
-@implementation AppMetalView
+- (CALayer *)makeBackingLayer {
+    ASSERT(!"Overwrite makeBackingLayer!");
+    return nil;
+}
     
 /** Indicates that the view wants to draw using the backing layer instead of using drawRect:.  */
 -(BOOL) wantsUpdateLayer {
@@ -1056,19 +1053,47 @@ static CVReturn app__appleDisplayLinkCallback(CVDisplayLinkRef displayLink,
 }
 
 #endif // OS_OSX
+
+@end
+
+@implementation MetalAppView
 + (Class) layerClass {
     return [CAMetalLayer class];
 }
 
 -(CALayer*) makeBackingLayer {
-    if (self.metalLayer) {
-        return self.metalLayer;
+    if (self.caLayer) {
+        return self.caLayer;
     }
     CALayer* layer = [self.class.layerClass layer];
     CGSize viewScale = [self convertSizeToBacking: CGSizeMake(1.0, 1.0)];
     layer.contentsScale = minVal(viewScale.width, viewScale.height);
-    self.metalLayer = layer;
+    self.caLayer = layer;
     return layer;
+}
+
+@end
+@implementation GlAppView
+#if OS_OSX
+// OpenGLLayer
+#define AppGLLayer NSOpenGLLayer
+#else
+#define AppGLLayer CAEAGLLayer
+#endif
++ (Class) layerClass {
+    // IOS: CAEAGLLayer
+    return [AppGLLayer class];
+}
+- (CALayer *)makeBackingLayer {
+    if (self.caLayer) {
+        return self.caLayer;
+    }
+    AppGLLayer* glLayer = [[AppGLLayer alloc] init];
+    [glLayer setAsynchronous:YES];
+    self.caLayer = glLayer;
+    CGSize viewScale = [self convertSizeToBacking: CGSizeMake(1.0, 1.0)];
+    self.caLayer.contentsScale = minVal(viewScale.width, viewScale.height);
+    return self.caLayer;
 }
 
 @end
@@ -1296,6 +1321,7 @@ static uint32_t app__appleCreateWindow(app_WindowDesc* desc) {
         [window setDelegate:window];
     #endif
     NSRect windowRect = NSMakeRect(0, 0, desc->width, desc->height);
+#if 0
     if (desc->gfxApi == app_windowGfxApi_openGl) {
         NSOpenGLPixelFormatAttribute attrs[32];
         int i = 0;
@@ -1324,19 +1350,18 @@ static uint32_t app__appleCreateWindow(app_WindowDesc* desc) {
         attrs[i++] = 0;
         NSOpenGLPixelFormat* glpixelformatObj = [[NSOpenGLPixelFormat alloc] initWithAttributes:attrs];
         ASSERT(glpixelformatObj != nil);
-
-        window.glView = [[AppGlView alloc] initWithFrame:windowRect pixelFormat:glpixelformatObj];
+        GlAppView* glAppView = [[GlAppView alloc] init];
+        window.gfxView = glAppView;
         OS_OBJC_RELESE(glpixelformatObj);
-
-#if OS_OSX
-        [window setContentView:window.glView];
-        // [window.glView open]
-#endif
+        window.contentView = window.gfxView;
+        //[window.glView prepareOpenGL];
+        ASSERT(window.glView.openGLContext);
+        NSOpenGLLayer
     } else {
         window.metalView = [[AppMetalView alloc] init];
 
     #if OS_OSX
-        [window setContentView:window.metalView];
+        window.contentView = window.metalView;
         CGSize drawable_size = { (CGFloat) desc->width, (CGFloat) desc->height };
         // [mtk_view setDrawableSize:drawable_size];
         // [[mtk_view layer] setMagnificationFilter:kCAFilterNearest];
@@ -1348,11 +1373,24 @@ static uint32_t app__appleCreateWindow(app_WindowDesc* desc) {
         //[window makeKeyAndVisible];
     #endif
         [window layoutIfNeeded];
-        [window.metalView setLayer:[window.metalView makeBackingLayer]];
-        [window.metalView setWantsLayer:YES];
-        [window.metalView.layer setContentsScale:[window backingScaleFactor]];
+        [window.gfxView setLayer:[window.gfxView makeBackingLayer]];
+        [window.gfxView setWantsLayer:YES];
+        [window.gfxView.layer setContentsScale:[window backingScaleFactor]];
     }
+#endif
+
+    if (desc->gfxApi == app_windowGfxApi_openGl) {
+        window.gfxView = [[GlAppView alloc] init];
+    } else {
+        window.gfxView = [[MetalAppView alloc] init];
+    }
+
+    [window layoutIfNeeded];
+    [window.gfxView setLayer:[window.gfxView makeBackingLayer]];
+    [window.gfxView setWantsLayer:YES];
+    [window.gfxView.layer setContentsScale:[window backingScaleFactor]];
     
+    [window makeFirstResponder:window.contentView];
     app__appleSetWindowName(window, desc->title);
     [window makeKeyAndOrderFront:nil];
     [window layoutIfNeeded];
@@ -1483,7 +1521,7 @@ void* app_getGraphicsHandle(app_window window) {
     ASSERT(window.id);
     u32 windowIndex = window.id - 1;
     AppWindow* nsWindow = app__appleCtx->windows[windowIndex];
-    return (void*) [nsWindow.metalView makeBackingLayer];
+    return (void*) [nsWindow.gfxView makeBackingLayer];
 }
 
 Arena* app_frameArena(void) {

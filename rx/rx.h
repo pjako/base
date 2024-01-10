@@ -63,6 +63,25 @@ typedef struct rx_shader {
 #endif
 } rx_shader;
 
+typedef struct rx_resGroupLayout {
+    u32 id;
+#ifdef RX_INTERNAL
+    struct {
+        u32 idx     : 16;
+        u32 gen     : 16;
+    };
+#endif
+} rx_resGroupLayout;
+typedef struct rx_resGroup {
+    u32 id;
+#ifdef RX_INTERNAL
+    struct {
+        u32 idx     : 16;
+        u32 gen     : 16;
+    };
+#endif
+} rx_resGroup;
+
 typedef struct rx_renderPass {
     u32 id;
 #ifdef RX_INTERNAL
@@ -146,10 +165,10 @@ API rx_renderPipeline rx_makeRenderPipeline(rx_RenderPipelineDesc* desc);
 typedef struct rx_SetupDesc {
     struct {
         struct {
-            u32 (*getFrameBuffer)(void* userPtr);
-            void* userPtr;
+            void* appleCaOpenGlLayer;
         } gl;
     } context;
+    u32 sampleCount;
     u32 maxBuffers;
     u32 maxTextures;
     u32 maxTextureViews;
@@ -198,6 +217,27 @@ typedef struct rx_BufferDesc {
 API rx_buffer rx_makeBuffer(const rx_BufferDesc* desc);
 API void rx_updateBuffer(rx_buffer buffer, mms offset, rx_Range range);
 
+// Texture
+
+// ResGroup
+
+typedef struct rx_ResLayoutDesc {
+    u32 type : 4;
+    u32 countOrSize : 16;
+} rx_ResDesc;
+
+typedef struct rx_ResGroupLayoutDesc {
+    rx_ResDesc resources[12];
+} rx_ResGroupLayoutDesc;
+
+typedef struct rx_ResGroupDesc {
+    rx_resGroupLayout layout;
+    struct {
+        u32 offset;
+        rx_buffer buffer;
+        rx_texture texture;
+    } resources[12];
+} rx_ResGroupDesc;
 
 typedef struct rx_TextureSlice {
     u32 count;
