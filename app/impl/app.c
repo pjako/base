@@ -162,6 +162,7 @@ LOCAL void app__uninitApp(app__Ctx* ctx, app_ApplicationDesc* appDesc) {
 @property(nonatomic)         f32           dpiScale;
 @property(nonatomic)         bx            firstFrame;
 @property(nonatomic)         bx            fullscreen;
+@property(nonatomic)         bx            highDpi;
 @end
 
 /////////////////////
@@ -696,7 +697,7 @@ LOCAL void app__keyEvent(app_appEventType type, app_keyCode key, bx repeat, u32 
     between HighDPI / LowDPI screens.
 */
 LOCAL void app__updateDimesion(AppWindow* appleWindow) {
-    if (app__appleCtx->desc.highDpi) {
+    if (appleWindow.highDpi) {
         appleWindow.dpiScale = [appleWindow screen].backingScaleFactor;
     } else {
         appleWindow.dpiScale = 1.0f;
@@ -1414,6 +1415,7 @@ static uint32_t app__appleCreateWindow(app_WindowDesc* desc) {
         [window setRestorable:YES];
         [window setDelegate:window];
     #endif
+    window.highDpi = desc->dpi == app_windowDpi_low ? false : true; 
     NSRect windowRect = NSMakeRect(0, 0, desc->width, desc->height);
 #if 0
     if (desc->gfxApi == app_windowGfxApi_openGl) {
@@ -1509,12 +1511,8 @@ void app_initApplication(app_ApplicationDesc* applicationDesc) {
 
 
     app__appleCtx->started = true;
-    bx highDpi = app__appleCtx->desc.highDpi;
     void* user = app__appleCtx->desc.user;
     app__appleCtx->desc = *applicationDesc;
-    if (!app__appleCtx->desc.highDpi) {
-        app__appleCtx->desc.highDpi = highDpi;
-    }
     if (!app__appleCtx->desc.user) {
         app__appleCtx->desc.user = user;
     }

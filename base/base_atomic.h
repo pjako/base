@@ -48,7 +48,6 @@
 #define u64_popCount(BITFIELD) u64_cast(__builtin_popcountll(BITFIELD))
 #endif
 
-
 typedef struct a32_MPSCIndexQueue {
     a32* elements;
     u64 capacity;
@@ -135,7 +134,7 @@ INLINE i64 a64_mpscRingPush(a64_MpscRing* ring, u64 amount) {
     return -1;
 }
 
-INLINE i64 a64_mpscRingPop(a64_MpscRing* ring, u64 amount) {
+INLINE void a64_mpscRingPop(a64_MpscRing* ring, u64 amount) {
     ASSERT(ring->size >= amount);
     // this is done by a single thread
     a64_add(&ring->back, amount);
