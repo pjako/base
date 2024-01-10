@@ -714,24 +714,23 @@ Str8 os_fileRead(Arena* arena, Str8 fileName) {
 
 bool os_fileWrite(Str8 fileName, Str8 data) {
     // max file length + max file path length + '\0'
-    Arena* tmpArena = os_tempMemory();
+    u8 _memory[sizeof(Arena) + 1024 * sizeOf(u32)];
+    Arena* arena = mem_makeArenaPreAllocated(_memory, sizeOf(_memory));
     
     bx result = false;
-    mem_scoped(arena, tmpArena) {
-        Str16 fileMame16 = str_toStr16(tmpArena, fileName);
-        HANDLE file = CreateFileW((WCHAR*)fileMame16.content, GENERIC_WRITE, 0, 0, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
+    Str16 fileMame16 = str_toStr16(arena, fileName);
+    HANDLE file = CreateFileW((WCHAR*)fileMame16.content, GENERIC_WRITE, 0, 0, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
 
-        if (file != INVALID_HANDLE_VALUE) {
-            result = true;
-            DWORD actualWrite = 0;
-            if (!WriteFile(file, data.content, data.size, &actualWrite, 0)) {
-                result = false;
-            } else {
-                result = actualWrite == data.size;
-            }
-            
-            CloseHandle(file);
+    if (file != INVALID_HANDLE_VALUE) {
+        result = true;
+        DWORD actualWrite = 0;
+        if (!WriteFile(file, data.content, data.size, &actualWrite, 0)) {
+            result = false;
+        } else {
+            result = actualWrite == data.size;
         }
+        
+        CloseHandle(file);
     }
 
     return result;

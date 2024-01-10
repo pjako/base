@@ -1351,5 +1351,5 @@ Str8 str_u32ToHex(Arena* arena, u32 value) {
    raw.content = &strTmp[0];
    raw.size = i == 0 ? 1 : i;
 
-   return str_join(arena, str8("0x"), raw);
+   return str_join(arena, s8("0x"), raw);
 }

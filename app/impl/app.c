@@ -1553,14 +1553,14 @@ void app_appCleanupThread(void) {
 
 #elif OS_ANDROID
 #error "ANDROID no implemented"
-#elif OS_WINDOWS
+#elif OS_WIN
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
 static void (*rx__winCallBeforeDone)(void);
 
-LOCAL char** app__cmdToUtf8Argv(LPWSTR w_command_line, i32* o_argc) {
+LOCAL char** app__cmdToUtf8Argv(Arena* arena, LPWSTR w_command_line, i32* o_argc) {
     i32 argc = 0;
     char** argv = 0;
     char* args;
@@ -1569,22 +1569,22 @@ LOCAL char** app__cmdToUtf8Argv(LPWSTR w_command_line, i32* o_argc) {
     if (w_argv == NULL) {
         ASSERT(!"Win32: failed to parse command line");
     } else {
-        size_t size = wcslen(w_command_line) * 4;
+        mms size = wcslen(w_command_line) * 4;
         u64 byteSize = ((size_t)argc + 1) * sizeof(char*) + size;
-        argv = (char**) mem_arenaPush(os_tempMemory(), byteSize);
+        argv = (char**) mem_arenaPush(arena, byteSize);
         mem_setZero(argv, byteSize);
         //argv = (char**) calloc(1, ((size_t)argc + 1) * sizeof(char*) + size);
         ASSERT(argv);
         args = (char*) &argv[argc + 1];
-        int n;
-        for (int i = 0; i < argc; ++i) {
-            n = WideCharToMultiByte(CP_UTF8, 0, w_argv[i], -1, args, (int)size, NULL, NULL);
+        i32 n;
+        for (i32 i = 0; i < argc; ++i) {
+            n = WideCharToMultiByte(CP_UTF8, 0, w_argv[i], -1, args, (i32) size, NULL, NULL);
             if (n == 0) {
                 ASSERT(!"Win32: failed to convert all arguments to utf8");
                 break;
             }
             argv[i] = args;
-            size -= (size_t)n;
+            size -= (mms) n;
             args += n;
         }
         LocalFree(w_argv);
@@ -1594,18 +1594,13 @@ LOCAL char** app__cmdToUtf8Argv(LPWSTR w_command_line, i32* o_argc) {
 }
 
 int app__main(int argc, char* argv[]) {
-    os_threadInit();
-    os_init();
-    mem_Scratch scratch = mem_scratchStart(os_tempMemory());
     i32 val = app_main(argc, argv);
-    mem_scratchEnd(&scratch);
     if (val != 0) {
         return val;
     }
     if (rx__winCallBeforeDone) {
         rx__winCallBeforeDone();
     }
-    app_threadUninit();
     return 0;
 }
 
@@ -1618,12 +1613,12 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
     unusedVars(hPrevInstance);
     unusedVars(lpCmdLine);
     unusedVars(nCmdShow);
-    os_threadInit();
     int argc_utf8 = 0;
-    char** argv_utf8 = app__cmdToUtf8Argv(GetCommandLineW(), &argc_utf8);
-
+    BaseMemory baseMem = os_getBaseMemory();
+    Arena* arena = mem_makeArena(&baseMem, MEGABYTE(1));
+    char** argv_utf8 = app__cmdToUtf8Argv(arena, GetCommandLineW(), &argc_utf8);
     i32 retVal = app__main(argc_utf8, argv_utf8);
-    free(argv_utf8);
+    mem_destroyArena(arena);
 
     return retVal;
 }
@@ -1677,9 +1672,7 @@ void app_startApplication(void) {
         return;
     }
     if (app__win32AppCtx->desc.init) {
-        mem_Scratch scratch = mem_scratchStart(os_tempMemory());
         app__win32AppCtx->desc.init();
-        mem_scratchEnd(&scratch);
     }
     while (1) {
         MSG msg;
@@ -1695,9 +1688,7 @@ void app_startApplication(void) {
             DispatchMessageA(&msg);
         }
         if (app__win32AppCtx->desc.update) {
-            mem_Scratch scratch = mem_scratchStart(app_tempMemory());
             app__win32AppCtx->desc.update();
-            mem_scratchEnd(&scratch);
         }
     }
 }
@@ -1778,7 +1769,6 @@ void* app_getGraphicsHandle(app_window window) {
     window.id -= 1;
     return (void*) &app__win32AppCtx->windows[window.id].hWnd;
 }
-
 #else
 #error "OS no implemented"
 #endif

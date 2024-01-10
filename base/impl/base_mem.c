@@ -163,6 +163,7 @@ void mem_managedFree(ManagedAlloc* malloc, void* ptr) {
 }
 
 Arena* mem_makeArena(BaseMemory* baseMem, u64 cap) {
+    u32 arr = sizeOf(Arena);
     ASSERT(baseMem);
     ASSERT(baseMem->reserve);
     ASSERT(baseMem->commit);
