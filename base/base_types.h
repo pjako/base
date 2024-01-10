@@ -295,7 +295,6 @@ typedef union Rgba {
 typedef struct Str8 {
     u8* content;
     u64 size;
-    
 #if CPP_ENV
     inline u8 operator[](const int &index) {
         if (content == NULL || size == 0) {
@@ -315,7 +314,7 @@ typedef struct Str8 {
 #define str_dyn(NAME, SIZE) u8 __strContent##__COUNT__ Str8 NAME = (Str8) {&__strContent##__COUNT__[0], SIZE}
 #endif
 
-typedef struct Str16 {
+typedef struct S16 {
     u16* content;
     u64  size;
 #if CPP_ENV
@@ -326,9 +325,9 @@ typedef struct Str16 {
         return content[maxVal(0, minVal(index, (size - 1)))];
     }
 #endif
-} Str16;
-
-typedef struct Str32 {
+} S16;
+#undef S32
+typedef struct S32 {
     u32* content;
     u64  size;
 #if CPP_ENV
@@ -339,7 +338,7 @@ typedef struct Str32 {
         return content[maxVal(0, minVal(index, (size - 1)))];
     }
 #endif
-} Str32;
+} S32;
 
 typedef struct str_handle {
     u32 id;
@@ -411,7 +410,7 @@ ct_def(b8);
 ct_def(b32);
 
 ct_def(Str8);
-ct_def(Str16);
+ct_def(S16);
 
 ct_def(Vec2);
 ct_def(Vec3);

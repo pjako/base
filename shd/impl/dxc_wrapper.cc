@@ -35,9 +35,9 @@
 
 
 #if COMPILER_MSVC
-#define str_toStrWchar str_toStr16
+#define str_toStrWchar str_toS16
 #else
-#define str_toStrWchar str_toStr32
+#define str_toStrWchar str_toS32
 #endif
 
 
@@ -128,10 +128,10 @@ public:
         {
             fileName += 2;
         }
-        Str16 fileNameU16;
+        S16 fileNameU16;
         fileNameU16.size = wcslen(fileName);
         fileNameU16.content = (u16*) fileName;
-        Str8 fileNameU8 = str_fromStr16(this->m_tmpArena, fileNameU16);
+        Str8 fileNameU8 = str_fromS16(this->m_tmpArena, fileNameU16);
         std::string utf8FileName;
 
         Str8 fileContent = m_loadIncludeCallback(fileNameU8, this->m_userPtr);
@@ -339,6 +339,8 @@ dxc_CompileResult dxc_compileHlslToSpv(Arena* arena, dxc_CompileDesc* desc) {
             }
         }
 
+
+
         if (options.shiftAllCBuffersBindings > 0) {
             wParams[paramCount++] = (wchar_t*) str_toStrWchar(mem.arena, s8("-fvk-b-shift")).content;
             wParams[paramCount++] = (wchar_t*) str_toStrWchar(mem.arena, str_join(arena, options.shiftAllCBuffersBindings)).content;
@@ -366,6 +368,7 @@ dxc_CompileResult dxc_compileHlslToSpv(Arena* arena, dxc_CompileDesc* desc) {
         if (options.binaryShaderType == dxc_binaryShader_spirv) {
             wParams[paramCount++] = (wchar_t*) str_toStrWchar(mem.arena, s8("-spirv")).content;
         }
+
         const wchar_t* wInputFileName = (const wchar_t*) str_toStrWchar(mem.arena, desc->inputFileName).content;
         const wchar_t* wEntryPoint = (const wchar_t*) str_toStrWchar(mem.arena, desc->entryPoint).content;
         const wchar_t* wTargetPofile = (const wchar_t*) str_toStrWchar(mem.arena, targetProfile).content;

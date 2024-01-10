@@ -51,6 +51,8 @@ INLINE bx str_isNullTerminated(Str8 str) {
 
 API Str8 str_makeSized(Arena* arena, u8* arr, u32 size);
 API Str8 str_alloc(Arena* arena, mms size);
+API Str8 str_copy(Arena* arena, Str8 sourceStr);
+
 API Str8 str_copyNullTerminated(Arena* arena, Str8 str);
 
 
@@ -121,9 +123,9 @@ API Str8  str_fromNullTerminatedCharPtr(char* str);
 
 #pragma mark - Utf8 to Utf16
 
-API Str16 str_toStr16(Arena* arena, Str8 str);
-API Str32 str_toStr32(Arena *arena, Str8 str);
-API Str8  str_fromStr16(Arena* arena, Str16 str);
+API S16 str_toS16(Arena* arena, Str8 str);
+API S32 str_toS32(Arena *arena, Str8 str);
+API Str8  str_fromS16(Arena* arena, S16 str);
 
 
 #pragma mark - hash

@@ -21,11 +21,29 @@
 
 using namespace spirv_cross;
 
+// workaround for Compiler.comparison_ids being protected
+class UnprotectedCompiler: Compiler {
+public:
+    bool is_comparison_sampler(const spirv_cross::SPIRType &type, uint32_t id) {
+        if (type.basetype == spirv_cross::SPIRType::Sampler) {
+            return comparison_ids.count(id) > 0;
+        }
+        return 0;
+    }
+    bool is_used_as_depth_texture(const spirv_cross::SPIRType &type, uint32_t id) {
+        if (type.basetype == spirv_cross::SPIRType::Image) {
+            return comparison_ids.count(id) > 0;
+        }
+        return 0;
+    }
+};
+
 #define arrDef(TYPE) struct {TYPE* elements; u32 count; u32 capacity;}
 #undef arrTypeDef
 #define arrTypeDef(TYPE) typedef struct TYPE##Array {TYPE* elements; u32 count; u32 capacity;} TYPE##Array
 #define arrVarDef(TYPE) TYPE##Array  
 #define arrInit(ARENA, ARR, CAPACITY) (ARR)->elements = (typeOf((ARR)->elements)) mem_arenaPush((ARENA), CAPACITY * sizeof((ARR)->elements[0])); (ARR)->capacity = (CAPACITY), (ARR)->count = 0
+#define arrInitZero(ARENA, ARR, CAPACITY) (ARR)->elements = (typeOf((ARR)->elements)) mem_arenaPushZero((ARENA), CAPACITY * sizeof((ARR)->elements[0])); (ARR)->capacity = (CAPACITY), (ARR)->count = 0
 #define arrPushGet(arena, arr) (((arr)->count + 1) < (arr)->capacity ? ((arr)->elements + ((arr)->count++)) : &( (typeOf((arr)->elements)) ((arr)->elements = (typeOf((arr)->elements)) mem_copy(mem_arenaPush((arena), sizeof((arr)->elements[0]) * (arr)->capacity * 2), (arr)->elements, ((arr)->capacity * 2) * sizeof((arr)->elements[0]))))[(arr)->count++])
 #define arrFor(ARR, IDXNAME) for(u32 IDXNAME = 0; IDXNAME < (ARR)->count; IDXNAME++)
 
@@ -129,6 +147,17 @@ static const Str8 textureTypeList[textureType__count] = {
 static const u32 textureTypeByteSize[textureType__count] = {
     2,
 };
+
+typedef enum shd_resType {
+    shd_resType__invalid,
+    shd_resType_uniform,
+    shd_resType_sampler,
+    shd_resType_texture2d,
+    shd_resType_texture3d,
+    shd_resType_cube,
+    shd_resType_readOnlyBuffer,
+    shd_resType_rwBuffer,
+} shd_resType;
 
 // fnNameToken.text, fnTypeToken.text, indexToken.text, resTypeToken.text, resGroupToken.text
 struct ResInfo {
@@ -242,6 +271,7 @@ void shd_recordCodeGen(Arena* recordArena, Str8 prefix, Str8 fileName) {
 // PARSING SHADER SOURCE
 
 enum shd_entryPointType {
+    shd_entryPointType__invalid,
     shd_entryPointType_vertex,
     shd_entryPointType_pixel,
     shd_entryPointType_compute,
@@ -329,14 +359,126 @@ typedef struct shd_Shader {
     u32 pushSize;
 } shd_Shader;
 
+typedef struct shd_Attribute {
+    u32 slot;
+    Str8 name;
+    Str8 semName;
+    u32 semIndex;
+} shd_Attribute;
+
+typedef enum shd_uniformType {
+    shd_uniformType__invalid,
+    shd_uniformType_f32x1,
+    shd_uniformType_f32x2,
+    shd_uniformType_f32x3,
+    shd_uniformType_f32x4,
+    shd_uniformType_i32x1,
+    shd_uniformType_i32x2,
+    shd_uniformType_i32x3,
+    shd_uniformType_i32x4,
+    shd_uniformType_m4,
+} shd_uniformType;
+
+typedef struct shd_Uniform {
+    Str8 name;
+    u32 offset;
+    shd_uniformType type;
+    u32 arrayCount;
+} shd_Uniform;
+
+typedef struct shd_UniformBlock {
+    u32 slot;
+    u32 size;
+    Str8 structName;
+    Str8 instName;
+    bx  flattened;
+    arrDef(shd_Uniform) uniforms;
+} shd_UniformBlock;
+
+typedef enum shd_textureType {
+    shd_textureType__invalid,
+    shd_textureType_2d,
+    shd_textureType_3d,
+    shd_textureType_cube,
+    shd_textureType_array,
+} shd_textureType;
+
+typedef enum shd_samplerType {
+    shd_samplerType__invalid,
+    shd_samplerType_depth,
+    shd_samplerType_i32,
+    shd_samplerType_i16,
+    shd_samplerType_i8,
+    shd_samplerType_u32,
+    shd_samplerType_u16,
+    shd_samplerType_u8,
+    shd_samplerType_f32,
+} shd_samplerType;
+
+typedef enum shd_sampling {
+    shd_sampling__invalid,
+    shd_sampling_filtering,
+    shd_sampling_comparison,
+    shd_sampling_nonfiltering,
+} shd_sampling;
+
+typedef struct shd_TextureRes {
+    u32 slot;
+    Str8 name;
+    shd_textureType type;
+    shd_samplerType sampleType;
+    bx multisampled;
+} shd_TextureRes;
+
+typedef struct shd_TextureSampler {
+    u32 slot;
+    Str8 name;
+    Str8 imageName;
+    Str8 samplerName;
+} shd_TextureSampler;
+
+typedef struct shd_SamplerRes {
+    u32 slot;
+    Str8 name;
+    shd_sampling type;
+} shd_SamplerRes;
+
+typedef struct shd_Reflection {
+    shd_entryPointType stageType;
+    Str8 entryPoint;
+    shd_Attribute inputs[16];
+    shd_Attribute outputs[16];
+    arrDef(shd_UniformBlock) uniformBlocks;
+    arrDef(shd_TextureRes) textures;
+    arrDef(shd_SamplerRes) samplers;
+    arrDef(shd_TextureSampler) textureSamplers;
+} shd_Reflection;
+
+typedef enum shd_shaderVariant {
+    shd_shaderVariant_gles3,
+    shd_shaderVariant_gl400,
+    shd_shaderVariant_metal,
+    shd_shaderVariant_vk,
+    shd_shaderVariant_vkBindless,
+    shd_shaderVariant_dx12
+} shd_shaderVariant;
+
+typedef struct shd_CompiledShader {
+    Str8 sourceCode;
+    shd_Reflection reflection;
+} shd_CompiledShader;
+
+typedef struct shd_RenderProgramVariant {
+    shd_shaderVariant variant;
+    shd_CompiledShader* vs;
+    shd_CompiledShader* ps;
+} shd_RenderProgramVariant;
+
 typedef struct RenderProgram {
     Str8 name;
     shd_Shader vs;
     shd_Shader ps;
-    //Str8 vsEntry;
-    //Str8 psEntry;
-    //Str8 vsSpirv;
-    //Str8 psSpirv;
+    arrDef(shd_RenderProgramVariant) variants;
 } RenderProgram;
 
 void shd_parseSpirvShaderDetails(Arena* arena, shd_Shader* shader, CompilerReflection& compiler) {
@@ -367,9 +509,25 @@ void shd_parseSpirvShaderDetails(Arena* arena, shd_Shader* shader, CompilerRefle
         //attr_t refl_attr;
         uint32_t decoration = compiler.get_decoration(resAttr.id, spv::DecorationLocation);
         shd_ShaderParam* input = &shader->inputs.elements[decoration];
-        input->name = str_makeSized(arena, (u8*)resAttr.name.c_str(), resAttr.name.size());
-        u32 startIdxShort = str_lastIndexOfChar(input->name, u8'.') + 1;
-        input->shortName = str_subStr(input->name, startIdxShort, input->name.size);
+
+        if (shader->type == shd_entryPointType_pixel) {
+            // overwrite in/out name to match each other
+            Str8 inputName = str_fromCppStd(resAttr.name);
+            u32 startIdxShort = str_lastIndexOfChar(inputName, u8'.') + 1;
+            Str8 inputNameShort = str_from(inputName, startIdxShort);
+            Str8 newInputName = str_join(arena, s8("varying_"), inputNameShort);
+            std::string inputStdString( reinterpret_cast<char const*>(newInputName.content), newInputName.size );
+            compiler.set_name(resAttr.id, inputStdString);
+
+            input->name = newInputName;
+            input->shortName = newInputName;
+            auto type = compiler.get_type(resAttr.type_id);
+            auto decorationStr = compiler.get_decoration_string(resAttr.id, spv::DecorationLocation);
+        } else {
+            input->name = str_makeSized(arena, (u8*)resAttr.name.c_str(), resAttr.name.size());
+            u32 startIdxShort = str_lastIndexOfChar(input->name, u8'.') + 1;
+            input->shortName = str_subStr(input->name, startIdxShort, input->name.size);
+        }
         auto type = compiler.get_type(resAttr.type_id);
         auto decorationStr = compiler.get_decoration_string(resAttr.id, spv::DecorationLocation);
 
@@ -388,7 +546,29 @@ void shd_parseSpirvShaderDetails(Arena* arena, shd_Shader* shader, CompilerRefle
         //attr_t refl_attr;
         uint32_t decoration = compiler.get_decoration(resAttr.id, spv::DecorationLocation);
         shd_ShaderParam* outputs = &shader->outputs.elements[decoration];
-        outputs->name = str_makeSized(arena, (u8*)resAttr.name.c_str(), resAttr.name.size());
+        Str8 outputName = str_fromCppStd(resAttr.name);
+
+        if (shader->type == shd_entryPointType_vertex) {
+            // overwrite in/out name to match each other
+            u32 startIdxShort = str_lastIndexOfChar(outputName, u8'.') + 1;
+            Str8 outputNameShort = str_from(outputName, startIdxShort);
+            Str8 newOutputName = str_join(arena, s8("varying_"), outputNameShort);
+            std::string outputStdString( reinterpret_cast<char const*>(newOutputName.content), newOutputName.size );
+            compiler.set_name(resAttr.id, outputStdString);
+
+            outputs->name = newOutputName;
+            log_debug(arena, newOutputName);
+            //outputs->shortName = newInputName;
+            auto type = compiler.get_type(resAttr.type_id);
+            auto decorationStr = compiler.get_decoration_string(resAttr.id, spv::DecorationLocation);
+        } else {
+            outputs->name = str_copy(arena, outputName);
+            
+        }
+
+
+
+
         auto type = compiler.get_type(resAttr.type_id);
         auto decorationStr = compiler.get_decoration_string(resAttr.id, spv::DecorationLocation);
 
@@ -532,6 +712,7 @@ typedef struct shd_Shader {
         case shd_entryPointType_vertex:  shaderShort = str8("Vs"); break;
         case shd_entryPointType_pixel:   shaderShort = str8("Ps"); break;
         case shd_entryPointType_compute: shaderShort = str8("Cs"); break;
+        default: ASSERT(!"Unknown shader type");
     }
 
 
@@ -611,7 +792,6 @@ typedef struct shd_Shader {
         } else {
             str_fmt(arena,  str8("    {{&{0}shader{1}Out_{2}[0], {3}}},\n"), prefix, shaderShort, name, shader->outputs.count);
         }
-
         // storage buffer
         if (shader->storageBuffers.count == 0) {
             str_join(arena, str8("    {NULL, 0},\n"));
@@ -628,6 +808,167 @@ typedef struct shd_Shader {
         str_join(arena, str8("};\n\n"));
     }
     return generatedCode;
+}
+
+
+
+void shd_generateHeaderProgramVariant(Arena* arena, Str8 prefix, Str8 name, shd_RenderProgramVariant* program, CodeInfo* codeInfo) {
+    switch (program->variant) {
+        case shd_shaderVariant_gl400: {
+            str_join(arena, s8("static rx_RenderShaderDesc "), prefix, name, s8("ShaderDescGl400 = {\n"));
+        } break;
+
+        default: ASSERT(!"Unimplemented shader variant");
+    }
+    // name
+    str_join(arena, s8("  \""), name, s8("\",\n"));
+
+    // vs shader
+
+    shd_CompiledShader* shaders[] = {
+        program->vs,
+        program->ps
+    };
+    Str8 shaderTypes[] = {str_lit("Vertex Shader"), str_lit("Fragment Shader")};
+    for (i32 idxShader = 0; idxShader < countOf(shaders); idxShader++) {
+        shd_CompiledShader* shader = shaders[idxShader];
+        str_join(arena, s8("  // "), shaderTypes[idxShader], s8("\n"));
+        str_join(arena, s8("  {\n"));
+        switch (program->variant) {
+            case shd_shaderVariant_gl400:
+            case shd_shaderVariant_gles3: {
+
+                for (i64 idx = 0; idx == -1 || idx < shader->sourceCode.size;) {
+                    i32 endIdx = str_findChar(str_from(shader->sourceCode, idx), '\n');
+                    Str8 line = str_subStr(shader->sourceCode, idx, endIdx == -1 ? shader->sourceCode.size : (endIdx));
+                    if (line.size > 0) {
+                        str_join(arena, s8("    \""), line, s8("\\n\"\n"));
+                    } else {
+                        str_join(arena, s8("    \"\\n\"\n"));
+                    }
+                    if (endIdx == -1) {
+                        break;
+                    }
+                    idx = idx + endIdx + 1;
+                }
+                str_join(arena, s8("    "), s8(",\n"));
+                str_join(arena, s8("    {0,0},\n"));
+        
+            } break;
+            default: ASSERT(!"Unimplemented shader variant");
+        }
+        str_join(arena, s8("    \""), shader->reflection.entryPoint, s8("\",\n"));
+        str_join(arena, s8("    {\n"));
+
+        for (u32 idx = 0; idx < shader->reflection.textureSamplers.count; idx++) {
+            shd_TextureSampler* ts = &shader->reflection.textureSamplers.elements[0];
+            i32 imageSlot = -1;
+            Str8 imageSlotName = STR_NULL;
+            for (u32 idx = 0; idx < shader->reflection.textures.count; idx++) {
+                shd_TextureRes* tex = &shader->reflection.textures.elements[idx];
+                
+                if (str_isEqual(ts->imageName, tex->name)) {
+                    imageSlot = tex->slot;
+                    break;
+                }
+            }
+            i32 samplerSlot = -1;
+            for (u32 idx = 0; idx < shader->reflection.samplers.count; idx++) {
+                shd_SamplerRes* samp = &shader->reflection.samplers.elements[idx];
+                
+                if (str_isEqual(ts->samplerName, samp->name)) {
+                    samplerSlot = samp->slot;
+                    break;
+                }
+            }
+
+            i32 texResGroupSlot = -1;
+            i32 texResIdx = -1;
+            Str8 rawImageName = str_from(ts->imageName, 3);
+            for (u32 resGroupIdx = 0; resGroupIdx < countOf(codeInfo->resGroups); resGroupIdx++) {
+                ResGroupInfo* resGroup = &codeInfo->resGroups[resGroupIdx];
+                ResArr* resArr = &resGroup->resTypes[resourceType_texture];
+                for (u32 resIdx = 0; resIdx < resArr->count; resIdx++) {
+                    ResInfo* resInfo = &resArr->elements[resIdx];
+                    if (str_isEqual(rawImageName, resInfo->name)) {
+                        texResGroupSlot = resGroupIdx;
+                        texResIdx = resIdx;
+                        goto exitTextureSearch;
+                    }
+                }
+            }
+            exitTextureSearch:
+
+            i32 samplerResGroupSlot = -1;
+            i32 samplerResIdx = -1;
+
+            Str8 rawSamplerName = str_from(ts->samplerName, 3);
+            for (u32 resGroupIdx = 0; resGroupIdx < countOf(codeInfo->resGroups); resGroupIdx++) {
+                ResGroupInfo* resGroup = &codeInfo->resGroups[resGroupIdx];
+                ResArr* resArr = &resGroup->resTypes[resourceType_sampler];
+                for (u32 resIdx = 0; resIdx < resArr->count; resIdx++) {
+                    ResInfo* resInfo = &resArr->elements[resIdx];
+                    if (str_isEqual(rawSamplerName, resInfo->name)) {
+                        samplerResGroupSlot = resGroupIdx;
+                        samplerResIdx = resIdx;
+                        goto exitSamplerSearch;
+                    }
+                }
+            }
+            exitSamplerSearch:
+
+            str_fmt(arena, s8("      {{true, {}, {}, {}, {}, {}, \"{}\"}},\n"), ts->slot, texResGroupSlot, texResIdx, samplerResGroupSlot, samplerResIdx, ts->name);
+        }
+        str_join(arena, s8("    },\n"));
+        str_join(arena, s8("  },\n"));
+    }
+    
+    // ResGroups
+    str_join(arena, s8("  // ResGroups\n"));
+    str_join(arena, s8("  {},\n"));
+    for (u32 resIdx = 0; resIdx < countOf(codeInfo->resGroups); resIdx++) {
+        ResGroupInfo* resGroup = &codeInfo->resGroups[resIdx];
+        resourceType resTypes[] = {resourceType_texture, resourceType_sampler};
+        for (u32 resTypeIdx = 0; resTypeIdx < countOf(resTypes); resTypeIdx++) {
+            resourceType resType = resTypes[resTypeIdx];
+            ResArr* resArr = &resGroup->resTypes[resType];
+            for (u32 resIdx = 0; resIdx < resArr->count; resIdx++) {
+                ResInfo* resInfo = &resArr->elements[resIdx];
+                switch (resInfo->type) {
+                    case shd_resType_uniform: {
+                        
+                    } break;
+                    case shd_resType_sampler: {
+                        
+                    } break;
+                    case shd_resType_texture2d: {
+                        
+                    } break;
+                    case shd_resType_texture3d: {
+                        
+                    } break;
+                    case shd_resType_cube: {
+                        
+                    } break;
+                    case shd_resType_readOnlyBuffer: {
+                        
+                    } break;
+                    case shd_resType_rwBuffer: {
+                        
+                    } break;
+                }
+            }
+            
+
+        }
+    }
+    
+
+    // Dynamic Constants
+    str_join(arena, s8("  // Dynamic constants\n"));
+    str_join(arena, s8("  {},\n"));
+
+    str_join(arena, s8("};\n"));
 }
 
 Str8 shd_generateHeader(Arena* arena, ShaderFileInfo* fileInfo, Str8 prefix, CodeInfo* codeInfo, Str8PairArray* typeMap) {
@@ -885,6 +1226,35 @@ Str8 shd_generateHeader(Arena* arena, ShaderFileInfo* fileInfo, Str8 prefix, Cod
             shd_generateHeaderShader(arena, &renderProgram->vs, renderProgram->name, prefix);
             shd_generateHeaderShader(arena, &renderProgram->ps, renderProgram->name, prefix);
 
+            for (u32 idx = 0; idx < renderProgram->variants.count; idx++) {
+                shd_shaderVariant variant = renderProgram->variants.elements[idx].variant;
+                shd_generateHeaderProgramVariant(arena, prefix, renderProgram->name, &renderProgram->variants.elements[idx], codeInfo);
+                // switch (variant) {
+                //     case shd_shaderVariant_gl400: {
+                //         str_join(arena, s8("case rx_backend_gl400: "), prefix, renderProgram->name, s8("ShaderDescGl400();\n"));
+                //     } break;
+                //     default: ASSERT(!"Unimplemented shader variant");
+                // }
+            }
+
+            str_join(arena, s8("static rx_RenderShaderDesc "), prefix, renderProgram->name, s8("ShaderDesc(rx_backend backend) {\n"));
+            str_join(arena, s8("  switch (backend) {\n"));
+            for (u32 idx = 0; idx < renderProgram->variants.count; idx++) {
+                shd_shaderVariant variant = renderProgram->variants.elements[idx].variant;
+                switch (variant) {
+                    case shd_shaderVariant_gl400: {
+                        str_join(arena, s8("    case rx_backend_gl400: return "), prefix, renderProgram->name, s8("ShaderDescGl400;\n"));
+                    } break;
+                    default: ASSERT(!"Unimplemented shader variant");
+                }
+            }
+            str_join(arena, s8("    default: ASSERT(!\"Variant not generated\");\n"));
+
+            str_join(arena, s8("  }\n"));
+            str_join(arena, s8("  return (rx_RenderShaderDesc) {0};\n"));
+
+            str_join(arena, s8("}\n\n"));
+
             // writer ResGroups (Uniforms)
             /*
             typedef struct RenderProgram {
@@ -922,7 +1292,7 @@ Str8 shd_generateHeader(Arena* arena, ShaderFileInfo* fileInfo, Str8 prefix, Cod
         }
 
 
-        str_fmt(arena, str8("static {}RenderProgram* {}renderPrograms[] = {{\n"), prefix);
+        str_fmt(arena, str8("static {0}RenderProgram* {0}renderPrograms[] = {{\n"), prefix);
         for (u32 idx = 0; idx < fileInfo->renderPrograms.count; idx++) {
             RenderProgram* renderProgram = fileInfo->renderPrograms.elements + idx;
             str_fmt(arena, str8("    &{0}{1},\n"), prefix, renderProgram->name);
@@ -1616,11 +1986,222 @@ static spirvcross_refl_t shd__parseReflection(Arena* arena, const Compiler& comp
 }
 #endif
 
-typedef struct shd__CompiledShader {
-    Str8 sourceCode;
-} shd__CompiledShader;
 
-static shd__CompiledShader* shd_toGlsl(Arena* arena, Str8 spirvByteCode, uint32_t optMask) {
+
+static shd_textureType shd_spirtypeToImageType(const SPIRType& type) {
+    if (type.image.arrayed) {
+        if (type.image.dim == spv::Dim2D) {
+            return shd_textureType_array;
+        }
+    } else {
+        switch (type.image.dim) {
+            case spv::Dim2D:    return shd_textureType_2d;
+            case spv::Dim3D:    return shd_textureType_3d;
+            case spv::DimCube:  return shd_textureType_cube;
+            default: break;
+        }
+    }
+    // fallthrough: invalid type
+    return shd_textureType__invalid;
+}
+
+LOCAL shd_samplerType shd_spirtypeToImageSampleType(const SPIRType& type) {
+    if (type.image.depth) {
+        return shd_samplerType_depth;
+    } else {
+        switch (type.basetype) {
+            case SPIRType::Int:   return shd_samplerType_i32;
+            case SPIRType::Short: return shd_samplerType_i16;
+            case SPIRType::SByte: return shd_samplerType_i8;
+            case SPIRType::UInt:   return shd_samplerType_u32;
+            case SPIRType::UShort: return shd_samplerType_u16;
+            case SPIRType::UByte:  return shd_samplerType_u8;
+            default: return shd_samplerType_f32;
+        }
+    }
+}
+
+LOCAL bx shd_spirvtypeToImageMultisampled(const SPIRType& type) {
+    return type.image.ms;
+}
+
+static shd_uniformType shd__spirtypeToUniformType(const SPIRType& type) {
+    switch (type.basetype) {
+        case SPIRType::Float:
+            if (type.columns == 1) {
+                // scalar or vec
+                switch (type.vecsize) {
+                    case 1: return shd_uniformType_f32x1;
+                    case 2: return shd_uniformType_f32x2;
+                    case 3: return shd_uniformType_f32x3;
+                    case 4: return shd_uniformType_f32x4;
+                }
+            }
+            else {
+                // a matrix
+                if ((type.vecsize == 4) && (type.columns == 4)) {
+                    return shd_uniformType_m4;
+                }
+            }
+            break;
+        case SPIRType::Int:
+            if (type.columns == 1) {
+                switch (type.vecsize) {
+                    case 1: return shd_uniformType_i32x1;
+                    case 2: return shd_uniformType_i32x2;
+                    case 3: return shd_uniformType_i32x3;
+                    case 4: return shd_uniformType_i32x4;
+                }
+            }
+            break;
+        default: ASSERT(!"Unknown or uniplemented type");
+    }
+    // fallthrough: invalid type
+    return shd_uniformType__invalid;
+}
+
+static bx shd__canFlattenUniformBlock(const Compiler& compiler, const Resource& ub_res) {
+    const SPIRType& ub_type = compiler.get_type(ub_res.base_type_id);
+    SPIRType::BaseType basic_type = SPIRType::Unknown;
+    for (int m_index = 0; m_index < (int)ub_type.member_types.size(); m_index++) {
+        const SPIRType& m_type = compiler.get_type(ub_type.member_types[m_index]);
+        if (basic_type == SPIRType::Unknown) {
+            basic_type = m_type.basetype;
+            if ((basic_type != SPIRType::Float) && (basic_type != SPIRType::Int)) {
+                return false;
+            }
+        }
+        else if (basic_type != m_type.basetype) {
+            return false;
+        }
+    }
+    return true;
+}
+
+LOCAL void shd__parseReflection(Arena* arena, shd_Reflection* refl, const Compiler& compiler/*, const snippet_t& snippet, slang_t::type_t slang*/) {
+    //shd_Reflection* refl = mem_arenaPushStructZero(arena, shd_Reflection);
+
+    ShaderResources shd_resources = compiler.get_shader_resources();
+    // shader stage
+    switch (compiler.get_execution_model()) {
+        case spv::ExecutionModelVertex:    refl->stageType = shd_entryPointType_vertex; break;
+        case spv::ExecutionModelFragment:  refl->stageType = shd_entryPointType_pixel; break;
+        case spv::ExecutionModelGLCompute: refl->stageType = shd_entryPointType_compute; break;
+        default:                           refl->stageType = shd_entryPointType__invalid; break;
+    }
+
+    // find entry point
+    const auto entry_points = compiler.get_entry_points_and_stages();
+    for (const auto& item: entry_points) {
+        if (compiler.get_execution_model() == item.execution_model) {
+            refl->entryPoint = str_copy(arena, str_fromCppStd(item.name));
+            break;
+        }
+    }
+    // stage inputs and outputs
+    for (const Resource& res_attr: shd_resources.stage_inputs) {
+        shd_Attribute reflAttr;
+        reflAttr.slot = compiler.get_decoration(res_attr.id, spv::DecorationLocation);
+        reflAttr.name = str_copy(arena, str_fromCppStd(res_attr.name));
+        reflAttr.semName = s8("TEXCOORD");
+        reflAttr.semIndex = reflAttr.slot;
+        refl->inputs[reflAttr.slot] = reflAttr;
+    }
+    for (const Resource& res_attr: shd_resources.stage_outputs) {
+        shd_Attribute reflAttr;
+        reflAttr.slot = compiler.get_decoration(res_attr.id, spv::DecorationLocation);
+        reflAttr.name = str_copy(arena, str_fromCppStd(res_attr.name));
+        reflAttr.semName = s8("TEXCOORD");
+        reflAttr.semIndex = reflAttr.slot;
+        refl->outputs[reflAttr.slot] = reflAttr;
+    }
+    // uniform blocks
+    arrInitZero(arena, &refl->uniformBlocks, shd_resources.uniform_buffers.size());
+    for (const Resource& ub_res: shd_resources.uniform_buffers) {
+        std::string n = compiler.get_name(ub_res.id);
+        shd_UniformBlock* reflUniformBlock = arrPushGet(arena, &refl->uniformBlocks);
+        const SPIRType& ub_type = compiler.get_type(ub_res.base_type_id);
+        reflUniformBlock->slot = compiler.get_decoration(ub_res.id, spv::DecorationBinding);
+        reflUniformBlock->size = (int) compiler.get_declared_struct_size(ub_type);
+        reflUniformBlock->structName = str_copy(arena, str_fromCppStd(ub_res.name));
+        auto name = compiler.get_name(ub_res.id);
+        if (name.empty()) {
+            reflUniformBlock->instName = str_copy(arena, str_fromCppStd(compiler.get_fallback_name(ub_res.id)));
+        } else {
+            reflUniformBlock->instName = str_copy(arena, str_fromCppStd(name));
+        }
+        reflUniformBlock->flattened = shd__canFlattenUniformBlock(compiler, ub_res);
+        arrInitZero(arena, &reflUniformBlock->uniforms, ub_type.member_types.size());
+        for (int m_index = 0; m_index < (int)ub_type.member_types.size(); m_index++) {
+            shd_Uniform* reflUniform = arrPushGet(arena, &reflUniformBlock->uniforms);
+            reflUniform->name = str_copy(arena, str_fromCppStd(compiler.get_member_name(ub_res.base_type_id, m_index)));
+            const SPIRType& m_type = compiler.get_type(ub_type.member_types[m_index]);
+            reflUniform->type = shd__spirtypeToUniformType(m_type);
+            if (m_type.array.size() > 0) {
+                reflUniform->arrayCount = m_type.array[0];
+            }
+            reflUniform->offset = compiler.type_struct_member_offset(ub_type, m_index);
+        }
+    }
+    // (separate) images
+    arrInitZero(arena, &refl->textures, shd_resources.separate_images.size());
+    for (const Resource& img_res: shd_resources.separate_images) {
+        shd_TextureRes* reflTex = arrPushGet(arena, &refl->textures);
+        reflTex->slot = compiler.get_decoration(img_res.id, spv::DecorationBinding);
+        reflTex->name = str_copy(arena, str_fromCppStd(img_res.name));
+        const SPIRType& img_type = compiler.get_type(img_res.type_id);
+        reflTex->type = shd_spirtypeToImageType(img_type);
+        if (((UnprotectedCompiler*)&compiler)->is_used_as_depth_texture(img_type, img_res.id)) {
+            reflTex->sampleType = shd_samplerType_depth;
+        } else {
+            reflTex->sampleType = shd_spirtypeToImageSampleType(compiler.get_type(img_type.image.type));
+        }
+        reflTex->multisampled = shd_spirvtypeToImageMultisampled(img_type);
+    }
+    // (separate) samplers
+    arrInitZero(arena, &refl->samplers, shd_resources.separate_samplers.size());
+    for (const Resource& smp_res: shd_resources.separate_samplers) {
+        const SPIRType& smp_type = compiler.get_type(smp_res.type_id);
+        shd_SamplerRes* reflSampler = arrPushGet(arena, &refl->samplers);
+        reflSampler->slot = compiler.get_decoration(smp_res.id, spv::DecorationBinding);
+        reflSampler->name = str_copy(arena, str_fromCppStd(smp_res.name));
+        // HACK ALERT!
+        if (((UnprotectedCompiler*)&compiler)->is_comparison_sampler(smp_type, smp_res.id)) {
+            reflSampler->type = shd_sampling_comparison;
+        } else {
+            reflSampler->type = shd_sampling_filtering;
+        }
+    }
+    // combined image samplers
+    auto spirvCombinedSamplers = compiler.get_combined_image_samplers();
+    arrInitZero(arena, &refl->textureSamplers, spirvCombinedSamplers.size());
+    for (auto& img_smp_res: spirvCombinedSamplers) {
+        shd_TextureSampler* reflTextureSampler = arrPushGet(arena, &refl->textureSamplers);
+        reflTextureSampler->slot = compiler.get_decoration(img_smp_res.combined_id, spv::DecorationBinding);
+        reflTextureSampler->name = str_copy(arena, str_fromCppStd(compiler.get_name(img_smp_res.combined_id)));
+        reflTextureSampler->imageName = str_copy(arena, str_fromCppStd(compiler.get_name(img_smp_res.image_id)));
+        reflTextureSampler->samplerName = str_copy(arena, str_fromCppStd(compiler.get_name(img_smp_res.sampler_id)));
+    }
+    #if 0
+    // patch textures with overridden image-sample-types
+    for (auto& img: refl.images) {
+        const auto* tag = snippet.lookup_image_sample_type_tag(img.name);
+        if (tag) {
+            img.sample_type = tag->type;
+        }
+    }
+    // patch samplers with overridden sampler-types
+    for (auto& smp: refl.samplers) {
+        const auto* tag = snippet.lookup_sampler_type_tag(smp.name);
+        if (tag) {
+            smp.type = tag->type;
+        }
+    }
+    #endif
+}
+
+
+static shd_CompiledShader* shd_toGlsl(Arena* arena, Str8 spirvByteCode, uint32_t optMask) {
     //CompilerGLSL compiler(blob.bytecode);
     CompilerGLSL compiler((u32*) spirvByteCode.content, spirvByteCode.size / 4);
     CompilerGLSL::Options options;
@@ -1633,9 +2214,43 @@ static shd__CompiledShader* shd_toGlsl(Arena* arena, Str8 spirvByteCode, uint32_
     // options.es = true;
 
     options.vulkan_semantics = false;
+    // since we are supporting OGL only up to 4.0 we can't support explicit bindslots
     options.enable_420pack_extension = false;
     //options.emit_uniform_buffer_as_plain_uniforms = true;
     options.emit_uniform_buffer_as_plain_uniforms = false;
+
+    // match up varying in/out variables of fragment/vertex shader
+    if (compiler.get_execution_model() == spv::ExecutionModelFragment) {
+        ShaderResources shdResources = compiler.get_shader_resources();
+        mem_scoped(_, arena) {
+            for (const Resource& resAttr: shdResources.stage_inputs) {
+                Str8 inputName = str_fromCppStd(resAttr.name);
+                u32 startIdxShort = str_lastIndexOfChar(inputName, u8'.') + 1;
+                Str8 inputNameShort = str_from(inputName, startIdxShort);
+                Str8 newInputName = str_join(arena, s8("varying_"), inputNameShort);
+                std::string inputStdString( reinterpret_cast<char const*>(newInputName.content), newInputName.size );
+                compiler.set_name(resAttr.id, inputStdString);
+            }
+        }
+    }
+
+    // match up varying in/out variables of fragment/vertex shader
+    if (compiler.get_execution_model() == spv::ExecutionModelVertex) {
+        ShaderResources shdResources = compiler.get_shader_resources();
+        mem_scoped(_, arena) {
+            for (const Resource& resAttr: shdResources.stage_outputs) {
+                uint32_t decoration = compiler.get_decoration(resAttr.id, spv::DecorationLocation);
+                Str8 outputName = str_fromCppStd(resAttr.name);
+                // overwrite in/out name to match each other
+                u32 startIdxShort = str_lastIndexOfChar(outputName, u8'.') + 1;
+                Str8 outputNameShort = str_from(outputName, startIdxShort);
+                Str8 newOutputName = str_join(arena, s8("varying_"), outputNameShort);
+                std::string outputStdString( reinterpret_cast<char const*>(newOutputName.content), newOutputName.size );
+                compiler.set_name(resAttr.id, outputStdString);
+            }
+        }
+    }
+    
     // options.vertex.fixup_clipspace = (0 != (optMask & option_t::FIXUP_CLIPSPACE));
     // options.vertex.flip_vert_y = (0 != (optMask & option_t::FLIP_VERT_Y));
     compiler.set_common_options(options);
@@ -1643,15 +2258,24 @@ static shd__CompiledShader* shd_toGlsl(Arena* arena, Str8 spirvByteCode, uint32_
     shd__toCombinedImageSamplers(compiler);
     std__fixBindSlots(compiler);
     shd__fixUbMatrixForceColmajor(compiler);
+    {
+
+        //ShaderResources shader_resources = compiler.get_shader_resources();
+        //for (auto &resource : shader_resources.stage_outputs) {
+        //    uint32_t location = compiler.get_decoration(resource.id, DecorationLocation);
+        //    auto str = std::to_string(location);
+        //    compiler.set_name(resource.id, string("VARYING_") + str));
+        //}
+    }
     std::string src = compiler.compile();
     if (src.empty()) {
         return NULL;
     }
-    shd__CompiledShader* compiledShader = mem_arenaPushStructZero(arena, shd__CompiledShader);
+    shd_CompiledShader* compiledShader = mem_arenaPushStructZero(arena, shd_CompiledShader);
     compiledShader->sourceCode.size = src.size();
     compiledShader->sourceCode.content = (u8*) mem_arenaPush(arena, compiledShader->sourceCode.size);
     mem_copy(compiledShader->sourceCode.content, src.c_str(), compiledShader->sourceCode.size);
-
+    shd__parseReflection(arena, &compiledShader->reflection, compiler);
     return compiledShader;
 #if 0
     spirvcross_source_t res;
@@ -1665,6 +2289,7 @@ static shd__CompiledShader* shd_toGlsl(Arena* arena, Str8 spirvByteCode, uint32_
     return res;
 #endif
 }
+
 
 void shd__generateShaderGenLegacy(Arena* arena, ShaderFileInfo* shaderFileInfo, CodeInfo* codeInfo) {
     u32 samplerIdx = 0;
@@ -1997,14 +2622,17 @@ bx shd_generateShaders(Arena* arena, DxCompiler* dxCompiler, ShaderFileInfo* sha
         }
         program->ps.source = psResult.target;
 
+        arrInitZero(arena, &program->variants, 1);
+        shd_RenderProgramVariant* gl400Variant = arrPushGet(arena, &program->variants);
+        gl400Variant->variant = shd_shaderVariant_gl400;
         // parse vertex shader
         Parser vsSpirvParser((u32*) program->vs.source.content, program->vs.source.size / 4);
         vsSpirvParser.parse();
         CompilerReflection vsCompiler(std::move(vsSpirvParser.get_parsed_ir()));
         shd_parseSpirvShaderDetails(arena, &program->vs, vsCompiler);
         ASSERT(program->vs.type == shd_entryPointType_vertex && "Expected vertex shader");
-        shd__CompiledShader* glslVertexShader = shd_toGlsl(arena, program->vs.source, 0);
-
+        shd_CompiledShader* glslVertexShader = shd_toGlsl(arena, program->vs.source, 0);
+        gl400Variant->vs = glslVertexShader;
 
         // parse fragment shader
         Parser psSpirvParser((u32*) program->ps.source.content, program->ps.source.size / 4);
@@ -2012,11 +2640,8 @@ bx shd_generateShaders(Arena* arena, DxCompiler* dxCompiler, ShaderFileInfo* sha
         CompilerReflection psCompiler(std::move(psSpirvParser.get_parsed_ir()));
         shd_parseSpirvShaderDetails(arena, &program->ps, psCompiler);
         ASSERT(program->ps.type == shd_entryPointType_pixel && "Expected pixel shader");
-        shd__CompiledShader* glslPixelShader = shd_toGlsl(arena, program->ps.source, 0);
-        if (glslPixelShader) {
-            log_debug(arena, s8("GLSL shader:"));
-            log_debug(arena, glslPixelShader->sourceCode);
-        }
+        shd_CompiledShader* glslPixelShader = shd_toGlsl(arena, program->ps.source, 0);
+        gl400Variant->ps = glslPixelShader;
     }
 
     return true;
