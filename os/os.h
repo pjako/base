@@ -73,6 +73,38 @@ INLINE S8 os_getDirectoryFromFilepath(S8 filepath) {
 }
 
 /////////////////////////
+// File Helper
+
+INLINE S8 os_fixFilepath(Arena* arena, S8 path) {
+    S8 resultPath = STR_NULL;
+    mem_scoped(scratch, arena) {
+        resultPath = str_alloc(arena, path.size);
+
+        S8 fixedPath = path;
+        fixedPath = str_replaceAll(scratch.arena, fixedPath, s8("\\"), s8("/"));
+        fixedPath = str_replaceAll(scratch.arena, fixedPath, s8("/./"), s8("/"));
+        while (true) {
+            u64 dotdot = str_findFirst(fixedPath, s8(".."), 0);
+            if (dotdot == fixedPath.size) break;
+            
+            u64 lastSlash = str_findLast(fixedPath, s8("/"), dotdot - 1);
+            
+            u64 range = (dotdot + 3) - lastSlash;
+            S8 old = fixedPath;
+            fixedPath = str_alloc(scratch.arena, fixedPath.size - range);
+            memcpy(fixedPath.content, old.content, lastSlash);
+            memcpy(fixedPath.content + lastSlash, old.content + dotdot + 3, old.size - range - lastSlash + 1);
+        }
+        ASSERT(fixedPath.size >= path.size);
+        mem_copy(resultPath.content, fixedPath.content, fixedPath.size);
+        resultPath.size = fixedPath.size;
+        // manipulate scratch to not free our result path and only free the temporary strings
+        scratch.start += resultPath.size;
+    }
+    return resultPath;
+}
+
+/////////////////////////
 // File properties
 
 typedef enum os_DataAccessFlags {

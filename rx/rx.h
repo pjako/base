@@ -23,7 +23,7 @@ enum {
     RX_MAX_SHADERSTAGE_BINDING = 16,
     RX_MAX_SHADERSTAGE_BUFFERS = 16,
     RX_MAX_VERTEX_ATTRIBUTES = 16,
-    RX_MAX_SWAP_TEXTURES = 4,
+    RX_MAX_INFLIGHT_FRAMES = 4,
     RX_MAX_RESOURCES_PER_RES_GROUP = 12,
     RX_MAX_SHADERSTAGE_TEXTURE_SAMPLER_PAIRS = 12,
     RX_MAX_MIPMAPS = 16,
@@ -51,6 +51,16 @@ typedef union rx_buffer {
     };
 #endif
 } rx_buffer;
+
+typedef union rx_bumpAllocator {
+    uint32_t id;
+#ifdef RX_INTERNAL
+    struct {
+        u16 idx;
+        u16 gen;
+    };
+#endif
+} rx_bumpAllocator;
 
 typedef union rx_sampler {
     u32 id;
@@ -149,6 +159,9 @@ typedef union rx_computePass {
 #ifndef RX_DEFAULT_MAX_BUFFERS
 #define RX_DEFAULT_MAX_BUFFERS 64
 #endif
+#ifndef RX_DEFAULT_MAX_BUMP_ALLOCATORS
+#define RX_DEFAULT_MAX_BUMP_ALLOCATORS 48
+#endif
 #ifndef RX_DEFAULT_MAX_SAMPLERS
 #define RX_DEFAULT_MAX_SAMPLERS 64
 #endif
@@ -216,6 +229,7 @@ typedef struct rx_SetupDesc {
     u32 sampleCount;
     u32 maxSamplers;
     u32 maxBuffers;
+    u32 maxBumpAllocators;
     u32 maxTextures;
     u32 maxTextureViews;
     u32 maxPasses;
@@ -273,7 +287,6 @@ typedef struct rx_BufferDesc {
 
 API rx_buffer rx_makeBuffer(const rx_BufferDesc* desc);
 API void rx_updateBuffer(rx_buffer buffer, mms offset, rx_Range range);
-
 // Sampler
 
 typedef enum rx_addressMode {
@@ -668,6 +681,24 @@ typedef struct rx_RenderShaderDesc {
 
 API rx_renderShader rx_makeRenderShader(const rx_RenderShaderDesc* desc);
 
+// ARENA
+
+typedef struct rx_BumpAllocatorDesc {
+    // memory for the staging buffer (backend dependent)
+    // memory amount allocated is of the size of the gpuBuffer
+    Arena* arena;
+    // should be big enough to hold data for four frames
+    rx_buffer gpuBuffer;
+    uint32_t alignment;
+} rx_BumpAllocatorDesc;
+
+// The gpu arena is a ringbuffer, depending on api, gpu and buffer type it usese a constantly mapped gpu buffer
+// or cpu staging buffer to store & push data to the gpu.
+// The passed gpu buffer
+API rx_bumpAllocator rx_makeArena(const rx_BumpAllocatorDesc* desc);
+API u64 rx_bumpAllocatorPushData(rx_bumpAllocator arena, rx_Range data);
+// resets the arena
+API void rx_bumpAllocatorReset(rx_bumpAllocator arena);
 
 
 // ResGroup
@@ -700,12 +731,14 @@ API rx_resGroupLayout rx_makeResGroupLayout(rx_ResGroupLayoutDesc* desc);
 API rx_resGroupLayout rx_getResGroupLayoutForDynBuffers(void);
 
 typedef struct rx_ResUpdate {
-   rx_texture texture;
-   rx_sampler sampler;
+    rx_buffer buffer;
+    rx_texture texture;
+    rx_sampler sampler;
 } rx_ResUpdate;
 
 typedef struct rx_ResGroupUpdateDesc {
-    rx_buffer target;
+    rx_bumpAllocator storeArena;
+    u64 targetOffset;
     rx_Range uniformContent;
     rx_ResUpdate resources[RX_MAX_RESOURCES_PER_RES_GROUP];
 } rx_ResGroupUpdateDesc;
@@ -718,14 +751,14 @@ typedef enum rx_resGroupUsage {
 
 typedef struct rx_ResGroupDesc {
     rx_resGroupLayout layout;
-    u64 offset;
-    u32 dynBuffer0Idx;
-    u32 dynBuffer1Idx;
+    // u32 dynBuffer0Idx;
+    // u32 dynBuffer1Idx;
     rx_resGroupUsage usage;
     rx_ResGroupUpdateDesc initalContent;
 } rx_ResGroupDesc;
 
 API rx_resGroup rx_makeResGroup(rx_ResGroupDesc* desc);
+API rx_resGroup rx_makeDynamicBufferResGroup(rx_buffer dynBuffer0, rx_buffer dynBuffer1);
 API void rx_updateResGroup(rx_resGroup resGroup, rx_ResGroupUpdateDesc* desc);
 
 API flags64 rx_getResGroupPassDepFlags(rx_resGroup resGroup);

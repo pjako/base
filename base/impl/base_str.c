@@ -315,6 +315,20 @@ u64 str_findFirst(S8 str, S8 findStr, u64 offset) {
    return i;
 }
 
+u64 str_findLast(S8 str, S8 findStr, u64 offset) {
+   if ((findStr.size + offset) > str.size) {
+      return str.size;
+   }
+   u64 notFoundReturn = str.size;
+   str = str_from(str, offset);
+   for (u32 idx = str.size - (findStr.size); idx != 0; idx--) {
+      if (str_isEqual(str_subStr(str, idx, findStr.size), findStr)) {
+         return idx;
+      }
+   }
+   return notFoundReturn;
+}
+
 u64 str_containsSubStringCount(S8 str, S8 findStr) {
    u64 ct = 0;
    u64 idx = 0;
