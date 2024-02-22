@@ -3,6 +3,8 @@ name = SampleTextureProgram
 code = TexSampleCode
 vsEntry = vsMain
 psEntry = psMain
+[ResGroup]
+name = TextureData
 [Code]
 name = TexSampleCode
 struct VSInput {

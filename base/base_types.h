@@ -377,14 +377,50 @@ typedef union tm_FrequencyInfo {
 
 #pragma mark - Memory
 
-typedef struct BaseMemory BaseMemory;
-typedef struct Arena Arena;
-typedef struct ManagedAlloc ManagedAlloc;
-
 typedef void*(mem_allocFn)(u64 size, void* userPtr);
-typedef void*(mem_reallocFn)(u64 size, void* oldPtr, void* userPtr);
+typedef void*(mem_reallocFn)(u64 size, void* oldPtr, u64 oldSize, void* userPtr);
 typedef void*(mem_freeFn)(void* ptr, void* userPtr);
 
+typedef enum allocator_type {
+    allocator_type_arena,
+    // allocator_type_std, // malloc like allocator
+    // allocator_type_bump, // fixed ring allocator
+    // allocator_type_custom, // custom allocator
+} allocator_type;
+
+typedef struct Allocator {
+    allocator_type type;
+    mem_allocFn* alloc;
+    mem_reallocFn* realloc;
+    mem_freeFn* free;
+    void* ptr;
+} Allocator;
+
+typedef struct BaseMemory BaseMemory;
+typedef struct Arena Arena;
+
+
+#pragma mark - Profiler
+
+typedef struct Profiler {
+    void (*startProfile)(void* profiler, S8 file, u64 line, S8 funcName);
+    void (*endProfile)(void* profiler, S8 file, u64 line, S8 funcName);
+    void* profilerPtr;
+} Profiler;
+
+#define profiler_start(PROFILER) (PROFILER).startProfile((PROFILER).profilerPtr, s8(__FILE__), __LINE__, s8(__FUNCTION__))
+#define profiler_end(PROFILER) (PROFILER).endProfile((PROFILER).profilerPtr)
+#define profiler_scoped(PROFILER) profiler_start(PROFILER); for (i32 __i__ = 1; __i__ != 0; (__i__ = 0, profiler_end(PROFILER)))
+
+#pragma mark - Context
+
+/*ALIGN(16)*/
+struct Context {
+    Allocator allocator;
+	Profiler profiler;
+    //jmp_Ctx jmp;
+};
+typedef struct Context Context;
 
 #pragma mark - Containers
 
@@ -397,6 +433,7 @@ typedef void*(mem_freeFn)(void* ptr, void* userPtr);
 #define mapTypeDef(TYPE) typedef struct TYPE##Map { ct_Map map; struct { TYPE* elements; u32 count; u32 capacity; } values; } TYPE##Map; typedef struct TYPE##MapIterator {u64 idx; u64 keyHash; TYPE* value;} TYPE##MapIterator
 #define mapVarDef(TYPE) TYPE##Map
 typedef struct ct_Map {
+    Allocator allocator;
     u32 count;
 } ct_Map;
 

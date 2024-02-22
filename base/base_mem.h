@@ -12,6 +12,18 @@ extern "C" {
 
 #define mem_copy(TO, FROM, SIZE) memcpy(TO, FROM, SIZE)
 
+// Abstract Allocator
+
+API void* allocator_alloc(Allocator allocator, mms bytes);
+API void* allocator_realloc(Allocator allocator, void *data, mms oldSize, mms newSize);
+API void  allocator_free(Allocator allocator, void *data);
+
+// std malloc
+
+//Allocator* malloc_make(void);
+
+// Arena Allocator
+
 typedef void* (mem_reserveFunc)(void* ctx, u64 size);
 typedef void  (mem_changeMemoryFunc)(void* ctx, void* ptr, u64 size);
 
@@ -34,6 +46,7 @@ typedef struct Arena {
 
 API BaseMemory mem_getMallocBaseMem(void);
 
+API Allocator mem_allocatorWithArena(BaseMemory* baseMem, u64 size);
 API Arena* mem_makeArena(BaseMemory* baseMem, u64 size);
 API Arena* mem_makeArenaPreAllocated(void* mem, u64 size);
 API void mem_destroyArena(Arena* arena);

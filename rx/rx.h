@@ -247,6 +247,10 @@ typedef struct rx_SetupDesc {
 } rx_SetupDesc;
 
 API void rx_setup(rx_SetupDesc* desc);
+
+typedef struct rx_Ctx rx_Ctx;
+API rx_Ctx* rx_getContext(void);
+API void rx_setContext(rx_Ctx* ctx);
 API rx_backend rx_queryBackend(void);
 API void rx_shutdown(void);
 API void rx_reset(void);
@@ -446,6 +450,12 @@ typedef struct rx_Extend3D {
     uint32_t depth;
 } rx_Extend3D;
 
+typedef struct rx_Origin3D {
+    uint32_t x;
+    uint32_t y;
+    uint32_t z;
+} rx_Origin3D;
+
 typedef enum rx_textureDimension {
     rx_textureDimension__default,
   //rx_textureDimension_1d,
@@ -497,6 +507,41 @@ typedef struct rx_TextureDesc {
 } rx_TextureDesc;
 
 API rx_texture rx_makeTexture(const rx_TextureDesc* desc);
+
+typedef enum rx_aspect {
+    rx_aspect_none = 0x0,
+    rx_aspect_color = 0x1,
+    rx_aspect_depth = 0x2,
+    rx_aspect_stencil = 0x4,
+    // Aspects used to select individual planes in a multi-planar format.
+    rx_aspect_plane0 = 0x8,
+    rx_aspect_plane1 = 0x10,
+    // An aspect for that represents the combination of both the depth and stencil aspects. It
+    // can be ignored outside of the Vulkan backend.
+    rx_aspect_combinedDepthStencil = 0x20,
+    rx_aspect__count,
+    rx_aspect__forceU32 = RX_U32_MAX
+} rx_aspect;
+typedef flags32 rx_aspectFlags;
+
+typedef struct rx_TextureCopy {
+    uint32_t mipLevel;
+    rx_Origin3D origin;  // Texels / array layer
+    rx_aspect aspect;
+} rx_TextureCopy;
+
+typedef struct rx_TextureDataLayout {
+    uint32_t bytesPerRow;
+    uint32_t rowsPerTexture;
+} rx_TextureDataLayout;
+
+typedef struct rx_TextureUploadDesc {
+    rx_TextureDataLayout    layout;
+    rx_TextureCopy          copy;
+    rx_Extend3D             extend;
+} rx_TextureUploadDesc;
+
+API void rx_updateTexture(rx_texture texture, rx_TextureUploadDesc* desc, void* data, uint64_t size);
 
 // TextureView
 

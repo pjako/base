@@ -16,8 +16,13 @@
 #include "deps/spirv_cross/spirv_reflect.hpp"
 
 #include <string_view>
+#include <stdio.h>
 
 //#define typeOf decltype
+
+LOCAL void shd__printDebug(S8 str) {
+    fprintf(stderr, "%.*s\n", (int)str.size, str.content);
+}
 
 using namespace spirv_cross;
 
@@ -183,6 +188,7 @@ struct ResGroupInfo {
 
 typedef struct shd_ResGroup {
     S8 name;
+    S8 genName;
     u32 constantsSize;
     ResGroupInfo info;
 } shd_ResGroup;
@@ -316,6 +322,7 @@ struct MetaDataReplaceBlock {
 
 struct CodeInfo {
     S8 name;
+    u64 line;
     S8 code;
     ResGroupInfo resGroups[dynGroup__count];
 
@@ -1100,8 +1107,10 @@ S8 shd_generateHeader(Arena* arena, ShaderFileInfo* fileInfo, S8 prefix, CodeInf
         str_join(arena, str8("// Global ResBlocks\n"));
 
         for (u32 idx = 0; idx < fileInfo->resGroups.count; idx++) {
+            mem_defineMakeStackArena(nameArena, 200);
             shd_ResGroup* resGroup = fileInfo->resGroups.elements + idx;
-            str_fmt(arena, str8("typedef struct {0}{1} {{\n"), prefix, resGroup->name);
+            S8 name = resGroup->genName.size == 0 ? resGroup->name : resGroup->genName;
+            str_fmt(arena, str8("typedef struct {0}{1} {{\n"), prefix, name);
             for (u32 resTypeIdx = 0; resTypeIdx < resourceType__count; resTypeIdx++) {
                 ResArr* resArr = &resGroup->info.resTypes[resTypeIdx];
                 for (u32 idx = 0; idx < resArr->count; idx++) {
@@ -1117,7 +1126,12 @@ S8 shd_generateHeader(Arena* arena, ShaderFileInfo* fileInfo, S8 prefix, CodeInf
                     str_fmt(arena, str8("    {0} {1};\n"), mapName, resInfo->name);
                 }
             }
-            str_fmt(arena, str8("}} {0}{1};\n\n"), prefix, resGroup->name);
+            str_fmt(arena, str8("}} {0}{1};\n\n"), prefix, name);
+            
+            S8 handleName = str_join(nameArena, str_toLowerAscii(str_copy(nameArena, str_to(name, 1))), str_from(name, 1));
+            str_fmt(arena, str8("typedef struct {0}{1} {{\n"), prefix, handleName);
+            str_join(arena, str8("    uint32_t handleOrOffset;\n"));
+            str_fmt(arena, str8("}} {0}{1};\n\n"), prefix, handleName);
         }
 
         str_join(arena, str8("\n"));
@@ -1302,7 +1316,16 @@ S8 shd_generateHeader(Arena* arena, ShaderFileInfo* fileInfo, S8 prefix, CodeInf
 
         str_join(arena, str8("};\n"));
 
+        // push rest group & cmd builder
+        str_join(arena, str8("\n\n"));
 
+
+
+        for (u32 idx = 0; idx < fileInfo->renderPrograms.count; idx++) {
+            RenderProgram* renderProgram = fileInfo->renderPrograms.elements + idx;
+            
+            str_fmt(arena, str8("typedef struct {0}{1}CmdBuilder {{ rx_RenderCmdBuilder* builder; }} {0}{1}CmdBuilder\n"), prefix, renderProgram->name);
+        }
         
 #if 0
         str_fmt(arena, str8("{}RenderProgram* {}getRenderProgram({}renderProgram program) {{\n"), prefix);
@@ -1406,6 +1429,7 @@ bx shd_parseFromFile(Arena* arena, ShaderFileInfo* outFileInfo, S8 shaderFileNam
             log_trace(arena, s8("Parse code..."));
             S8 code = str_subStr(scf.str, scf.needle, scf.str.size);
             codeInfo->code = code;
+            codeInfo->line = scf.line;
             tn_Tokenizer tokenizer = tn_createTokenize(code, scf.fileName);
             
             u32 depth = 0;
@@ -1690,6 +1714,8 @@ bx shd_parseFromFile(Arena* arena, ShaderFileInfo* outFileInfo, S8 shaderFileNam
             for (running = scf_next(&scf); running && scf.valueType != scf_type_category; running = scf_next(&scf)) {
                 if (str_isEqual(scf.key, str8("name"))) {
                     resGroup->name = scf.valueStr;
+                } else if (str_isEqual(scf.key, str8("genName"))) {
+                    resGroup->genName = scf.valueStr;
                 } else {
                     resourceType resType;
                     if (str_isEqual(scf.valueStr, str8("Texture2D"))) {
@@ -2480,9 +2506,15 @@ void shd__generateShaderGenBindless(Arena* arena, ShaderFileInfo* shaderFileInfo
     }
 }
 
-bx shd_generateShaders(Arena* arena, DxCompiler* dxCompiler, ShaderFileInfo* shaderFileInfo, CodeInfo* codeInfo) {
+bx shd_generateShaders(Arena* arena, DxCompiler* dxCompiler, ShaderFileInfo* shaderFileInfo, CodeInfo* codeInfo, S8 fileName) {
     S8 generatedCode = {0};
+    log_debugFmt(arena, s8("codeLineStart: {}"), codeInfo->line);
     str_record(generatedCode, arena) {
+
+        for (u64 idx = 0; idx < codeInfo->line; idx++) {
+            str_join(arena, str8("// padding for getting the correct error line\n"));
+        }
+
         // Generate code for
         u64 lastOffset = ((u64)codeInfo->code.content);
         u8* lastPointer = codeInfo->code.content;
@@ -2605,7 +2637,7 @@ bx shd_generateShaders(Arena* arena, DxCompiler* dxCompiler, ShaderFileInfo* sha
         compilerDesc.dxCompiler                = dxCompiler;
         compilerDesc.type                      = dxc_shaderType_vertex;
         compilerDesc.source                    = generatedCode;
-        compilerDesc.inputFileName             = codeInfo->name;
+        compilerDesc.inputFileName             = fileName;
         compilerDesc.defines                   = &defs;
         compilerDesc.defineCount               = 0;
         compilerDesc.options.optimizationLevel = 3;
@@ -2623,7 +2655,8 @@ bx shd_generateShaders(Arena* arena, DxCompiler* dxCompiler, ShaderFileInfo* sha
         compilerDesc.type                     = dxc_shaderType_pixel;
         dxc_CompileResult psResult = dxc_compileHlslToSpv(arena, &compilerDesc);
         if (psResult.hasError) {
-            log_error(arena, psResult.errorWarningMsg);
+            shd__printDebug(psResult.errorWarningMsg);
+            return false;
         }
         program->ps.source = psResult.target;
 
@@ -2659,9 +2692,9 @@ i32 main(i32 argc, char* argv[]) {
 #if 0
     char* debugArgV[] = {
         (char*) "-s",
-        (char*) PROJECT_ROOT "/_examples/sample_instancing.hlsl",
+        (char*) PROJECT_ROOT "/_examples/sample_shadows.hlsl",
         (char*) "-h",
-        (char*) PROJECT_ROOT "/_examples/sample_instancing.hlsl.h"
+        (char*) PROJECT_ROOT "/_examples/sample_shadows.hlsl.h"
     };
     i32 debugArgc = countOf(debugArgV);
 
@@ -2751,9 +2784,7 @@ i32 main(i32 argc, char* argv[]) {
     }
     ASSERT(dxCompiler);
 
-    u8 foo[] = {'a', 'a', 'a', 'a', '\0'};
-
-    if (!shd_generateShaders(arena, dxCompiler, &fileInfo, &fileInfo.codeInfos.elements[0])) {
+    if (!shd_generateShaders(arena, dxCompiler, &fileInfo, &fileInfo.codeInfos.elements[0], shaderFilePath)) {
         return 1; // error!
     }
 

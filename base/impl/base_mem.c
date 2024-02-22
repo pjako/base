@@ -153,6 +153,34 @@ void* mem_managedAlloc(ManagedAlloc* malloc, u64 size) {
     return &allocation->mem[0];
 }
 
+
+LOCAL void* arena__allocFn(u64 size, void* userPtr) {
+    Arena* arena = (Arena*) userPtr;
+    return mem_arenaPush(arena, size);
+}
+
+LOCAL void* arena__reallocFn(u64 size, void* oldPtr, u64 oldSize, void* userPtr) {
+    Arena* arena = (Arena*) userPtr;
+    void* newMem = mem_arenaPush(arena, size);
+
+    mem_copy(newMem, oldPtr, oldSize);
+
+    return newMem;
+}
+
+LOCAL void arena__freeFn(void* ptr, void* userPtr) {
+    unusedVars(ptr, userPtr);
+}
+
+
+Allocator mem_allocatorWithArena(BaseMemory* baseMem, u64 size) {
+    Allocator allocator = {
+        .ptr = (void*) mem_makeArena(baseMem, size),
+    };
+
+    return allocator;
+}
+
 Arena* mem_makeArena(BaseMemory* baseMem, u64 cap) {
     u32 arr = sizeOf(Arena);
     ASSERT(baseMem);

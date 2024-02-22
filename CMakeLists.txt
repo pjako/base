@@ -7,7 +7,7 @@ endif(WIN32)
 
 add_definitions(-DPROJECT_ROOT="${PROJECT_SOURCE_DIR}")
 
-include_directories(${CMAKE_CURRENT_SOURCE_DIR})
+include_directories(${CMAKE_CURRENT_LIST_DIR})
 
 # Base
 
@@ -130,26 +130,33 @@ endfunction()
 set(slang "spv")
 
 if (${CMAKE_HOST_SYSTEM_NAME} STREQUAL "Windows")
-    set(TOOLS_DIR "${PROJECT_SOURCE_DIR}/bin_tools/win32")
+    set(TOOLS_DIR "${CMAKE_CURRENT_LIST_DIR}/bin_tools/win32")
 elseif (${CMAKE_HOST_SYSTEM_NAME} STREQUAL "Darwin")
-set(TOOLS_DIR "${PROJECT_SOURCE_DIR}/bin_tools") #set(TOOLS_DIR "${PROJECT_SOURCE_DIR}/bin_tools/osx")
+set(TOOLS_DIR "${CMAKE_CURRENT_LIST_DIR}/bin_tools") #set(TOOLS_DIR "${PROJECT_SOURCE_DIR}/bin_tools/osx")
 elseif(${CMAKE_HOST_SYSTEM_NAME} STREQUAL "Linux")
-    set(TOOLS_DIR "${PROJECT_SOURCE_DIR}/bin_tools/linux")
+    set(TOOLS_DIR "${CMAKE_CURRENT_LIST_DIR}/bin_tools/linux")
 endif()
 
-set(SHD_BIN_PATH "${TOOLS_DIR}/shdc")
+# This variable is set globally so shd_shader macro can access it from different CMakeList files
+set(SHD_BIN_PATH "${TOOLS_DIR}/shdc" PARENT_SCOPE)
 
 function(shd_shader target_name target_header_path source_files)
     message(STATUS "Found shd: ${SHD_BIN_PATH}")
     #set(joined_files "")
 
     foreach(file ${source_files})
-        list(APPEND shd_files "${PROJECT_SOURCE_DIR}/${file}")
+        list(APPEND shd_files "${CMAKE_CURRENT_LIST_DIR}/${file}")
     endforeach()
 
     list(JOIN shd_files "," joined_files)
 
-    set(output_header "${PROJECT_SOURCE_DIR}/${target_header_path}")
+    set(output_header "${CMAKE_CURRENT_LIST_DIR}/${target_header_path}")
+
+    message(STATUS "Joined files: ${joined_files}")
+    message(STATUS "output_header: ${output_header}")
+    message(STATUS "shd_files: ${shd_files}")
+    message(STATUS "SHD_BIN_PATH: ${SHD_BIN_PATH}")
+
     #foreach(source_file ${source_files})
     #set (shd_output_file "${source_file}.h")
     add_custom_command(
@@ -157,7 +164,7 @@ function(shd_shader target_name target_header_path source_files)
         COMMAND ${SHD_BIN_PATH}
         ARGS -s ${joined_files} -h ${output_header}
         DEPENDS ${shd_files}
-        WORKING_DIRECTORY ${TOOLS_DIR}
+        WORKING_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}
         COMMENT "Compiling: ${output_header}"
         VERBATIM
     )
@@ -165,7 +172,7 @@ function(shd_shader target_name target_header_path source_files)
     if(APPLE)
         target_sources(${target_name} PRIVATE ${output_header})
     else()
-        target_sources(${target_name} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/${target_header_path}")
+        target_sources(${target_name} PRIVATE "${CMAKE_CURRENT_LIST_DIR}/${target_header_path}")
     endif()
     #endforeach()
 endfunction()

@@ -25,9 +25,10 @@
     #define RX_UNREACHABLE() ASSERT(false)
 #endif // RX_UNREACHABLE
 
-//#if RX_METAL
-//#import <QuartzCore/CAMetalLayer.h>
-//#endif
+#if RX_METAL
+#define rx_objcPtr(CLASS) id<##CLASS##> __strong*
+#import <QuartzCore/CAMetalLayer.h>
+#endif
 #if RX_OGL
 #if OS_APPLE
 #include <TargetConditionals.h>
@@ -196,7 +197,20 @@ typedef struct rx_Texture {
             GLenum target;
         } gl;
 #endif
+#if RX_METAL
+        struct {
+            rx_objcPtr(MTLTexture) handle;
+        } mtl;
+#endif
     };
+    rx_Extend3D size;
+    rx_textureFormat format;
+    rx_textureViewDimension dimension;
+    uint32_t baseMipLevel;
+    uint32_t mipLevelCount;
+    uint32_t baseArrayLayer;
+    uint32_t arrayLayerCount;
+    rx_textureAspect aspect;
     rx_texture ref;
     bx belongsToSwapChain : 1;
     u32 gen : 16;
@@ -561,23 +575,6 @@ typedef struct rx_Ctx {
 // Shared code
 
 // Texture Info
-
-
-typedef enum rx_Aspect {
-    rx_aspect_none = 0x0,
-    rx_aspect_color = 0x1,
-    rx_aspect_depth = 0x2,
-    rx_aspect_stencil = 0x4,
-    // Aspects used to select individual planes in a multi-planar format.
-    rx_aspect_plane0 = 0x8,
-    rx_aspect_plane1 = 0x10,
-    // An aspect for that represents the combination of both the depth and stencil aspects. It
-    // can be ignored outside of the Vulkan backend.
-    rx_aspect_combinedDepthStencil = 0x20,
-    rx_aspect__count,
-    rx_aspect__forceU32 = RX_U32_MAX
-} rx_Aspect;
-typedef flags32 rx_AspectFlags;
 
 typedef struct rx_TexelInfo {
     uint32_t byteSize;
@@ -3431,6 +3428,51 @@ LOCAL bx rx__glMakeTexture(rx_Ctx* ctx, rx_Texture* texture, const rx_TextureDes
     return true;
 }
 
+
+LOCAL void rx__glUpdateTexture(rx_Texture* texture, rx_TextureUploadDesc* desc, void* data, uint64_t size) {
+    // upload texture data to OpenGL
+    ASSERT(texture);
+    ASSERT(desc);
+    ASSERT(data);
+    ASSERT(size > 0);
+    rx__oglCheckErrors();
+
+
+    GLenum glTextureTarget = texture->gl.target;
+    if (desc->dimension == rx_textureDimension_cube) {
+        glTextureTarget = rx_glCubefaceTarget(faceIndex);
+    }
+    const GLvoid* data_ptr = data;//desc->data.subimage[faceIndex][mipIndex].content;
+    const int mip_width = rx_mipLevelDim(desc->size.width, mipIndex);
+    const int mip_height = rx_mipLevelDim(desc->size.height, mipIndex);
+    if ((desc->dimension == rx_textureDimension_2d) || (desc->dimension == rx_textureDimension_cube)) {
+        if (is_compressed) {
+            const GLsizei data_size = (GLsizei) desc->data.subimage[faceIndex][mipIndex].size;
+            glCompressedTexImage2D(glTextureTarget, mipIndex, glInternalFormat,
+                mip_width, mip_height, 0, data_size, data_ptr);
+        } else {
+            const GLenum gl_type = rx_glTextureFormatType(desc->format);
+            glTexImage2D(glTextureTarget, mipIndex, (GLint)glInternalFormat,
+                mip_width, mip_height, 0, gl_format, gl_type, data_ptr);
+        }
+    } else if ((desc->dimension == rx_textureDimension_3d) || (desc->dimension == rx_textureDimension_array)) {
+        int mip_depth = desc->arrayLayerCount; //img->cmn.num_slices;
+        if (desc->dimension == rx_textureDimension_3d) {
+            mip_depth = rx_mipLevelDim(mip_depth, mipIndex);
+        }
+        if (is_compressed) {
+            const GLsizei data_size = (GLsizei) desc->data.subimage[faceIndex][mipIndex].size;
+            glCompressedTexImage3D(glTextureTarget, mipIndex, glInternalFormat,
+                mip_width, mip_height, mip_depth, 0, data_size, data_ptr);
+        } else {
+            const GLenum glType = rx_glTextureFormatType(desc->format);
+            glTexImage3D(glTextureTarget, mipIndex, (GLint)glInternalFormat,
+                mip_width, mip_height, mip_depth, 0, gl_format, glType, data_ptr);
+        }
+    }
+
+}
+
 LOCAL GLenum rx__shaderStage(rx_shaderStage stage) {
     return stage == rx_shaderStage_vertex ? GL_VERTEX_SHADER : GL_FRAGMENT_SHADER;
 }
@@ -3826,7 +3868,7 @@ LOCAL bx rx__glMakeRenderPipeline(rx_Ctx* baseCtx, rx_RenderPipeline* renderPipe
             if (stepFunc == rx_vertexStep_perVertex) {
                 glAttribute->divisor = 0;
             } else {
-                glAttribute->divisor = (i8) stepRate;
+                glAttribute->divisor = (i8) 1;
                 renderPipeline->gl.useInstancedDraw = true;
             }
 
@@ -5282,6 +5324,17 @@ void rx_setup(rx_SetupDesc* desc) {
 
 }
 
+
+API rx_Ctx* rx_getContext(void) {
+    return rx__ctx;
+}
+
+
+API void rx_setContext(rx_Ctx* ctx) {
+    rx__ctx = ctx;
+}
+
+
 #pragma endregion
 
 
@@ -5499,6 +5552,23 @@ rx_texture rx_makeTexture(const rx_TextureDesc* desc) {
     rx_callBknFn(MakeTexture, ctx, texture, &descWithDefaults);
 
     return handle;
+}
+
+void rx_updateTexture(rx_texture texture, rx_TextureUploadDesc* desc, void* data, uint64_t size) {
+    ASSERT(rx__ctx);
+    ASSERT(desc);
+    ASSERT(data);
+    ASSERT(size > 0);
+    rx_Ctx* ctx = rx__ctx;
+    rx_Texture* textureContent = rx__getTexture(ctx, texture);
+    //ASSERT(textureContent->gen == texture.gen);
+    //ASSERT(textureContent->size.width == desc->size.width);
+    //ASSERT(textureContent->size.height == desc->size.height);
+    //ASSERT(textureContent->size.depth == desc->size.depth);
+    //ASSERT(textureContent->size.arrayCount == desc->size.arrayCount);
+    //ASSERT(textureContent->size.mipLevelCount == desc->size.mipLevelCount);
+    //ASSERT(textureContent->format == desc->format);
+    rx_callBknFn(UpdateTexture, ctx, textureContent, desc, data, size);
 }
 
 #pragma endregion

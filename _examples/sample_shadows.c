@@ -96,44 +96,48 @@ void g_init(void) {
 
     // cube vertex buffer
 
-    Rgba cubeColorFront = rgba_pink;
-    Rgba cubeColorBack = rgba_black;
-    Rgba cubeColorLeft = rgba_green;
-    Rgba cubeColorRight = rgba_yellow;
-    Rgba cubeColorBottom = rgba_red;
-    Rgba cubeColorTop = rgba_blue;
-    
-    struct {Vec3 pos; Rgba color;} vertices[] = {
-        // front
-        { .pos = vec3_make(-1.0, -1.0, -1.0), .color = cubeColorFront },
-        { .pos = vec3_make( 1.0, -1.0, -1.0), .color = cubeColorFront },
-        { .pos = vec3_make( 1.0,  1.0, -1.0), .color = cubeColorFront },
-        { .pos = vec3_make(-1.0,  1.0, -1.0), .color = cubeColorFront },
-        // back
-        { .pos = vec3_make(-1.0, -1.0,  1.0), .color = cubeColorBack },
-        { .pos = vec3_make( 1.0, -1.0,  1.0), .color = cubeColorBack },
-        { .pos = vec3_make( 1.0,  1.0,  1.0), .color = cubeColorBack },
-        { .pos = vec3_make(-1.0,  1.0,  1.0), .color = cubeColorBack },
-        // left
-        { .pos = vec3_make(-1.0, -1.0, -1.0), .color = cubeColorLeft },
-        { .pos = vec3_make(-1.0,  1.0, -1.0), .color = cubeColorLeft },
-        { .pos = vec3_make(-1.0,  1.0,  1.0), .color = cubeColorLeft },
-        { .pos = vec3_make(-1.0, -1.0,  1.0), .color = cubeColorLeft },
-        // right
-        { .pos = vec3_make(1.0, -1.0,  -1.0), .color = cubeColorRight },
-        { .pos = vec3_make(1.0,  1.0,  -1.0), .color = cubeColorRight },
-        { .pos = vec3_make(1.0,  1.0,   1.0), .color = cubeColorRight },
-        { .pos = vec3_make(1.0, -1.0,   1.0), .color = cubeColorRight },
-        // bottom
-        { .pos = vec3_make(-1.0, -1.0, -1.0), .color = cubeColorBottom },
-        { .pos = vec3_make(-1.0, -1.0,  1.0), .color = cubeColorBottom },
-        { .pos = vec3_make( 1.0, -1.0,  1.0), .color = cubeColorBottom },
-        { .pos = vec3_make( 1.0, -1.0, -1.0), .color = cubeColorBottom },
-        // top
-        { .pos = vec3_make(-1.0,  1.0, -1.0), .color = cubeColorTop },
-        { .pos = vec3_make(-1.0,  1.0,  1.0), .color = cubeColorTop },
-        { .pos = vec3_make( 1.0,  1.0,  1.0), .color = cubeColorTop },
-        { .pos = vec3_make( 1.0,  1.0, -1.0), .color = cubeColorTop }
+    struct {Vec3 pos; Vec3 normal;} vertices[] = {
+        // CUBE BACK FACE
+        { .pos = vec3_make( 1.0f, -1.0f, -1.0f), .normal = vec3_make(0.0f, 0.0f, -1.0f) },
+        { .pos = vec3_make(-1.0f, -1.0f, -1.0f), .normal = vec3_make(0.0f, 0.0f, -1.0f) },
+        { .pos = vec3_make( 1.0f,  1.0f, -1.0f), .normal = vec3_make(0.0f, 0.0f, -1.0f) },
+        { .pos = vec3_make(-1.0f,  1.0f, -1.0f), .normal = vec3_make(0.0f, 0.0f, -1.0f) },
+
+        // CUBE FRONT FACE
+        { .pos = vec3_make(-1.0f, -1.0f,  1.0f), .normal = vec3_make(0.0f, 0.0f, 1.0f) },
+        { .pos = vec3_make( 1.0f, -1.0f,  1.0f), .normal = vec3_make(0.0f, 0.0f, 1.0f) },
+        { .pos = vec3_make( 1.0f,  1.0f,  1.0f), .normal = vec3_make(0.0f, 0.0f, 1.0f) },
+        { .pos = vec3_make(-1.0f,  1.0f,  1.0f), .normal = vec3_make(0.0f, 0.0f, 1.0f) },
+
+        // CUBE LEFT FACE
+        { .pos = vec3_make(-1.0f, -1.0f, -1.0f), .normal = vec3_make(-1.0f, 0.0f, 0.0f) },
+        { .pos = vec3_make(-1.0f,  1.0f, -1.0f), .normal = vec3_make(-1.0f, 0.0f, 0.0f) },
+        { .pos = vec3_make(-1.0f,  1.0f,  1.0f), .normal = vec3_make(-1.0f, 0.0f, 0.0f) },
+        { .pos = vec3_make(-1.0f, -1.0f,  1.0f), .normal = vec3_make(-1.0f, 0.0f, 0.0f) },
+
+        // CUBE RIGHT FACE
+        { .pos = vec3_make( 1.0f, -1.0f, -1.0f), .normal = vec3_make(1.0f, 0.0f, 0.0f) },
+        { .pos = vec3_make( 1.0f,  1.0f, -1.0f), .normal = vec3_make(1.0f, 0.0f, 0.0f) },
+        { .pos = vec3_make( 1.0f,  1.0f,  1.0f), .normal = vec3_make(1.0f, 0.0f, 0.0f) },
+        { .pos = vec3_make( 1.0f, -1.0f,  1.0f), .normal = vec3_make(1.0f, 0.0f, 0.0f) },
+
+        //CUBE BOTTOM FACE
+        { .pos = vec3_make(-1.0f, -1.0f, -1.0f), .normal = vec3_make(0.0f, -1.0f, 0.0f) },
+        { .pos = vec3_make(-1.0f, -1.0f,  1.0f), .normal = vec3_make(0.0f, -1.0f, 0.0f) },
+        { .pos = vec3_make( 1.0f, -1.0f,  1.0f), .normal = vec3_make(0.0f, -1.0f, 0.0f) },
+        { .pos = vec3_make( 1.0f, -1.0f, -1.0f), .normal = vec3_make(0.0f, -1.0f, 0.0f) },
+
+        // CUBE TOP FACE
+        { .pos = vec3_make(-1.0f,  1.0f, -1.0f), .normal = vec3_make(0.0f, 1.0f, 0.0f) },
+        { .pos = vec3_make(-1.0f,  1.0f,  1.0f), .normal = vec3_make(0.0f, 1.0f, 0.0f) },
+        { .pos = vec3_make( 1.0f,  1.0f,  1.0f), .normal = vec3_make(0.0f, 1.0f, 0.0f) },
+        { .pos = vec3_make( 1.0f,  1.0f, -1.0f), .normal = vec3_make(0.0f, 1.0f, 0.0f) },
+
+        // PLANE GEOMETRY
+        { .pos = vec3_make(-5.0f,  0.0f, -5.0f), .normal = vec3_make(0.0f, 1.0f, 0.0f) },
+        { .pos = vec3_make(-5.0f,  0.0f,  5.0f), .normal = vec3_make(0.0f, 1.0f, 0.0f) },
+        { .pos = vec3_make( 5.0f,  0.0f,  5.0f), .normal = vec3_make(0.0f, 1.0f, 0.0f) },
+        { .pos = vec3_make( 5.0f,  0.0f, -5.0f), .normal = vec3_make(0.0f, 1.0f, 0.0f) },
     };
 
     state->vertexBuffer = rx_makeBuffer(&(rx_BufferDesc) {
@@ -154,7 +158,8 @@ void g_init(void) {
         8, 9, 10,  8, 10, 11,
         14, 13, 12,  15, 14, 12,
         16, 17, 18,  16, 18, 19,
-        22, 21, 20,  23, 22, 20
+        22, 21, 20,  23, 22, 20,
+        26, 25, 24,  27, 26, 24
     };
 
     state->indexBuffer = rx_makeBuffer(&(rx_BufferDesc) {
@@ -165,6 +170,45 @@ void g_init(void) {
     rx_updateBuffer(state->indexBuffer, 0, (rx_Range) {
         .size = sizeOf(indices),
         .content = (void*) indices
+    });
+
+    // shadow pass
+
+
+    // a regular RGBA8 render target image as shadow map
+    state.shadow_map = rx_makeTexture(&(rx_TextureDesc){
+        .render_target = true,
+        .width = 2048,
+        .height = 2048,
+        .pixel_format = SG_PIXELFORMAT_RGBA8,
+        .sample_count = 1,
+        .label = "shadow-map",
+    });
+
+    // ...we also need a separate depth-buffer image for the shadow pass
+    sg_image shadow_depth_img = sg_makeTexture(&(rx_TextureDesc){
+        .render_target = true,
+        .width = 2048,
+        .height = 2048,
+        .pixel_format = SG_PIXELFORMAT_DEPTH,
+        .sample_count = 1,
+        .label = "shadow-depth-buffer",
+    });
+
+    // a regular sampler with nearest filtering to sample the shadow map
+    state.shadow_sampler = sg_make_sampler(&(sg_sampler_desc){
+        .min_filter = SG_FILTER_NEAREST,
+        .mag_filter = SG_FILTER_NEAREST,
+        .wrap_u = SG_WRAP_CLAMP_TO_EDGE,
+        .wrap_v = SG_WRAP_CLAMP_TO_EDGE,
+        .label = "shadow-sampler",
+    });
+
+    // the render pass object for the shadow pass
+    state.shadow.pass = sg_make_pass(&(sg_pass_desc){
+        .color_attachments[0].image = state.shadow_map,
+        .depth_stencil_attachment.image = shadow_depth_img,
+        .label = "shadow-pass",
     });
 
     // sampler state
@@ -316,11 +360,6 @@ void g_cleanup(void) {
 }
 
 i32 app_main(i32 argCount, char* args[]) {
-
-    u32 first  = alignUp(1, 256);
-    u32 second = alignUp(first + 1, 256);
-    u32 third  = alignUp(second + 1, 256);
-
     app_initApplication(&(app_ApplicationDesc) {
         .init    = g_init,
         .update  = g_update,

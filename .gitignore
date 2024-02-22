@@ -2,3 +2,4 @@
 build
 .DS_store
 *.hlsl.h
+xcode

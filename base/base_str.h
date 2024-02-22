@@ -56,8 +56,8 @@ API S8 str_copy(Arena* arena, S8 sourceStr);
 API S8 str_copyNullTerminated(Arena* arena, S8 str);
 
 
-API void str_toLowerAscii(S8 str);
-API void str_toUpperAscii(S8 str);
+API S8 str_toLowerAscii(S8 str);
+API S8 str_toUpperAscii(S8 str);
 API S8 str_subStr(S8 str, u64 start, u64 size);
 API S8 str_from(S8 str, u64 from);
 API S8 str_to(S8 str, u64 to);

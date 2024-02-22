@@ -68,22 +68,24 @@ bx str_hasSuffix(S8 str, S8 endsWith) {
    return true;
 }
 
-void str_toLowerAscii(S8 str) {
+S8 str_toLowerAscii(S8 str) {
     for (u64 idx = 0; str.size > idx; idx++) {
         char c = str.content[idx];
         if (c >= 'A' && c <= 'Z') {
             str.content[idx] = 'a' + (c - 'A');
         }
     }
+    return str;
 }
 
-void str_toUpperAscii(S8 str) {
+S8 str_toUpperAscii(S8 str) {
     for (u64 idx = 0; str.size > idx; idx++) {
         char c = str.content[idx];
         if (c >= 'a' && c <= 'Z') {
             str.content[idx] = 'A' + (c - 'a');
         }
     }
+    return str;
 }
 
 S8 str_subStr(S8 str, u64 start, u64 size) {

@@ -158,7 +158,19 @@ void g_cleanup(void) {
     app_setUserData(NULL);
 }
 
+#define Slice(TYPE) struct TYPE##Slice {TYPE* elements; u64 count;}
+#define SlicePtr(TYPE)  struct TYPE##PtrSlice {TYPE** elements; u64 count;}
+#define Array(TYPE) struct TYPE##Array {TYPE* elements; u64 count; u64 capacity; Allocator* allocator;}
+#define ArrayPtr(TYPE) struct TYPE##PtrArray {TYPE** elements; u64 count; u64 capacity; Allocator* allocator;}
+
+#define Map(KEYTYPE, VALUETYPE) union TYPE##Array {Array(KEYTYPE) keys; Array(VALUETYPE) values;}
+#define MapPtr(KEYTYPE, VALUETYPE) struct TYPE##PtrArray {Array(KEYTYPE) keys; ArrayPtr(VALUETYPE) values;}
+
+typedef int* intptr;
 i32 app_main(i32 argCount, char* args[]) {
+    Array(int) foo;
+    ArrayPtr(int) foo2;
+    ArrayPtr(int) foo3;
 
     app_initApplication(&(app_ApplicationDesc) {
         .init    = g_init,

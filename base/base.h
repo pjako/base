@@ -246,6 +246,8 @@
 #define sizeOf(S) ((i64)sizeof(S))
 #define countOf(V) (sizeOf(V) / sizeOf((V)[0]))
 
+#define ptr_dref(PTR) (*PTR)
+#define ptr_ref(PTR) (&PTR)
 
 #if defined(_Typeof)
 // C23 typeof

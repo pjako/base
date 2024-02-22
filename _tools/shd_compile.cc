@@ -286,6 +286,7 @@ struct MetaDataReplaceBlock {
 
 struct CodeInfo {
     S8 name;
+    u64 line;
     S8 code;
     ResGroupInfo resGroups[dynGroup__count];
 
@@ -1036,6 +1037,7 @@ bx shd_parseFromFile(Arena* arena, ShaderFileInfo* outFileInfo, S8 shaderFileNam
             // Parse shader code metadata
             log_trace("Parse code...");
             S8 code = str_subStr(scf.str, scf.needle, scf.str.size);
+            codeInfo->line = scf.line;
             codeInfo->code = code;
             tn_Tokenizer tokenizer = tn_createTokenize(code, scf.fileName);
             
@@ -1423,9 +1425,14 @@ bx shd_parseFromFile(Arena* arena, ShaderFileInfo* outFileInfo, S8 shaderFileNam
     return true;
 }
 
-bx shd_generateShaders(Arena* arena, dxc_Instance* dxcInstance, ShaderFileInfo* shaderFileInfo, CodeInfo* codeInfo) {
+bx shd_generateShaders(Arena* arena, dxc_Instance* dxcInstance, ShaderFileInfo* shaderFileInfo, CodeInfo* codeInfo, S8 fileName) {
     S8 generatedCode = {0};
     str_record(generatedCode, arena) {
+
+        for (u64 lineIdx = 0; lineIdx < codeInfo->line; lineIdx++) {
+            str_join(arena, str8("// padding for getting the correct error line\n"));
+        }
+
         // Generate code for
         u64 lastOffset = ((u64)codeInfo->code.content);
         u8* lastPointer = codeInfo->code.content;
@@ -1594,10 +1601,10 @@ bx shd_generateShaders(Arena* arena, dxc_Instance* dxcInstance, ShaderFileInfo* 
     // gather shader informations about locations & sizes in input/output
     arrFor(&shaderFileInfo->renderPrograms, idx) {
         RenderProgram* program = shaderFileInfo->renderPrograms.elements + idx;
-        dxc_CompileResult vsResult = dxc_compileHlslToSpv(arena, dxcInstance, dxc_shaderType_vertex, generatedCode, codeInfo->name, program->vs.entry, &defs, 0, &params, 1);
+        dxc_CompileResult vsResult = dxc_compileHlslToSpv(arena, dxcInstance, dxc_shaderType_vertex, generatedCode, fileName, program->vs.entry, &defs, 0, &params, 1);
         if (vsResult.diagMessage.size > 0) log_error(vsResult.diagMessage);
         program->vs.source = vsResult.spvCode;
-        dxc_CompileResult psResult = dxc_compileHlslToSpv(arena, dxcInstance, dxc_shaderType_pixel, generatedCode, codeInfo->name, program->ps.entry, &defs, 0, &params, 1);
+        dxc_CompileResult psResult = dxc_compileHlslToSpv(arena, dxcInstance, dxc_shaderType_pixel, generatedCode, fileName, program->ps.entry, &defs, 0, &params, 1);
         if (psResult.diagMessage.size > 0) log_error(psResult.diagMessage);
         program->ps.source = psResult.spvCode;
 
@@ -1719,7 +1726,7 @@ i32 os_main(i32 argc, char* argv[]) {
         return 1; // error!
     }
 
-    if (!shd_generateShaders(arena, dxcInstance, &fileInfo, &fileInfo.codeInfos.elements[0])) {
+    if (!shd_generateShaders(arena, dxcInstance, &fileInfo, &fileInfo.codeInfos.elements[0], shaderFileName)) {
         return 1; // error!
     }
 

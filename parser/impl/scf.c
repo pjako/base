@@ -7,6 +7,9 @@
 bool scf_next(scf_Global* scf) {
     u64 lineStart = 0;
     u64 needleStart = scf->needle;
+    if (str_isEndOfLineChar(scf->str.content[scf->needle])) {
+        scf->line += 1;
+    }
     for (bool running = true; running;) {
         char c = scf->str.content[scf->needle++];
         switch (c) {
@@ -155,6 +158,7 @@ bool scf_next(scf_Global* scf) {
                 } else {
                     scf->valueType = type;
                 }
+                scf->line += 1;
                 return true;
             } break;
         }

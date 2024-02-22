@@ -37,14 +37,6 @@ API u64 os_timeMicrosecondsNow(void);
 
 
 /////////////////////////
-// executable path
-#if 0
-API S8 os_execPath(Arena* arena);
-#endif
-API S8 os_workingPath(Arena* arena);
-
-
-/////////////////////////
 // File handling
 
 API S8 os_fileRead(Arena* arena, S8 fileName);
@@ -59,6 +51,7 @@ typedef enum os_systemPath {
 } os_systemPath;
 
 API S8 os_filepath(Arena* arena, os_systemPath path);
+API S8 os_workingPath(Arena* arena);
 
 INLINE S8 os_getDirectoryFromFilepath(S8 filepath) {
     i64 lastSlash = str_lastIndexOfChar(filepath, '/');
@@ -71,6 +64,9 @@ INLINE S8 os_getDirectoryFromFilepath(S8 filepath) {
     }
     return result;
 }
+API S8* os_pathList(Arena* arena, S8 pathName, u64* pathCount);
+API bx os_pathMakeDirectory(S8 pathName);
+API bx os_pathDirectoryExist(S8 pathName);
 
 /////////////////////////
 // File Helper

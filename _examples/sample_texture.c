@@ -133,11 +133,17 @@ void g_init(void) {
         .usage   = rx_textureUsage_sampled,
         .size.width = 2,
         .size.height = 2,
+        #if 0
         .data.subimage[0][0] = {
             .content = (u8*) &textureData[0],
             .size    = sizeof(textureData)
         }
+        #endif
     });
+
+    rx_updateTexture(state->texture, &(rx_TextureUploadDesc) {
+        .extend.depth = 0,
+    }, (void*) &textureData[0], sizeof(textureData));
 
     // sampler state
 

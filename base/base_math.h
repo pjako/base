@@ -760,6 +760,15 @@ INLINE Vec3 vec3_zero(void) {
     return result;
 }
 
+INLINE Vec3 vec3_splat(f32 val) {
+    Vec3 result;
+    result.x = val;
+    result.y = val;
+    result.z = val;
+
+    return result;
+}
+
 INLINE f32 vec3_length(Vec3 left) {
     return f32_sqrt(left.x * left.x + left.y * left.y + left.z * left.z);
 }
