@@ -65,9 +65,8 @@ void g_init(void) {
     // shader
 
     rx_renderShader triangleShader = rx_makeRenderShader(&(rx_RenderShaderDesc) {
-        .label = s8("TriangleShader"),
+        .name = "TriangleShader",
         .vs.source =
-            s8(
             "#version 330\n"
             "layout(location=0) in vec4 position;\n"
             "layout(location=1) in vec4 color0;\n"
@@ -75,17 +74,14 @@ void g_init(void) {
             "void main() {\n"
             "  gl_Position = position;\n"
             "  color = color0;\n"
-            "}\n"
-            ),
+            "}\n",
         .fs.source =
-            s8(
             "#version 330\n"
             "in vec4 color;\n"
             "out vec4 frag_color;\n"
             "void main() {\n"
             "  frag_color = color;\n"
             "}\n"
-            )
     });
 
     // pipeline
@@ -158,19 +154,7 @@ void g_cleanup(void) {
     app_setUserData(NULL);
 }
 
-#define Slice(TYPE) struct TYPE##Slice {TYPE* elements; u64 count;}
-#define SlicePtr(TYPE)  struct TYPE##PtrSlice {TYPE** elements; u64 count;}
-#define Array(TYPE) struct TYPE##Array {TYPE* elements; u64 count; u64 capacity; Allocator* allocator;}
-#define ArrayPtr(TYPE) struct TYPE##PtrArray {TYPE** elements; u64 count; u64 capacity; Allocator* allocator;}
-
-#define Map(KEYTYPE, VALUETYPE) union TYPE##Array {Array(KEYTYPE) keys; Array(VALUETYPE) values;}
-#define MapPtr(KEYTYPE, VALUETYPE) struct TYPE##PtrArray {Array(KEYTYPE) keys; ArrayPtr(VALUETYPE) values;}
-
-typedef int* intptr;
 i32 app_main(i32 argCount, char* args[]) {
-    Array(int) foo;
-    ArrayPtr(int) foo2;
-    ArrayPtr(int) foo3;
 
     app_initApplication(&(app_ApplicationDesc) {
         .init    = g_init,

@@ -58,6 +58,19 @@ void g_init(void) {
 
     // uniform buffer
 
+    u32 uniformSize = MEGABYTE(6);
+
+    state->uniformCpuArena = mem_makeArena(&baseMem, uniformSize + KILOBYTE(1));
+    state->uniformBuffer = rx_makeBuffer(&(rx_BufferDesc) {
+        .usage = rx_bufferUsage_uniform,
+        .size = uniformSize
+    });
+
+    state->uniformGpuArena = rx_makeBumpAllocator(&(rx_BumpAllocatorDesc) {
+        .arena = state->uniformCpuArena,
+        .gpuBuffer = state->uniformBuffer
+    });
+
     {
         u32 streamingUniformSize = MEGABYTE(1);
         state->streamingUniforms.buffer = rx_makeBuffer(&(rx_BufferDesc) {
@@ -71,19 +84,6 @@ void g_init(void) {
         });
         state->streamingUniforms.resGroup = rx_makeDynamicBufferResGroup(state->streamingUniforms.buffer, state->streamingUniforms.buffer);
     }
-
-    u32 uniformSize = MEGABYTE(6);
-
-    state->uniformCpuArena = mem_makeArena(&baseMem, uniformSize + KILOBYTE(1));
-    state->uniformBuffer = rx_makeBuffer(&(rx_BufferDesc) {
-        .usage = rx_bufferUsage_uniform,
-        .size = uniformSize
-    });
-
-    state->uniformGpuArena = rx_makeBumpAllocator(&(rx_BumpAllocatorDesc) {
-        .arena = state->uniformCpuArena,
-        .gpuBuffer = state->uniformBuffer
-    });
 
     // buffers
 
@@ -142,8 +142,11 @@ void g_init(void) {
     });
 
     rx_updateTexture(state->texture, &(rx_TextureUploadDesc) {
-        .extend.depth = 0,
-    }, (void*) &textureData[0], sizeof(textureData));
+        .data.subimage[0][0] = {
+            .content = (u8*) &textureData[0],
+            .size    = sizeof(textureData)
+        }
+    });
 
     // sampler state
 
@@ -275,10 +278,6 @@ void g_cleanup(void) {
 }
 
 i32 app_main(i32 argCount, char* args[]) {
-
-    u32 first  = alignUp(1, 256);
-    u32 second = alignUp(first + 1, 256);
-    u32 third  = alignUp(second + 1, 256);
 
     app_initApplication(&(app_ApplicationDesc) {
         .init    = g_init,

@@ -11,6 +11,7 @@ typedef uint8_t  u8;
 typedef uint16_t u16;
 typedef uint32_t u32;
 typedef uint64_t u64;
+typedef uint64_t usize;
 
 typedef uintptr_t umm;
 typedef size_t mms;
@@ -30,6 +31,7 @@ typedef int8_t   i8;
 typedef int16_t  i16;
 typedef int32_t  i32;
 typedef int64_t  i64;
+typedef int64_t  isize;
 
 #define i8_cast(V)  ((i8)  (V))
 #define i16_cast(V) ((i16) (V))
@@ -379,7 +381,7 @@ typedef union tm_FrequencyInfo {
 
 typedef void*(mem_allocFn)(u64 size, void* userPtr);
 typedef void*(mem_reallocFn)(u64 size, void* oldPtr, u64 oldSize, void* userPtr);
-typedef void*(mem_freeFn)(void* ptr, void* userPtr);
+typedef void (mem_freeFn)(void* ptr, void* userPtr);
 
 typedef enum allocator_type {
     allocator_type_arena,
@@ -389,12 +391,20 @@ typedef enum allocator_type {
 } allocator_type;
 
 typedef struct Allocator {
-    allocator_type type;
+    //allocator_type type;
     mem_allocFn* alloc;
     mem_reallocFn* realloc;
     mem_freeFn* free;
-    void* ptr;
+    void* allocator;
+    flags32 flags;
 } Allocator;
+
+typedef struct AllocatorGroup {
+    Allocator* temporary;
+    Allocator* persistent;
+} AllocatorGroup;
+
+//#define allocator_alloc(ALLOCATOR, SIZE) (ALLOCATOR).alloc(SIZE, (ALLOCATOR).allocator)
 
 typedef struct BaseMemory BaseMemory;
 typedef struct Arena Arena;
@@ -416,7 +426,7 @@ typedef struct Profiler {
 
 /*ALIGN(16)*/
 struct Context {
-    Allocator allocator;
+    Allocator* allocator;
 	Profiler profiler;
     //jmp_Ctx jmp;
 };
@@ -427,9 +437,7 @@ typedef struct Context Context;
 #define arrView(ARR) { .elements = (ARR).elements, .count = (ARR).count, .capacity = (ARR).capacity }
 #define ct_def(TYPE) arrTypeDef(TYPE); mapTypeDef(TYPE)
 
-#define arrDef(TYPE) struct {TYPE* elements; u32 count; u32 capacity;}
-#define arrTypeDef(TYPE) typedef struct TYPE##Array {TYPE* elements; u32 count; u32 capacity;} TYPE##Array; typedef struct TYPE##ArrayIterator {u64 idx; TYPE* element;} TYPE##ArrayIterator
-#define arrVarDef(TYPE) TYPE##Array  
+
 #define mapTypeDef(TYPE) typedef struct TYPE##Map { ct_Map map; struct { TYPE* elements; u32 count; u32 capacity; } values; } TYPE##Map; typedef struct TYPE##MapIterator {u64 idx; u64 keyHash; TYPE* value;} TYPE##MapIterator
 #define mapVarDef(TYPE) TYPE##Map
 typedef struct ct_Map {
@@ -437,6 +445,36 @@ typedef struct ct_Map {
     u32 count;
 } ct_Map;
 
+// from C23 and one
+#if __STDC_VERSION__ >= 202311L
+// In C23 we can make generic data structures, without defining them anywhere globally
+#define FixedArray(TYPE) struct FixedArray_##TYPE {TYPE* items; u64 count; u64 capacity;}
+#define FixedArrayPtr(TYPE) struct FixedArrayPtr_##TYPE {TYPE** items; u64 count; u64 capacity;}
+#define Array(TYPE) struct Array_##TYPE {FixedArray(TYPE) content; Allocator* allocator;}
+#define ArrayPtr(TYPE) struct ArrayPtr_##TYPE {FixedArrayPtr(TYPE) content; Allocator* allocator}
+#define Slice(TYPE) struct Slice_##TYPE {TYPE* items; u64 count;}
+#else
+// #define arrDef(TYPE) struct {TYPE* elements; u32 count; u32 capacity;}
+#define arrFixedDef(TYPE) struct Array_##TYPE {TYPE* items; u32 count; u32 capacity;}
+#define arrStructDef(TYPE) struct Array_##TYPE {TYPE* items; u32 count; u32 capacity; Allocator* allocator;}
+#define arrVarDef(TYPE) TYPE##Array
+
+#define FixedArray(TYPE) struct FixedArray_##TYPE
+#define FixedArrayPtr(TYPE) struct FixedArrayPtr_##TYPE
+#define Array(TYPE) struct Array_##TYPE
+#define ArrayPtr(TYPE) struct ArrayPtr_##TYPE
+
+#define sliceStructDef(TYPE) typedef struct Slice_##TYPE {TYPE* items; u64 count;}
+#define Slice(TYPE) struct Slice_##TYPE
+
+#endif
+
+#define array_atIndex(ARRAY, IDX) (((IDX < 0) || ((ARRAY)->count <= (IDX))) ? NULL : &(ARRAY)->items[IDX])
+#define array_init(ALLOCATOR, ARR, CAPACITY) (ARR)->items = (void*) allocator_alloc((ALLOCATOR), (sizeof((ARR)->items[0]) * CAPACITY)); (ARR)->capacity = CAPACITY; (ARR)->count = 0
+#define array_pushPtr(ARRAY) (((ARRAY)->count < (ARRAY)->capacity) ? &(ARRAY)->items[(ARRAY)->count++] : NULL)
+
+
+#if 0
 ct_def(u8);
 ct_def(u16);
 ct_def(u32);
@@ -460,5 +498,6 @@ ct_def(Vec4);
 ct_def(Quat);
 ct_def(Mat4);
 ct_def(Mat43);
+#endif
 
 #endif // _BASE_TYPES_

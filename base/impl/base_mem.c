@@ -3,6 +3,272 @@
 #include "base/base_mem.h"
 #include <stdlib.h>
 
+
+// std malloc
+
+#if 0
+typedef struct mem_StdMallocBlock {
+    struct mem_StdMallocBlock* next;
+    struct mem_StdMallocBlock* prev;
+    u64 size;
+    u8 mem[0];
+} mem_StdMallocBlock;
+
+typedef struct mem__StdMallocator {
+    Allocator allocator;
+	usize size     THREAD_GUARDED(mutex);
+	usize deleted  THREAD_GUARDED(mutex);
+	usize capacity THREAD_GUARDED(mutex);
+	void **items  THREAD_GUARDED(mutex);
+	os_Mutex mutex;
+} mem__StdMallocator;
+
+// Malloc "like" alloocator implementation
+
+
+static const Size DEFAULT_CAPACITY = 4096;
+static const Float32 RESIZE_THRESHOLD = 0.75;
+static const Uint32 PRIME1 = 73;
+static const Uint32 PRIME2 = 5009;
+
+#define TOMBSTONE ((void*) 1)
+
+mem__StdMallocator* mem_makeStdMallocator(void) THREAD_INTERNAL {
+    usize capacity = DEFAULT_CAPACITY;
+	mem__StdMallocator *allocator =  (mem__StdMallocator*) calloc(1, sizeOf(mem__StdMallocator));
+
+	if (!allocator) {
+		return NULL;
+	}
+    mem_setZero(allocator, sizeOf(mem__StdMallocator));
+
+	os_mutexInit(&allocator->mutex);
+	allocator->size = 0;
+	allocator->capacity = DEFAULT_CAPACITY;
+	allocator->items = (void**) calloc(allocator->capacity, sizeOf(allocator->items[0]));
+	if (!allocator->items) {
+		free(allocator);
+		return NULL;
+	}
+
+	return allocator;
+}
+
+
+mem__StdMallocator* mem_destroyStdMallocator(Allocator* allocator) THREAD_INTERNAL {
+    mem__StdMallocator* stdAlloc = (mem__StdMallocator*) allocator->allocator;
+    os_mutexScoped(&stdAlloc->mutex) {
+        for (usize i = 0; i < capacity; i++) {
+            void *data = allocator->items[i];
+            if (data == TOMBSTONE) {
+                continue;
+            }
+            free(data);
+            allocator->items[i] = TOMBSTONE;
+            allocator->deleted++;
+        }
+    }
+    os_mutexDestroy(&stdAlloc->mutex);
+    free(stdAlloc);
+}
+
+API u32 os__mutexLockRet(os_Mutex* mutex);
+#define os_mutexScoped(mutex) for (u32 iii = (0, os__mutexLockRet(mutex), 0); iii == 0; (iii++, os_mutexUnlock(mutex)))
+
+static void std_allocator_fini(Allocator *ctx) {
+	StandardAllocator *allocator = CAST(StandardAllocator *, ctx->user);
+
+	mutex_lock(&allocator->mutex);
+	const Size capacity = allocator->capacity;
+	free(allocator->items);
+	mutex_unlock(&allocator->mutex);
+
+	mutex_fini(&allocator->mutex);
+	free(allocator);
+}
+
+static bx std_allocator_add_unlocked(StandardAllocator *allocator, void *item);
+static bx std_allocator_maybe_rehash_unlocked(StandardAllocator *allocator)
+	THREAD_REQUIRES(allocator->mutex)
+{
+	if (allocator->size + allocator->deleted < CAST(Float32, allocator->capacity) * RESIZE_THRESHOLD) {
+		return true;
+	}
+
+	Size capacity = allocator->capacity * 2;
+	void **items = CAST(void**, calloc(capacity, sizeof *items));
+	if (!items) {
+		return false;
+	}
+
+	void **old_items = allocator->items;
+	Size old_capacity = allocator->capacity;
+
+	allocator->capacity = capacity;
+	allocator->items = items;
+	allocator->deleted = 0;
+	allocator->size = 0;
+
+	for (Size i = 0; i < old_capacity; i++) {
+		// NOTE(dweiler): This cannot fail since the capacity is strictly greater.
+		std_allocator_add_unlocked(allocator, old_items[i]);
+	}
+
+	free(old_items);
+
+	return true;
+}
+
+static Bool std_allocator_add_unlocked(StandardAllocator *allocator, void *item)
+	THREAD_REQUIRES(allocator->mutex)
+{
+	Uint64 hash = RCAST(Uint64, item); // TODO(dweiler): MixInt
+	const Size mask = allocator->capacity - 1;
+
+	Size index = (PRIME1 * hash) & mask;
+
+	for (;;) {
+		void *element = allocator->items[index];
+		if (element && element != TOMBSTONE) {
+			if (element == item) {
+				return false;
+			} else {
+				index = (index + PRIME2) & mask;
+			}
+		} else {
+			break;
+		}
+	}
+
+	allocator->size++;
+	allocator->items[index] = item;
+
+	return std_allocator_maybe_rehash_unlocked(allocator);
+}
+
+static Bool std_allocator_add(StandardAllocator *allocator, void *item) {
+	if (!item || item == TOMBSTONE) {
+		return false;
+	}
+
+	mutex_lock(&allocator->mutex);
+	const Bool result = std_allocator_add_unlocked(allocator, item);
+	mutex_unlock(&allocator->mutex);
+	return result;
+}
+
+static Bool std_allocator_remove(StandardAllocator *allocator, void *item) {
+	u64 hash = RCAST(Uint64, item); // TODO(dweiler): MixInt
+
+	mutex_lock(&allocator->mutex);
+
+	const usize mask = allocator->capacity - 1;
+	usize index = mask & (PRIME1 * hash);
+
+	for (;;) {
+		void *element = allocator->items[index];
+		if (element) {
+			if (element == item) {
+				allocator->items[index] = TOMBSTONE;
+				allocator->size--;
+				allocator->deleted++;
+				mutex_unlock(&allocator->mutex);
+				return true;
+			} else {
+				index = mask & (index + PRIME2);
+			}
+		} else {
+			break;
+		}
+	}
+
+	mutex_unlock(&allocator->mutex);
+	return false;
+}
+
+static Ptr std_allocator_allocate(Allocator *allocator, Size bytes) {
+	void *data = malloc(bytes);
+	if (!data) {
+		return 0;
+	}
+	
+	if (!std_allocator_add(CAST(StandardAllocator*, allocator->user), data)) {
+		free(data);
+		return 0;
+	}
+	
+	return data;
+}
+
+LOCAL void std_allocator_reallocate(Allocator *allocator, void *data, Size old_size, Size new_size) {
+	if (!data) {
+		return 0;
+	}
+
+	if (new_size <= old_size) {
+		return data;
+	}
+
+	StandardAllocator *std_allocator = CAST(StandardAllocator*, allocator->user);
+	std_allocator_remove(std_allocator, data);
+
+	void *resize = realloc(data, new_size);
+	if (!resize) {
+		return 0;
+	}
+
+	if (!std_allocator_add(std_allocator, resize)) {
+		free(resize);
+		return 0;
+	}
+
+	return resize;
+}
+
+static void std_allocator_deallocate(Allocator *allocator, void *data) {
+	if (!data) {
+		return;
+	}
+	std_allocator_remove(CAST(StandardAllocator*, allocator->user), data);
+	free(data);
+}
+
+
+// Malloc "like" alloocator implementation 
+
+
+
+
+LOCAL void* mem__stdAllocFn(u64 size, void* userPtr) {
+    mem__StdMalloc* stdMalloc = (mem__StdMalloc*) userPtr;
+    return mem_arenaPush(arena, size);
+}
+
+LOCAL void* mem__stdReallocFn(u64 size, void* oldPtr, u64 oldSize, void* userPtr) {
+    mem__StdMalloc* stdMalloc = (mem__StdMalloc*) userPtr;
+    void* newMem = mem_arenaPush(arena, size);
+
+    mem_copy(newMem, oldPtr, oldSize);
+
+    return newMem;
+}
+
+LOCAL void mem__stdFreeFn(void* ptr, void* userPtr) {
+    mem__StdMalloc* stdMalloc = (mem__StdMalloc*) userPtr;
+}
+
+Allocator* mem_makeStdMalloc(BaseMemory* baseMemory, usize size, usize alignment) {
+    mem__StdMalloc* stdMalloc = (mem__StdMalloc*) baseMemory->commit(baseMemory->ctx, NULL, sizeof(mem__StdMalloc));
+    mem_structSetZero(stdMalloc);
+
+    return stdMalloc;
+}
+
+void mem_destroyStdMalloc(Allocator* allocator) {
+    ASSERT(allocator);
+}
+#endif
+
 void* mem__reserve(void* ctx, u64 size) {
     unused(ctx);
     return malloc(size);
@@ -41,6 +307,7 @@ u64 mem_getArenaMemOffsetPos(Arena* arena) {
 void* mem_arenaPush(Arena* arena, u64 size) {
     ASSERT(arena);
     void* result = NULL;
+    size = alignUp(size, 16);
     if (arena->pos + size <= arena->cap) {
         result = arena->memory + (arena->pos - (u64_cast(&arena->memory[0]) - u64_cast(arena)));
         arena->pos += size;
@@ -172,15 +439,6 @@ LOCAL void arena__freeFn(void* ptr, void* userPtr) {
     unusedVars(ptr, userPtr);
 }
 
-
-Allocator mem_allocatorWithArena(BaseMemory* baseMem, u64 size) {
-    Allocator allocator = {
-        .ptr = (void*) mem_makeArena(baseMem, size),
-    };
-
-    return allocator;
-}
-
 Arena* mem_makeArena(BaseMemory* baseMem, u64 cap) {
     u32 arr = sizeOf(Arena);
     ASSERT(baseMem);
@@ -196,6 +454,11 @@ Arena* mem_makeArena(BaseMemory* baseMem, u64 cap) {
     void* mem = baseMem->reserve(NULL, cap);
     baseMem->commit(NULL, mem, commitSize);
     Arena* arena = (Arena*) mem;
+    mem_structSetZero(arena);
+    arena->allocator.alloc = arena__allocFn;
+    arena->allocator.realloc = arena__reallocFn;
+    arena->allocator.free = arena__freeFn;
+    arena->allocator.allocator = arena;
     arena->base = *baseMem;
     arena->cap = cap;
     arena->commitPos = commitSize;

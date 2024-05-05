@@ -35,8 +35,8 @@
 #define a16_compareAndSwap(dst, expected, desired)      ((u16) __sync_val_compare_and_swap(dst, expected, desired))
 #define a32_compareAndSwap(dst, expected, desired)      ((u32) __sync_val_compare_and_swap(dst, expected, desired))
 #define a64_compareAndSwap(dst, expected, desired)      ((u64) __sync_val_compare_and_swap(dst, expected, desired))
-#define a32_loadAcquire(VALPTR)  __atomic_load_n(VALPTR, __ATOMIC_ACQUIRE)
-#define a64_loadAcquire(VALPTR)  __atomic_load_n(VALPTR, __ATOMIC_ACQUIRE)
+#define a32_loadAcquire(VALPTR)  __atomic_load_n(VALPTR, __ATOMIC_SEQ_CST)
+#define a64_loadAcquire(VALPTR)  __atomic_load_n(VALPTR, __ATOMIC_SEQ_CST)
 #define a32_add(dst, val) __atomic_fetch_add((u32*) dst, (u32) val, __ATOMIC_SEQ_CST)
 #define a64_add(dst, val) __atomic_fetch_add((u64*) dst, (u64) val, __ATOMIC_SEQ_CST)
 
@@ -77,7 +77,10 @@ INLINE void a32_mpscEnqeue(a32_MPSCIndexQueue* queue, a32 element) {
 INLINE u32 a32_mpscGetAtIndex(a32_MPSCIndexQueue* queue, u64 index) {
     ASSERT(queue->in  > index);
     ASSERT(queue->out <= index);
-    return a32_loadAcquire(&queue->elements[index]);
+    u32* val = (u32*) &queue->elements[index];
+    uintptr_t ptr = (uintptr_t) val;
+    ASSERT(ptr % 4 == 0);
+    return a32_loadAcquire(val);
 }
 
 INLINE u32 a32_mpscRemoveAtIndex(a32_MPSCIndexQueue* queue, u64 index) {

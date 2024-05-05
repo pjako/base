@@ -12,17 +12,6 @@ extern "C" {
 
 #define mem_copy(TO, FROM, SIZE) memcpy(TO, FROM, SIZE)
 
-// Abstract Allocator
-
-API void* allocator_alloc(Allocator allocator, mms bytes);
-API void* allocator_realloc(Allocator allocator, void *data, mms oldSize, mms newSize);
-API void  allocator_free(Allocator allocator, void *data);
-
-// std malloc
-
-//Allocator* malloc_make(void);
-
-// Arena Allocator
 
 typedef void* (mem_reserveFunc)(void* ctx, u64 size);
 typedef void  (mem_changeMemoryFunc)(void* ctx, void* ptr, u64 size);
@@ -36,7 +25,22 @@ typedef struct BaseMemory {
     mem_changeMemoryFunc* release;
 } BaseMemory;
 
+// Abstract Allocator
+#define allocator_alloc(ALLOCATOR, SIZE) (ALLOCATOR)->alloc(SIZE, ALLOCATOR->allocator)
+#define allocator_realloc(ALLOCATOR, PTR, OLDSIZE, NEWSIZE) (ALLOCATOR)->realloc(PTR, OLDSIZE, NEWSIZE, ALLOCATOR->allocator)
+#define allocator_free(ALLOCATOR, PTR) (ALLOCATOR)->free(PTR, ALLOCATOR->allocator)
+
+// std malloc
+
+#if 0
+API Allocator* mem_makeStdMalloc(BaseMemory* baseMemory, usize size);
+API void mem_destroyStdMalloc(Allocator* allocator);
+#endif
+
+// Arena Allocator
+
 typedef struct Arena {
+    Allocator allocator;
     BaseMemory base;
     u64 cap;
     u64 pos;
@@ -44,9 +48,12 @@ typedef struct Arena {
     u8  memory[0];
 } Arena;
 
+typedef struct MallocContext {
+    Allocator allocator;
+} MallocContext;
+
 API BaseMemory mem_getMallocBaseMem(void);
 
-API Allocator mem_allocatorWithArena(BaseMemory* baseMem, u64 size);
 API Arena* mem_makeArena(BaseMemory* baseMem, u64 size);
 API Arena* mem_makeArenaPreAllocated(void* mem, u64 size);
 API void mem_destroyArena(Arena* arena);

@@ -539,9 +539,10 @@ typedef struct rx_TextureUploadDesc {
     rx_TextureDataLayout    layout;
     rx_TextureCopy          copy;
     rx_Extend3D             extend;
+    rx_ImageData            data;
 } rx_TextureUploadDesc;
 
-API void rx_updateTexture(rx_texture texture, rx_TextureUploadDesc* desc, void* data, uint64_t size);
+API void rx_updateTexture(rx_texture texture, rx_TextureUploadDesc* desc);
 
 // TextureView
 
@@ -1254,6 +1255,16 @@ API void rx_setRenderPassCmds(rx_RenderPassCmds* cmds);
 API void rx_setComputePassCmds(rx_ComputePassCmds* cmds);
 #endif
 
+#if 0
+// Context provides all public functions as pointer on itself
+// should be the first value that appears on rx_Ctx so it can be easily castet
+typedef struct rx_Api {
+    rx_renderPipeline (*makeRenderPipeline)(rx_RenderPipelineDesc* desc);
+    rx_texture (*getCurrentSwapTexture)(void);
+    void (*rx_setRenderPassDrawList)(rx_renderPass renderPass, rx_DrawArea* arenas, u32 areaCount, rx_DrawList* drawList);
+    void (*commit)(void);
+} rx_Api;
+#endif
 
 #ifdef __cplusplus
 }

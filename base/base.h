@@ -39,6 +39,10 @@
 #define MEGABYTE(MEG) (1024LL*(KILOBYTE(1LL))*(MEG))
 #define GIGABYTE(GIG) (1024LL*(MEGABYTE(1LL))*(GIG))
 
+#define MINUTESTOSECONDS(MIN) ((60LL)*(MIN))
+#define HOURSTOSECONDS(MIN) ((60LL)*(60LL)*(MIN))
+#define DAYSTOSECONDS(MIN) ((24LL)*(60LL)*(60LL)*(MIN))
+
 #ifdef _WIN32
 #undef OS_WIN
 #define OS_WIN 1
@@ -150,6 +154,22 @@
 #define COMPILER_ASSERT(exp)  typedef char __compilerAssert##__LINE__[(exp) ? 1 : -1]
 
 
+
+#if COMPILER_CLANG && CPP_ENV
+#define THREAD_ATTRIBUTE(x) __attribute__((x))
+#else
+#define THREAD_ATTRIBUTE(x)
+#endif
+
+#define THREAD_GUARDED(...)     THREAD_ATTRIBUTE(guarded_by(__VA_ARGS__))
+#define THREAD_CAPABILITY(...)  THREAD_ATTRIBUTE(capability(__VA_ARGS__))
+#define THREAD_ACQUIRES(...)    THREAD_ATTRIBUTE(acquire_capability(__VA_ARGS__))
+#define THREAD_RELEASES(...)    THREAD_ATTRIBUTE(release_capability(__VA_ARGS__))
+#define THREAD_TRY_ACQUIRE(...) THREAD_ATTRIBUTE(try_acquire_capability(__VA_ARGS__))
+#define THREAD_EXCLUDES(...)    THREAD_ATTRIBUTE(locks_excluded(__VA_ARGS__))
+#define THREAD_REQUIRES(...)    THREAD_ATTRIBUTE(requires_capability(__VA_ARGS__))
+#define THREAD_INTERNAL         THREAD_ATTRIBUTE(no_thread_safety_analysis)
+
 #pragma mark - API
 
 #ifndef API
@@ -168,6 +188,8 @@
 #define DLL_API __declspec(dllimport)
 #endif
 #endif
+
+#define CAST(TYPE, VALUE) ((TYPE)VALUE)
 
 
 ////////////////////////////////

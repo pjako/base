@@ -205,7 +205,7 @@ typedef struct rx_Texture {
     };
     rx_Extend3D size;
     rx_textureFormat format;
-    rx_textureViewDimension dimension;
+    rx_textureDimension dimension;
     uint32_t baseMipLevel;
     uint32_t mipLevelCount;
     uint32_t baseArrayLayer;
@@ -623,7 +623,7 @@ typedef flags32 rx_textureFormatPropertyFlags;
 typedef struct rx_TextureFormatInfo {
     rx_textureFormat format;
     rx_textureFormatPropertyFlags flags;
-    rx_AspectFlags aspects;
+    rx_aspectFlags aspects;
     rx_AspectInfo aspectInfos[2];
 } rx_TextureFormatInfo;
 
@@ -2838,7 +2838,7 @@ LOCAL GLenum rx__glBufferUsage(rx_bufferUsage usage) {
     if ((usage & rx_bufferUsage_immutable) != 0) {
         return GL_STATIC_DRAW;
     }
-    if ((usage & GL_STREAM_DRAW) != 0) {
+    if ((usage & rx_bufferUsage_stream) != 0) {
         return GL_STREAM_DRAW;
     }
     return GL_DYNAMIC_DRAW;
@@ -2912,7 +2912,11 @@ LOCAL void rx__glUpdateBuffer(rx_Ctx* baseCtx, rx_Buffer* buffer, mms offset, rx
     rx__glCacheStoreBufferBinding(ctx, glTarget);
     rx__glCacheBindBuffer(ctx, glTarget, buffer->gl.handle);
     rx__oglCheckErrors();
-    glBufferSubData(glTarget, offset, (GLsizeiptr)range.size, range.content);
+    glBufferSubData(glTarget, (GLintptr) offset, (GLsizeiptr) range.size, range.content);
+    ogl_error error = glGetError();
+
+    printf("Frame: %llu, updateBuffer: %llu, size: %llu, offset: %llu\n", baseCtx->frameIdx, (uint64_t) buffer->gl.handle, (uint64_t) range.size, (uint64_t) offset);
+    ASSERT(error == GL_NO_ERROR);
     rx__oglCheckErrors();
     rx__glCacheRestoreBufferBinding(ctx, glTarget);
     rx__oglCheckErrors();
@@ -3428,49 +3432,85 @@ LOCAL bx rx__glMakeTexture(rx_Ctx* ctx, rx_Texture* texture, const rx_TextureDes
     return true;
 }
 
-
-LOCAL void rx__glUpdateTexture(rx_Texture* texture, rx_TextureUploadDesc* desc, void* data, uint64_t size) {
+LOCAL void rx__glUpdateTexture(rx_Ctx* ctx, rx_Texture* texture, rx_TextureUploadDesc* desc) {
     // upload texture data to OpenGL
+    ASSERT(ctx && texture);
+    rx_OpenGlCtx* oglCtx = (rx_OpenGlCtx*) ctx;
     ASSERT(texture);
     ASSERT(desc);
-    ASSERT(data);
-    ASSERT(size > 0);
     rx__oglCheckErrors();
 
+    // create our own GL texture(s)
+    texture->gl.target = rx_glTextureTarget(texture->dimension);
+    const GLenum gl_format = rx_glTextureFormat(texture->format);
+    const bool is_compressed = rx_isCompressedTexture(texture->format);
+    const GLenum glInternalFormat = rx_glInternalTextureFormat(texture->format);
 
-    GLenum glTextureTarget = texture->gl.target;
-    if (desc->dimension == rx_textureDimension_cube) {
-        glTextureTarget = rx_glCubefaceTarget(faceIndex);
-    }
-    const GLvoid* data_ptr = data;//desc->data.subimage[faceIndex][mipIndex].content;
-    const int mip_width = rx_mipLevelDim(desc->size.width, mipIndex);
-    const int mip_height = rx_mipLevelDim(desc->size.height, mipIndex);
-    if ((desc->dimension == rx_textureDimension_2d) || (desc->dimension == rx_textureDimension_cube)) {
-        if (is_compressed) {
-            const GLsizei data_size = (GLsizei) desc->data.subimage[faceIndex][mipIndex].size;
-            glCompressedTexImage2D(glTextureTarget, mipIndex, glInternalFormat,
-                mip_width, mip_height, 0, data_size, data_ptr);
-        } else {
-            const GLenum gl_type = rx_glTextureFormatType(desc->format);
-            glTexImage2D(glTextureTarget, mipIndex, (GLint)glInternalFormat,
-                mip_width, mip_height, 0, gl_format, gl_type, data_ptr);
-        }
-    } else if ((desc->dimension == rx_textureDimension_3d) || (desc->dimension == rx_textureDimension_array)) {
-        int mip_depth = desc->arrayLayerCount; //img->cmn.num_slices;
-        if (desc->dimension == rx_textureDimension_3d) {
-            mip_depth = rx_mipLevelDim(mip_depth, mipIndex);
-        }
-        if (is_compressed) {
-            const GLsizei data_size = (GLsizei) desc->data.subimage[faceIndex][mipIndex].size;
-            glCompressedTexImage3D(glTextureTarget, mipIndex, glInternalFormat,
-                mip_width, mip_height, mip_depth, 0, data_size, data_ptr);
-        } else {
-            const GLenum glType = rx_glTextureFormatType(desc->format);
-            glTexImage3D(glTextureTarget, mipIndex, (GLint)glInternalFormat,
-                mip_width, mip_height, mip_depth, 0, gl_format, glType, data_ptr);
-        }
-    }
+    ASSERT(texture->gl.handle);
 
+    rx__glCacheStoreTextureSamplerBinding(oglCtx, 0);
+    rx__glCacheBindTextureSampler(oglCtx, 0, texture->gl.target, texture->gl.handle, 0);
+
+    rx__oglCheckErrors();
+
+    //rx__glCacheStoreTextureSamplerBinding(oglCtx, 0);
+    //rx__glCacheBindTextureSampler(oglCtx, 0, texture->gl.target, texture->gl.handle, 0);
+    //glTexParameteri(texture->gl.target, GL_TEXTURE_MAX_LEVEL, texture->mipLevelCount - 1);
+    const int numFaces = texture->dimension == rx_textureDimension_cube ? 6 : 1;
+    //int data_index = 0;
+    for (int faceIndex = 0; faceIndex < numFaces; faceIndex++) {
+        for (int mipIndex = 0; mipIndex < texture->mipLevelCount; mipIndex++/*, data_index++*/) {
+            GLenum glTextureTarget = texture->gl.target;
+            if (texture->dimension == rx_textureDimension_cube) {
+                glTextureTarget = rx_glCubefaceTarget(faceIndex);
+            }
+            const GLvoid* data_ptr = desc->data.subimage[faceIndex][mipIndex].content;
+            const int mip_width = rx_mipLevelDim(texture->size.width, mipIndex);
+            const int mip_height = rx_mipLevelDim(texture->size.height, mipIndex);
+            if ((texture->dimension == rx_textureDimension_2d) || (texture->dimension == rx_textureDimension_cube)) {
+                if (is_compressed) {
+                    ASSERT(!"Updating compressed textures currently not supported");
+                    //const GLsizei data_size = (GLsizei) desc->data.subimage[faceIndex][mipIndex].size;
+                    //glCompressedTexImage2D(glTextureTarget, mipIndex, glInternalFormat,mip_width, mip_height, 0, data_size, data_ptr);
+                } else {
+                    const GLenum gl_type = rx_glTextureFormatType(texture->format);
+                    rx__oglCheckErrors();
+
+                    glTexSubImage2D(glTextureTarget, mipIndex,
+                        0, 0,
+                        mip_width, mip_height,
+                        gl_format, gl_type,
+                        data_ptr
+                    );
+                    rx__oglCheckErrors();
+                }
+            } else if ((texture->dimension == rx_textureDimension_3d) || (texture->dimension == rx_textureDimension_array)) {
+                int mip_depth = texture->arrayLayerCount; //img->cmn.num_slices;
+                if (texture->dimension == rx_textureDimension_3d) {
+                    mip_depth = rx_mipLevelDim(mip_depth, mipIndex);
+                }
+                if (is_compressed) {
+                    ASSERT(!"Updating compressed textures currently not supported");
+                    //const GLsizei data_size = (GLsizei) desc->data.subimage[faceIndex][mipIndex].size;
+                    //glCompressedTexImage3D(glTextureTarget, mipIndex, glInternalFormat,
+                    //    mip_width, mip_height, mip_depth, 0, data_size, data_ptr);
+                } else {
+
+                    const GLenum glType = rx_glTextureFormatType(texture->format);
+
+                    glTexSubImage3D(glTextureTarget, mipIndex,
+                        0, 0, 0,
+                        mip_width, mip_height, mip_depth,
+                        gl_format, glType,
+                        data_ptr
+                    );
+                }
+            }
+        }
+    }
+    rx__oglCheckErrors();
+    rx__glCacheRestoreTextureSamplerBinding(oglCtx, 0);
+    rx__oglCheckErrors();
 }
 
 LOCAL GLenum rx__shaderStage(rx_shaderStage stage) {
@@ -4952,6 +4992,7 @@ LOCAL void rx__glExcuteGraph(rx_Ctx* baseCtx, rx_FrameGraph* frameGraph) {
         u64 offsetEnd = (currentSize % allocator->bufferCapacity);
 
         u64 sizeUpload = offsetEnd == 0 ? (allocator->bufferCapacity - offsetBegin) : (minVal(offsetEnd, allocator->bufferCapacity) - offsetBegin);
+        printf("rx buffer(%u) upload: start:%llu end:%llu\n", allocator->targetBuffer.id, offsetBegin, offsetEnd);
         rx__glUpdateBuffer(baseCtx, buffer, offsetBegin, (rx_Range) {
             .content = &allocator->stagingPtr[offsetBegin],
             .size = sizeUpload
@@ -4986,6 +5027,7 @@ LOCAL void rx__glExcuteGraph(rx_Ctx* baseCtx, rx_FrameGraph* frameGraph) {
             ASSERT(pass->type == rx_passType_render && "Only render passes are supported in OpenGL");
 
             rx_RenderPass* renderPass = &pass->renderPass;
+            ASSERT(renderPass->drawList && "Missing draw list for render pass");
             // number of color attachments
             const i32 colorAttachmentCount = renderPass->colorAttachmentCount;
             bx isDefaultPass = false;
@@ -5549,18 +5591,24 @@ rx_texture rx_makeTexture(const rx_TextureDesc* desc) {
     }
 
     rx_Texture* texture = rx__getTexture(ctx, handle);
+
+    texture->size = descWithDefaults.size;
+    texture->format = descWithDefaults.format;
+    texture->dimension = descWithDefaults.dimension;
+    texture->mipLevelCount = descWithDefaults.mipLevelCount;
+    texture->arrayLayerCount = descWithDefaults.arrayLayerCount;
+    //texture->sampleCount = descWithDefaults.sampleCount;
+
     rx_callBknFn(MakeTexture, ctx, texture, &descWithDefaults);
 
     return handle;
 }
 
-void rx_updateTexture(rx_texture texture, rx_TextureUploadDesc* desc, void* data, uint64_t size) {
+void rx_updateTexture(rx_texture texture, rx_TextureUploadDesc* desc) {
     ASSERT(rx__ctx);
     ASSERT(desc);
-    ASSERT(data);
-    ASSERT(size > 0);
     rx_Ctx* ctx = rx__ctx;
-    rx_Texture* textureContent = rx__getTexture(ctx, texture);
+    rx_Texture* tex = rx__getTexture(ctx, texture);
     //ASSERT(textureContent->gen == texture.gen);
     //ASSERT(textureContent->size.width == desc->size.width);
     //ASSERT(textureContent->size.height == desc->size.height);
@@ -5568,7 +5616,7 @@ void rx_updateTexture(rx_texture texture, rx_TextureUploadDesc* desc, void* data
     //ASSERT(textureContent->size.arrayCount == desc->size.arrayCount);
     //ASSERT(textureContent->size.mipLevelCount == desc->size.mipLevelCount);
     //ASSERT(textureContent->format == desc->format);
-    rx_callBknFn(UpdateTexture, ctx, textureContent, desc, data, size);
+    rx_callBknFn(UpdateTexture, ctx, tex, desc);
 }
 
 #pragma endregion

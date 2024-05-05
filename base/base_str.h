@@ -215,7 +215,6 @@ API S8 str_joinVargs(Arena* arena, u32 argCount, va_list list);
 API S8 str_fmtRaw(Arena* arena, S8 fmt, u32 argCount, ...);
 API S8 str_fmtVargs(Arena* arena, S8 fmt, u32 argCount, va_list list);
 
-
 #define str_record(STR, ARENA) for (u64 startIdx = mem_getArenaMemOffsetPos(ARENA) + 1;startIdx != 0; (( (startIdx - 1) < mem_getArenaMemOffsetPos(ARENA) ? (STR.content = &(ARENA)->memory[startIdx - 1], STR.size = (mem_getArenaMemOffsetPos(ARENA) - (startIdx - 1))) : (STR.content = NULL, STR.size = 0)  ), startIdx = 0))
 
 ////////////////////////////
