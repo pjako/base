@@ -2915,7 +2915,7 @@ LOCAL void rx__glUpdateBuffer(rx_Ctx* baseCtx, rx_Buffer* buffer, mms offset, rx
     glBufferSubData(glTarget, (GLintptr) offset, (GLsizeiptr) range.size, range.content);
     ogl_error error = glGetError();
 
-    printf("Frame: %llu, updateBuffer: %llu, size: %llu, offset: %llu\n", baseCtx->frameIdx, (uint64_t) buffer->gl.handle, (uint64_t) range.size, (uint64_t) offset);
+    // printf("Frame: %llu, updateBuffer: %llu, size: %llu, offset: %llu\n", baseCtx->frameIdx, (uint64_t) buffer->gl.handle, (uint64_t) range.size, (uint64_t) offset);
     ASSERT(error == GL_NO_ERROR);
     rx__oglCheckErrors();
     rx__glCacheRestoreBufferBinding(ctx, glTarget);
@@ -4404,7 +4404,7 @@ LOCAL void rx__glExcuteDrawList(rx_OpenGlCtx* ctx, rx_GlStateCache* glStateCache
 
     rx_renderPipeline currentPipeline = {0};
 
-    uint32_t indexOffset  = 0;
+    //uint32_t indexOffset  = 0;
     uint32_t vertexOffset = 0;
     //uint32_t indexCount   = 0;
     rx_ViewPort currentViewPort;
@@ -4992,7 +4992,7 @@ LOCAL void rx__glExcuteGraph(rx_Ctx* baseCtx, rx_FrameGraph* frameGraph) {
         u64 offsetEnd = (currentSize % allocator->bufferCapacity);
 
         u64 sizeUpload = offsetEnd == 0 ? (allocator->bufferCapacity - offsetBegin) : (minVal(offsetEnd, allocator->bufferCapacity) - offsetBegin);
-        printf("rx buffer(%u) upload: start:%llu end:%llu\n", allocator->targetBuffer.id, offsetBegin, offsetEnd);
+        // printf("rx buffer(%u) upload: start:%llu end:%llu\n", allocator->targetBuffer.id, offsetBegin, offsetEnd);
         rx__glUpdateBuffer(baseCtx, buffer, offsetBegin, (rx_Range) {
             .content = &allocator->stagingPtr[offsetBegin],
             .size = sizeUpload

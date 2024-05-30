@@ -138,7 +138,9 @@ elseif(${CMAKE_HOST_SYSTEM_NAME} STREQUAL "Linux")
 endif()
 
 # This variable is set globally so shd_shader macro can access it from different CMakeList files
+
 set(SHD_BIN_PATH "${TOOLS_DIR}/shdc" PARENT_SCOPE)
+set(SHD_BIN_PATH "${TOOLS_DIR}/shdc")
 
 function(shd_shader target_name target_header_path source_files)
     message(STATUS "Found shd: ${SHD_BIN_PATH}")
