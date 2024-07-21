@@ -1,6 +1,10 @@
 #ifndef DXC_WRAPPER_H
 #define DXC_WRAPPER_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef enum dxc_shaderType {
     dxc_shaderType_vertex,
     dxc_shaderType_pixel,
@@ -68,6 +72,9 @@ typedef struct dxc_CompileResult {
     dxc_ReflectionResultDesc reflection;
 } dxc_CompileResult;
 
-dxc_CompileResult dxc_compileHlslToSpv(Arena* arena, dxc_CompileDesc* desc);
+API dxc_CompileResult dxc_compileHlslToSpv(Arena* arena, dxc_CompileDesc* desc);
 
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 #endif

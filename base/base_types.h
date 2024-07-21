@@ -359,12 +359,12 @@ typedef struct DenseTime {
 } DenseTime;
 
 typedef struct DateTime {
-    u16 msec; // 0-999
-    u8  sec;  // 0-60
-    u8  min;  // 0-59
+    u16 milliSecond; // 0-999
+    u8  second;  // 0-60
+    u8  minute;  // 0-59
     u8  hour; // 0-23
     u8  day;  // 0-30
-    u8  mon;  // 0-11
+    u8  month;  // 0-11
     i16 year; // 1 = 1 CE, 2020 = 2020 CE, -100 = 101 VCE, ...
 } DateTime;
 

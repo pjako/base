@@ -56,7 +56,7 @@ void tn_errorOnToken(tn_Tokenizer *tokenizer, tn_Token onToken, char *format, ..
 #if 0
     ErrorArgList(tokenizer, onToken, format, ArgList);
 #endif
-    assert(!"Error... also implement this properly...");
+    ASSERT(!"Error... also implement this properly...");
     
     va_end(ArgList);
 }

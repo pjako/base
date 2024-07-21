@@ -1706,13 +1706,7 @@ i32 os_main(i32 argc, char* argv[]) {
     BaseMemory baseMem = os_getBaseMemory();
     Arena* arena = mem_makeArena(&baseMem);
 
-    dxc_Dll dll;
-
-    if (!dxc_loadLib(&dll)) {
-        return 1;
-    }
-
-    dxc_Instance* dxcInstance = dxc_create(arena, &dll);
+    dxc_Instance* dxcInstance = dxc_create(arena);
 
     S8 shaderFileContent = os_fileRead(arena, shaderFilePath);
 

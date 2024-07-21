@@ -2,6 +2,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <unknwn.h>
 #include <windows.h>
+#include <atlbase.h>
 #define ModuleHandle HMODULE
 #undef max
 #undef min
@@ -40,6 +41,9 @@
 #define str_toStrWchar str_toS32
 #endif
 
+#if __cplusplus > 201402L
+#error "This code requires at least C++17"
+#endif
 
 #define DXC_FAILED(hr) (((HRESULT)(hr)) < 0)
 #define IFT(x)      { HRESULT __hr = (x); if (DXC_FAILED(__hr)) ASSERT(!"FAILED!"); }
@@ -57,10 +61,10 @@ public:
             //execPath = s8(""); // os_execPath(mem.arena);
             
             S8 paths[] = {
+                str_join(mem.arena, os_filepath(mem.arena, os_systemPath_binary), s8("/"), s8("libdxcompiler"), s8(".dylib")),
                 s8("/Users/peterjakobs/pjako/base_kit/bin_tools/libdxcompiler.dylib"),
                 s8("/Users/peterjakobs/pjako/base_kit/bin_tools/dxcompiler.dll"),
                 s8("/Users/peterjakobs/pjako/base_kit/bin_tools/libdxcompiler.so"),
-                // str_join(mem.arena, execPath, s8("/"), s8("libdxcompiler")),
                 // str_join(mem.arena, execPath, s8("/"), s8("libdxcompiler"), s8(".dylib")),
                 // str_join(mem.arena, execPath, s8("/"), s8("dxcompiler"), s8(".dll")),
                 // str_join(mem.arena, execPath, s8("/"), s8("libdxcompiler"), s8(".so")),

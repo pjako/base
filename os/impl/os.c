@@ -754,6 +754,9 @@ void os_semaphoreDestroy(os_Semaphore* sem) {
 #elif OS_WIN
 #define PATH_MAX (1024)
 
+#pragma comment(lib, "userenv.lib")
+#pragma comment(lib, "ws2_32.lib")
+
 #include <stdio.h>
 #include <Windows.h>
 #include <psapi.h>
@@ -795,12 +798,12 @@ void os_memoryRelease(void* ptr, u64 size) {
 DateTime os_win32DateTimeFromSystemTime(SYSTEMTIME *in){
     DateTime result;
     result.year = in->wYear;
-    result.mon  = (u8) in->wMonth;
+    result.month  = (u8) in->wMonth;
     result.day  = in->wDay;
     result.hour = in->wHour;
-    result.min  = in->wMinute;
-    result.sec  = in->wSecond;
-    result.msec = in->wMilliseconds;
+    result.minute  = in->wMinute;
+    result.second  = in->wSecond;
+    result.milliSecond = in->wMilliseconds;
     return result;
 }
 
@@ -896,31 +899,31 @@ bx os_dirDelete(S8 dirname) {
 	return result;
 }
 
-#if 0
-static U_DateTime w32_date_time_from_system_time(SYSTEMTIME* in){
-	U_DateTime result = {0};
+static DateTime w32_date_time_from_system_time(SYSTEMTIME* in) {
+	DateTime result = {0};
 	result.year   = in->wYear;
 	result.month  = (u8)in->wMonth;
 	result.day    = in->wDay;
 	result.hour   = in->wHour;
 	result.minute = in->wMinute;
-	result.sec    = in->wSecond;
-	result.ms     = in->wMilliseconds;
+	result.second    = in->wSecond;
+	result.milliSecond     = in->wMilliseconds;
 	return result;
 }
 
-static SYSTEMTIME w32_system_time_from_date_time(U_DateTime* in){
+static SYSTEMTIME w32_system_time_from_date_time(DateTime* in) {
 	SYSTEMTIME result    = {0};
 	result.wYear         = in->year;
 	result.wMonth        = in->month;
 	result.wDay          = in->day;
 	result.wHour         = in->hour;
 	result.wMinute       = in->minute;
-	result.wSecond       = in->sec;
-	result.wMilliseconds = in->ms;
+	result.wSecond       = in->second;
+	result.wMilliseconds = in->milliSecond;
 	return result;
 }
 
+#if 0
 static u64 w32_dense_time_from_file_time(FILETIME *file_time) {
 	SYSTEMTIME system_time;
 	FileTimeToSystemTime(file_time, &system_time);
@@ -1058,10 +1061,11 @@ S8 os_filepath(Arena* arena, os_systemPath path) {
             ASSERT((size >= tmpCount) && "Increase tmpName size");
             path16.size = size;
             result = str_fromS16(tmpArena, path16);
+        } break;
         case os_systemPath_binary: {
             mms pushAmount = 1024 * sizeOf(u32);
             u8* mem = mem_arenaPush(arena, pushAmount);
-            DWORD size = GetModuleFileNameW(0, (WCHAR*)try_buffer, cap);
+            DWORD size = GetModuleFileNameW(0, (WCHAR*)mem, pushAmount);
             ASSERT(size == tmpCount && GetLastError() == ERROR_INSUFFICIENT_BUFFER && "Increase tmpName size");
             path16.size = size;
             S8 fullPath = str_fromS16(tmpArena, path16);
@@ -1076,7 +1080,9 @@ S8 os_filepath(Arena* arena, os_systemPath path) {
             result = str_fromS16(tmpArena, path16);
 		} break;
 		case os_systemPath_tempData: {
-			DWORD size = GetTempPathW(cap, (WCHAR*)buffer);
+            mms pushAmount = 1024 * sizeOf(u32);
+            u8* mem = mem_arenaPush(arena, pushAmount);
+			DWORD size = GetTempPathW(pushAmount, (WCHAR*)mem);
             ASSERT(size >= tmpCount && "Increase tmpName size");
             path16.size = size;
             result = str_fromS16(tmpArena, path16);
@@ -1088,8 +1094,9 @@ S8 os_filepath(Arena* arena, os_systemPath path) {
 	return result;
 }
 
+#if 0
 S8 os_filepath(Arena* arena, os_systemPath path) {
-	string result = {0};
+	S8 result = STR_NULL;
 	switch (path) {
 		case SystemPath_CurrentDir: {
 			M_Scratch scratch = scratch_get();
@@ -1174,6 +1181,8 @@ S8 os_filepath(Arena* arena, os_systemPath path) {
 	
 	return result;
 }
+#endif
+
 
 void* os_execute(Arena* tmpArena, S8 execPath, S8* args, u32 argCount) {
     STARTUPINFOA si;
@@ -1256,12 +1265,15 @@ void os_log(S8 msg) {
     if (msg.content[msg.size - 1] == '\0') {
         OutputDebugStringA((char*) msg.content);
     } else {
+        ASSERT(!"Not implemented");
+        #if 0
         mem_scoped(scratch, os_tempMemory()) {
             u8* buff = (u8*) mem_arenaPush(scratch.arena, msg.size + 1);
             mem_copy(buff, msg.content, msg.size);
             buff[msg.size] = '\0';
             OutputDebugStringA((char*) buff);
         }
+        #endif
     }
 #endif // OS_WIN
 #endif // OS_ANDROD 
@@ -1436,10 +1448,13 @@ DateTime os_timeUniversalFromLocal(DateTime* date_time) {
 
 u64 os_timeMicrosecondsNow(void) {
 	u64 result = 0;
-	LARGE_INTEGER perf_counter = {0};
-	if (QueryPerformanceCounter(&perf_counter)) {
-		u64 ticks = ((u64)perf_counter.HighPart << 32) | perf_counter.LowPart;
-		result = ticks * 1000000 / w32_ticks_per_sec;
+	LARGE_INTEGER perfCounter = {0};
+    LARGE_INTEGER ticksPerSecond = {0};
+
+	if (QueryPerformanceCounter(&perfCounter) && QueryPerformanceFrequency(&ticksPerSecond)) {
+		u64 ticks = ((u64)perfCounter.HighPart << 32) | perfCounter.LowPart;
+		u64 uTicksPerSecond = ((u64)ticksPerSecond.HighPart << 32) | ticksPerSecond.LowPart;
+		result = ticks * 1000000 / uTicksPerSecond;
 	}
 	return result;
 }
@@ -1480,6 +1495,41 @@ void os_sleep(u32 ms) {
 
 void os_yield(void) {
     YieldProcessor();
+}
+
+LOCAL void* os__reserve(void* ctx, u64 size) {
+    unusedVars(ctx);
+    ASSERT(size > 0);
+    return os_memoryReserve(size);
+}
+
+LOCAL void os__commit(void* ctx, void* ptr, u64 size) {
+    unusedVars(ctx);
+    ASSERT(size > 0);
+    os_memoryCommit(ptr, size);
+}
+
+LOCAL void os__decommit(void* ctx, void* ptr, u64 size) {
+    unusedVars(ctx);
+    ASSERT(size > 0);
+    os_memorydecommit(ptr, size);
+}
+
+LOCAL void os__release(void* ctx, void* ptr, u64 size) {
+    unusedVars(ctx);
+    ASSERT(size > 0);
+    os_memoryRelease(ptr, size);
+}
+
+BaseMemory os_getBaseMemory(void) {
+    BaseMemory mem;
+    mem.ctx = NULL;
+    mem.pageSize = os_memoryPageSize();
+    mem.reserve = os__reserve;
+    mem.commit = os__commit;
+    mem.decommit = os__decommit;
+    mem.release = os__release;
+    return mem;
 }
 
 #else

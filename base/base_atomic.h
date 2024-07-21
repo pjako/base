@@ -2,6 +2,7 @@
 #define BASE_ATOMIC
 
 #ifdef _MSC_VER
+// #include <winnt.h>
 #include <intrin.h>
 //typedef u32 volatile A32;
 //typedef u64 volatile A64;

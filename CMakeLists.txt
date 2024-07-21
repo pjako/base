@@ -111,6 +111,15 @@ file(GLOB SPIRV_SRC "shd/impl/deps/spirv_cross/*.cpp")
 add_library(spirvCross STATIC ${SPIRV_HEADERS} ${SPIRV_SRC})
 set_property(TARGET spirvCross PROPERTY CXX_STANDARD 17)
 
+if (WIN32)
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /MP")
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /MP")
+endif()
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  add_compile_options("-fms-extensions")
+endif()
+
 add_executable(shdc shd/impl/dxc_wrapper.cc shd/impl/shd_main.cc)
 set_property(TARGET shdc PROPERTY CXX_STANDARD 17)
 target_link_libraries(shdc base os parser log spirvCross)

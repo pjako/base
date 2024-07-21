@@ -75,16 +75,17 @@ LOCAL void app__uninitApp(app__Ctx* ctx, app_ApplicationDesc* appDesc) {
 }
 
 #if OS_APPLE
-    #if OS_OSX
-        #ifndef GL_SILENCE_DEPRECATION
-            #define GL_SILENCE_DEPRECATION
-        #endif
-            #import <Cocoa/Cocoa.h>
-            #import <QuartzCore/QuartzCore.h>
-        #else
-            #import <UIKit/UIKit.h>
-        #endif
+    #ifndef GL_SILENCE_DEPRECATION
+        #define GL_SILENCE_DEPRECATION
     #endif
+
+    #if OS_OSX
+        #import <Cocoa/Cocoa.h>
+        #import <QuartzCore/QuartzCore.h>
+    #else
+        #import <UIKit/UIKit.h>
+    #endif
+
     #import <QuartzCore/CAMetalLayer.h>
     #ifdef OS_DLLHOST
         #include "app__dllhost.h"
@@ -1863,4 +1864,5 @@ void* app_getGraphicsHandle(app_window window) {
 #error "ANDROID no implemented"
 #else
 #error "OS no implemented"
+#endif
 #endif

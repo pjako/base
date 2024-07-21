@@ -50,17 +50,17 @@ DenseTime tm_toDenseTime(DateTime in) {
     u64 result = 0;
     result += yearEncode;
     result *= 12;
-    result += in.mon;
+    result += in.month;
     result *= 31;
     result += in.day;
     result *= 24;
     result += in.hour;
     result *= 60;
-    result += in.min;
+    result += in.minute;
     result *= 61;
-    result += in.sec;
+    result += in.second;
     result *= 1000;
-    result += in.msec;
+    result += in.milliSecond;
     DenseTime denseTime = {result};
     return denseTime;
 }
@@ -68,17 +68,17 @@ DenseTime tm_toDenseTime(DateTime in) {
 DateTime tm_fromDenseTime(DenseTime denseTime) {
     u64 in = denseTime.value;
     DateTime result;
-    result.msec = in % 1000;
+    result.milliSecond = in % 1000;
     in /= 1000;
-    result.sec = in % 61;
+    result.second = in % 61;
     in /= 61;
-    result.min = in % 60;
+    result.minute = in % 60;
     in /= 60;
     result.hour = in % 24;
     in /= 24;
     result.day = in % 31;
     in /= 31;
-    result.mon = in % 12;
+    result.month = in % 12;
     in /= 12;
     i32 yearEncoded = i32_cast(in);
     result.year = (yearEncoded - 0x8000);

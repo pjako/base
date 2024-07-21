@@ -48,7 +48,7 @@ static const union { u32 __valU32; f32 value; } f32__infinity = { 255 << 23 };//
 #define f32_infinity (f32__infinity.value)
 #define f32_infinityNegative (-f32__infinity.value)
 
-static const union { u32 __valU32; f32 value; } f32__nan = { f32_exponentMask | f32_mantissaMask };
+static const union { u32 __valU32; f32 value; } f32__nan = { 0x7f800000 | 0x007fffff }; // { f32_exponentMask | f32_mantissaMask };
 #define f32_nan (f32__nan.value)
 
 FORCE_INLINE f16 f16_fromF32(f32 input) {
