@@ -16,3 +16,7 @@ target_link_libraries(sample_instancing base os app rx)
 app(sample_shadows sample_shadows.c)
 shd_shader(sample_shadows sample_shadows.hlsl.h sample_shadows.hlsl)
 target_link_libraries(sample_instancing base os app rx)
+
+app(sample_sdfRect sample_sdfRect.c)
+shd_shader(sample_sdfRect sample_sdfRect.hlsl.h sample_sdfRect.hlsl)
+target_link_libraries(sample_sdfRect base os app rx)
