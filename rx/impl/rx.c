@@ -337,13 +337,13 @@
 
 #if RX_OGL
 typedef enum ogl_error {
-    GL_NO_ERROR =                       0,
-    GL_INVALID_ENUM =                   0x0500,
-    GL_INVALID_VALUE =                  0x0501,
-    GL_INVALID_OPERATION =              0x0502,
-    GL_STACK_OVERFLOW =                 0x0503,
-    GL_STACK_UNDERFLOW =                0x0504,
-    GL_OUT_OF_MEMORY =                  0x0505,
+    ogl_GL_NO_ERROR =                       0,
+    ogl_GL_INVALID_ENUM =                   0x0500,
+    ogl_GL_INVALID_VALUE =                  0x0501,
+    ogl_GL_INVALID_OPERATION =              0x0502,
+    ogl_GL_STACK_OVERFLOW =                 0x0503,
+    ogl_GL_STACK_UNDERFLOW =                0x0504,
+    ogl_GL_OUT_OF_MEMORY =                  0x0505,
     ogl_error__forceU32 = RX_U32_MAX
 } ogl_error;
 #endif
@@ -4141,8 +4141,15 @@ LOCAL bx rx__glMakeRenderPipeline(rx_Ctx* baseCtx, rx_RenderPipeline* renderPipe
     renderPipeline->gl.alphaToCoverageEnabled = desc->alphaToCoverageEnabled;
 
     renderPipeline->gl.useInstancedDraw = false;
+    renderPipeline->gl.colorTargetCount = desc->colorTargetCount;
 
     GLint shaderHandle = rx__getRenderShader(baseCtx, renderPipeline->gl.shader)->gl.handle;
+    renderPipeline->gl.blend = desc->colorTargets[0].blend;
+    //renderPipeline->gl.colorWriteMask[0] = desc->colorTargets[0].blend.colorWriteMask;
+
+    for (u32 blendTargetIdx = 0; blendTargetIdx < countOf(renderPipeline->gl.colorWriteMask); blendTargetIdx++) {
+        renderPipeline->gl.colorWriteMask[blendTargetIdx] = desc->colorTargets[blendTargetIdx].blend.colorWriteMask;
+    }
 
     for (u32 attrIdx = 0; attrIdx < countOf(renderPipeline->gl.vertexAttributes); attrIdx++) {
         renderPipeline->gl.vertexAttributes[attrIdx].vbIndex = -1;
@@ -5577,7 +5584,7 @@ void rx_setup(rx_SetupDesc* desc) {
     descWithDefaults.dynamicUniformSize = rx_valueOrDefault(descWithDefaults.dynamicUniformSize, RX_DEFAULT_MAX_DYNAMIC_UNIFORM_SIZE);
 
     BaseMemory baseMem = os_getBaseMemory();
-    Arena* arena = mem_makeArena(&baseMem, MEGABYTE(6));
+    Arena* arena = mem_makeArenaAligned(&baseMem, MEGABYTE(6), 16);
 
     rx_Ctx* ctx = rx__ctx = rx__create(arena, &descWithDefaults);
     ctx->arena = arena;
@@ -6046,7 +6053,7 @@ LOCAL rx_RenderPipelineDesc rx__renderPipelineDescDefaults(const rx_RenderPipeli
     for (uint32_t idx = 0; idx < descWithDefaults.colorTargetCount; idx++) {
         const rx_ColorTargetState* colorTarget = desc->colorTargets + idx;
         rx_ColorTargetState* outColorTarget = descWithDefaults.colorTargets + idx;
-        if (colorTarget->format == rx_textureFormat__invalid) {
+        if (colorTarget->format == rx_textureFormat__invalid && idx > 0) {
             break;
 #if 0
             if (idx > 0) {

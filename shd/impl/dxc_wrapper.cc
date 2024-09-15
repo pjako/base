@@ -42,7 +42,7 @@
 #endif
 
 #if __cplusplus > 201402L
-#error "This code requires at least C++17"
+// #error "This code requires at least C++17"
 #endif
 
 #define DXC_FAILED(hr) (((HRESULT)(hr)) < 0)

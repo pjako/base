@@ -16,11 +16,11 @@ DateTime tm_nowGm(void) {
     ASSERT(res != NULL);
     DateTime dateTime = {0};
     dateTime.year  = res->tm_year;
-    dateTime.mon   = res->tm_mon;
+    dateTime.month   = res->tm_mon;
     dateTime.day   = res->tm_mday;
     dateTime.hour  = res->tm_hour;
-    dateTime.sec   = res->tm_sec;
-    dateTime.msec  = roundVal(spec.tv_nsec, 1000000);
+    dateTime.second   = res->tm_sec;
+    dateTime.milliSecond  = roundVal(spec.tv_nsec, 1000000);
 
     return dateTime;
 }
@@ -33,11 +33,11 @@ DateTime tm_nowLocal(void) {
     ASSERT(res != NULL);
     DateTime dateTime = {0};
     dateTime.year  = res->tm_year;
-    dateTime.mon   = res->tm_mon;
+    dateTime.month   = res->tm_mon;
     dateTime.day   = res->tm_mday;
     dateTime.hour  = res->tm_hour;
-    dateTime.sec   = res->tm_sec;
-    dateTime.msec  = roundVal(spec.tv_nsec, 1000000);
+    dateTime.second   = res->tm_sec;
+    dateTime.milliSecond  = roundVal(spec.tv_nsec, 1000000);
 
     return dateTime;
 }

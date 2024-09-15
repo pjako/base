@@ -42,6 +42,8 @@ API void mem_destroyStdMalloc(Allocator* allocator);
 typedef struct Arena {
     Allocator allocator;
     BaseMemory base;
+    i64 unsafeRecord;
+    u64 alignment;
     u64 cap;
     u64 pos;
     u64 commitPos;
@@ -54,6 +56,9 @@ typedef struct MallocContext {
 
 API BaseMemory mem_getMallocBaseMem(void);
 
+API u64 mem_arenaStartUnsafeRecord(Arena* arena);
+API void mem_arenaStopUnsafeRecord(Arena* arena);
+API Arena* mem_makeArenaAligned(BaseMemory* baseMem, u64 size, u64 aligment);
 API Arena* mem_makeArena(BaseMemory* baseMem, u64 size);
 API Arena* mem_makeArenaPreAllocated(void* mem, u64 size);
 API void mem_destroyArena(Arena* arena);

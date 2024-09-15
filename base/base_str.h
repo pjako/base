@@ -30,6 +30,19 @@ API str_handle str_poolInject(str_Pool* pool, S8 str);
 API S8 str_poolGet(str_Pool* pool, str_handle handle);
 #endif
 
+typedef struct str__BuilderBlock {
+    struct str__BuilderBlock* prev;
+    struct str__BuilderBlock* next;
+    S8 str;
+} str__BuilderBlock;
+typedef struct str_Builder {
+    Arena* arena;
+    u64 arenaLastOffset;
+    u64 blockDefaultSize;
+    u64 totalStringSize;
+    str__BuilderBlock* firstBlock;
+    str__BuilderBlock* lastBlock;
+} str_Builder;
 
 #define str8(STR) str_makeViewSized((u8*) (STR), sizeof(STR) - 1)
 #define s8(STR) str_makeViewSized((u8*) (STR), sizeof(STR) - 1)
@@ -215,7 +228,23 @@ API S8 str_joinVargs(Arena* arena, u32 argCount, va_list list);
 API S8 str_fmtRaw(Arena* arena, S8 fmt, u32 argCount, ...);
 API S8 str_fmtVargs(Arena* arena, S8 fmt, u32 argCount, va_list list);
 
-#define str_record(STR, ARENA) for (u64 startIdx = mem_getArenaMemOffsetPos(ARENA) + 1;startIdx != 0; (( (startIdx - 1) < mem_getArenaMemOffsetPos(ARENA) ? (STR.content = &(ARENA)->memory[startIdx - 1], STR.size = (mem_getArenaMemOffsetPos(ARENA) - (startIdx - 1))) : (STR.content = NULL, STR.size = 0)  ), startIdx = 0))
+////////////////////////////
+/// Buikder ////////////////
+////////////////////////////
+
+#define str_builderFmt(BUILDER, FMTSTR, ... ) STR_ARG_OVER_UNDER_FLOW_CHECKER(str_builderJoinRaw, STR_AT_LEAST_TWO_ARGS, __VA_ARGS__)(ARENA, str__convertToKey(FMTSTR), STR_ARR_MACRO_CHOOSER(__VA_ARGS__)(str_KeyValue, str__convertToKeyValue, __VA_ARGS__))
+
+#define str_builderJoin(BUILDER, ...) STR_ARG_OVER_UNDER_FLOW_CHECKER(str_builderFmtRaw, STR_AT_LEAST_TWO_ARGS, __VA_ARGS__)(ARENA, STR_ARR_MACRO_CHOOSER(__VA_ARGS__)(str_KeyVakue, str__convertToValue, __VA_ARGS__))
+
+API str_Builder str_builderInit(Arena* arena, u64 blockDefaultSize);
+API S8 str_builderFinish(Arena* targetArena);
+
+API void str_builderJoinRaw(str_Builder* builder, u32 argCount, ...);
+// API void str_builderJoinVargs(str_Builder* builder, u32 argCount, va_list list);
+API void str_builderFmtRaw(str_Builder* builder, S8 fmt, u32 argCount, ...);
+// API void str_builderFmtVargs(str_Builder* builder, S8 fmt, u32 argCount, va_list list);
+
+#define str_record(STR, ARENA) for (u64 startIdx = mem_arenaStartUnsafeRecord(ARENA) + 1;startIdx != 0; (( (startIdx - 1) < mem_getArenaMemOffsetPos(ARENA) ? (STR.content = &(ARENA)->memory[startIdx - 1], STR.size = (mem_getArenaMemOffsetPos(ARENA) - (startIdx - 1))) : (STR.content = NULL, STR.size = 0)  ), startIdx = 0, mem_arenaStopUnsafeRecord(ARENA)))
 
 ////////////////////////////
 // NOTE(pjako): fmt/join implementation

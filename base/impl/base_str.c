@@ -868,6 +868,8 @@ bx str__insertValue(Arena* arena, u32 insertCount, S8 valueFormat, u32 argCount,
 
 S8 str_fmtVargs(Arena* arena, S8 fmt, u32 argCount, va_list list) {
    S8 strOut;
+   u32 storedAligmnet = arena->alignment;
+   arena->alignment = 1;
    str_record(strOut, arena) {
       char lastChar = 0;
       char currentChar = 0;
@@ -893,6 +895,7 @@ S8 str_fmtVargs(Arena* arena, S8 fmt, u32 argCount, va_list list) {
          } else if (currentChar == '{') {
             if (!(idx < fmt.size)) {
                ASSERT(!"Encountered single '{' at the end of the string!");
+               arena->alignment = storedAligmnet;
                return str_lit("");
             }
             char nextChar = fmt.content[idx + 1];
@@ -912,6 +915,7 @@ S8 str_fmtVargs(Arena* arena, S8 fmt, u32 argCount, va_list list) {
          } else if (currentChar == '}') {
             if (!(idx < fmt.size)) {
                ASSERT(!"Encountered single '}' at the end of the string!");
+               arena->alignment = storedAligmnet;
                return str_lit("");
             }
             char nextChar = fmt.content[idx + 1];
@@ -919,6 +923,7 @@ S8 str_fmtVargs(Arena* arena, S8 fmt, u32 argCount, va_list list) {
                idx += 1;
             } else {
                ASSERT(!"Encountered single '}' ");
+               arena->alignment = storedAligmnet;
                return str_lit("");
             }
             i32 textSize = idx - textStartIdx;
@@ -939,7 +944,69 @@ S8 str_fmtVargs(Arena* arena, S8 fmt, u32 argCount, va_list list) {
       }
    }
 
+   arena->alignment = storedAligmnet;
    return strOut;
+}
+
+
+str_Builder str_builderInit(Arena* arena, u64 blockDefaultSize) {
+   str_Builder builder = {
+      .arena = arena,
+      .blockDefaultSize = blockDefaultSize ? blockDefaultSize : MEGABYTE(1),
+   };
+
+   return builder;
+}
+
+S8 str_builderFinish(Arena* targetArena) {
+   
+}
+
+void str_builderJoinRaw(str_Builder* builder, u32 argCount, ...) {
+   ASSERT(builder && "Builder is NULL");
+   u32 storedAlignment = builder->arena->alignment;
+   str__BuilderBlock* builderBlock = NULL;
+   if (builder->lastBlock != NULL && builder->arena->commitPos == builder->arenaLastOffset) {
+   } else {
+      builderBlock = (str__BuilderBlock*) mem_arenaPush(builder->arena, sizeOf(*builder->lastBlock));
+      if (builder->firstBlock == NULL) {
+         builder->firstBlock = builderBlock;
+         builder->lastBlock = builderBlock;
+      } else {
+         builder->lastBlock->next = builderBlock;
+         builderBlock->prev = builder->lastBlock;
+         builder->lastBlock = builderBlock;
+      }
+   }
+
+   va_list valist;
+   va_start(valist, argCount);
+   str_joinVargs(builder->arena, argCount, valist);
+   builder->arenaLastOffset = builder->arena->commitPos;
+   builder->arena->alignment = storedAlignment;
+}
+void str_builderFmtRaw(str_Builder* builder, S8 fmt, u32 argCount, ...) {
+   ASSERT(builder && "Builder is NULL");
+   u32 storedAlignment = builder->arena->alignment;
+   str__BuilderBlock* builderBlock = NULL;
+   if (builder->lastBlock != NULL && builder->arena->commitPos == builder->arenaLastOffset) {
+   } else {
+      builderBlock = (str__BuilderBlock*) mem_arenaPush(builder->arena, sizeOf(*builder->lastBlock));
+      if (builder->firstBlock == NULL) {
+         builder->firstBlock = builderBlock;
+         builder->lastBlock = builderBlock;
+      } else {
+         builder->lastBlock->next = builderBlock;
+         builderBlock->prev = builder->lastBlock;
+         builder->lastBlock = builderBlock;
+      }
+   }
+
+   va_list valist;
+   va_start(valist, argCount);
+   str_fmtVargs(builder->arena, fmt, argCount, valist);
+   builder->arenaLastOffset = builder->arena->commitPos;
+   builder->arena->alignment = storedAlignment;
 }
 
 

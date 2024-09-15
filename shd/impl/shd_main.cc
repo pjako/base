@@ -513,12 +513,19 @@ void shd_parseSpirvShaderDetails(Arena* arena, shd_Shader* shader, CompilerRefle
         case spv::ExecutionModelGLCompute: shader->type = shd_entryPointType_compute; break;
         default: ASSERT(!"Unknown execution model"); break;
     }
+    // arena->alignment = 16;
+    u32 numInputs = shdResources.stage_inputs.size() + 1;
+    arrInitZero(arena, &shader->inputs, numInputs);
+    // shader->inputs.capacity = shdResources.stage_inputs.size() + 1;
+    // shader->inputs.count = 0;
+    // shader->inputs.elements = (shd_ShaderParam*) malloc(shader->inputs.capacity * sizeof(shd_ShaderParam));
 
-    arrInit(arena, &shader->inputs, shdResources.stage_inputs.size());
     for (const Resource& resAttr: shdResources.stage_inputs) {
+        shader->inputs.count += 1;
         //attr_t refl_attr;
-        uint32_t decoration = compiler.get_decoration(resAttr.id, spv::DecorationLocation);
+        u32 decoration = compiler.get_decoration(resAttr.id, spv::DecorationLocation);
         shd_ShaderParam* input = &shader->inputs.elements[decoration];
+        mem_setZero(input, sizeOf(shader->inputs.elements[0]));
 
         if (shader->type == shd_entryPointType_pixel) {
             // overwrite in/out name to match each other
@@ -534,7 +541,8 @@ void shd_parseSpirvShaderDetails(Arena* arena, shd_Shader* shader, CompilerRefle
             auto type = compiler.get_type(resAttr.type_id);
             auto decorationStr = compiler.get_decoration_string(resAttr.id, spv::DecorationLocation);
         } else {
-            input->name = str_makeSized(arena, (u8*)resAttr.name.c_str(), resAttr.name.size());
+            S8 inputName = str_makeSized(arena, (u8*)resAttr.name.c_str(), resAttr.name.size());
+            input->name = inputName;
             u32 startIdxShort = str_lastIndexOfChar(input->name, u8'.') + 1;
             input->shortName = str_subStr(input->name, startIdxShort, input->name.size);
         }
@@ -549,11 +557,17 @@ void shd_parseSpirvShaderDetails(Arena* arena, shd_Shader* shader, CompilerRefle
             default: break; // error unknowntype
         }
     }
-    shader->inputs.count = shader->inputs.capacity;
 
-    arrInit(arena, &shader->outputs, shdResources.stage_outputs.size());
+    u32 numOutputs = shdResources.stage_outputs.size() + 1;
+    arrInitZero(arena, &shader->outputs, numOutputs);
+
+    // shader->outputs.capacity = shdResources.stage_inputs.size() + 1;
+    // shader->outputs.count = 0;
+    // shader->outputs.elements = (shd_ShaderParam*) malloc(shader->inputs.capacity * sizeof(shd_ShaderParam));
+
     for (const Resource& resAttr: shdResources.stage_outputs) {
         //attr_t refl_attr;
+        shader->outputs.count += 1;
         uint32_t decoration = compiler.get_decoration(resAttr.id, spv::DecorationLocation);
         shd_ShaderParam* outputs = &shader->outputs.elements[decoration];
         S8 outputName = str_fromCppStd(resAttr.name);
@@ -585,7 +599,7 @@ void shd_parseSpirvShaderDetails(Arena* arena, shd_Shader* shader, CompilerRefle
             default: break; // error unknowntype
         }
     }
-    shader->outputs.count = shader->outputs.capacity;
+    // arena->alignment = 1;
 
     // TODO: Handle non bindless case for uniforms/textures/samplers
 #if 0
@@ -1324,7 +1338,7 @@ S8 shd_generateHeader(Arena* arena, ShaderFileInfo* fileInfo, S8 prefix, CodeInf
         for (u32 idx = 0; idx < fileInfo->renderPrograms.count; idx++) {
             RenderProgram* renderProgram = fileInfo->renderPrograms.elements + idx;
             
-            str_fmt(arena, str8("typedef struct {0}{1}CmdBuilder {{ rx_RenderCmdBuilder* builder; }} {0}{1}CmdBuilder\n"), prefix, renderProgram->name);
+            str_fmt(arena, str8("typedef struct {0}{1}CmdBuilder {{ rx_RenderCmdBuilder* builder; }} {0}{1}CmdBuilder;\n"), prefix, renderProgram->name);
         }
         
 #if 0
@@ -2692,9 +2706,9 @@ i32 main(i32 argc, char* argv[]) {
 #if 0
     char* debugArgV[] = {
         (char*) "-s",
-        (char*) PROJECT_ROOT "/_examples/sample_shadows.hlsl",
+        (char*) PROJECT_ROOT "/_examples/sample_sdfRect.hlsl",
         (char*) "-h",
-        (char*) PROJECT_ROOT "/_examples/sample_shadows.hlsl.h"
+        (char*) PROJECT_ROOT "/_examples/sample_sdfRect.hlsl.h"
     };
     i32 debugArgc = countOf(debugArgV);
 
@@ -2763,7 +2777,7 @@ i32 main(i32 argc, char* argv[]) {
     // parse shader file(s)...
 
     BaseMemory baseMem = os_getBaseMemory();
-    Arena* arena = mem_makeArena(&baseMem, MEGABYTE(20));
+    Arena* arena = mem_makeArena(&baseMem, MEGABYTE(60));
 
 
     S8 shaderFileContent = os_fileRead(arena, shaderFilePath);

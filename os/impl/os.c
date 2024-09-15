@@ -131,24 +131,24 @@ BaseMemory os_getBaseMemory(void) {
 LOCAL DateTime os__posixDateTimeFromSystemTime(struct tm* in, u16 ms) {
 	DateTime result = {0};
 	result.year   = in->tm_year;
-	result.mon    = in->tm_mon;
+	result.month    = in->tm_mon;
 	result.day    = in->tm_mday;
 	result.hour   = in->tm_hour;
-	result.min    = in->tm_min;
-	result.sec    = in->tm_sec;
-	result.msec   = ms;
+	result.minute    = in->tm_min;
+	result.second    = in->tm_sec;
+	result.milliSecond   = ms;
 	return result;
 }
 
 LOCAL struct timespec os__posixLocalSystemTimeFromDateTime(DateTime* in) {
 	struct tm result_tm = {0};
 	result_tm.tm_year = in->year;
-	result_tm.tm_mon  = in->mon;
+	result_tm.tm_mon  = in->month;
 	result_tm.tm_mday = in->day;
 	result_tm.tm_hour = in->hour;
-	result_tm.tm_min  = in->min;
-	result_tm.tm_sec  = in->sec;
-	long ms = in->msec;
+	result_tm.tm_min  = in->minute;
+	result_tm.tm_sec  = in->second;
+	long ms = in->milliSecond;
 	time_t result_tt = timelocal(&result_tm);
 	struct timespec result = { .tv_sec = result_tt, .tv_nsec = ms * 1000000 };
 	return result;
@@ -157,12 +157,12 @@ LOCAL struct timespec os__posixLocalSystemTimeFromDateTime(DateTime* in) {
 LOCAL struct timespec os__posixUniversalSystemTimeFromDateTime(DateTime* in) {
 	struct tm result_tm = {0};
 	result_tm.tm_year = in->year;
-	result_tm.tm_mon  = in->mon;
+	result_tm.tm_mon  = in->month;
 	result_tm.tm_mday = in->day;
 	result_tm.tm_hour = in->hour;
-	result_tm.tm_min  = in->min;
-	result_tm.tm_sec  = in->sec;
-	long ms = in->msec;
+	result_tm.tm_min  = in->minute;
+	result_tm.tm_sec  = in->second;
+	long ms = in->milliSecond;
 	time_t result_tt = timegm(&result_tm);
 	struct timespec result = { .tv_sec = result_tt, .tv_nsec = ms * 1000000 };
 	return result;
@@ -298,10 +298,23 @@ S8 os_filepath(Arena* arena, os_systemPath path) {
 		case os_systemPath_binary: {
             mms pushAmount = 1024 * sizeOf(u32);
             u8* mem = mem_arenaPush(arena, pushAmount);
-			readlink("/proc/self/exe", (char*)mem, pushAmount);
+            #if OS_APPLE
+            i32 size = 0;
+            _NSGetExecutablePath(NULL, &size);
+            i32 error = _NSGetExecutablePath((char*)mem, &size);
+            if (error != 0) {
+                return str_lit("");
+            }
+            #else
+			i32 size = readlink("/proc/self/exe", (char*)mem, pushAmount);
+            if (size == -1) {
+                return str_lit("");
+            }
+            #endif
+            result.size = size;
+            result.content = mem;
 			u64 end = str_lastIndexOfChar(result, '/');
 			result.size = end - 1;
-            result.content = mem;
             mem_arenaPopAmount(arena, pushAmount - result.size);
 		} break;
 		case os_systemPath_userData: {
@@ -366,21 +379,21 @@ os_FileProperties os_fileProperties(S8 fileName) {
 
     DateTime dateTime;
     dateTime.year  = tt->tm_year;
-    dateTime.mon   = tt->tm_mon;
+    dateTime.month   = tt->tm_mon;
     dateTime.day   = tt->tm_mday;
     dateTime.hour  = tt->tm_hour;
-    dateTime.sec   = tt->tm_sec;
-    dateTime.msec  = 0; //roundVal(stats.st_ctimespec , 1000000);
+    dateTime.second   = tt->tm_sec;
+    dateTime.milliSecond  = 0; //roundVal(stats.st_ctimespec , 1000000);
     fileProps.creationTime = tm_toDenseTime(dateTime);
 
     tt = gmtime_r(&stats.st_ctimespec.tv_sec, &time);
     //DateTime dateTime;
     dateTime.year  = tt->tm_year;
-    dateTime.mon   = tt->tm_mon;
+    dateTime.month   = tt->tm_mon;
     dateTime.day   = tt->tm_mday;
     dateTime.hour  = tt->tm_hour;
-    dateTime.sec   = tt->tm_sec;
-    dateTime.msec  = 0; //roundVal(stats.st_ctimespec , 1000000);
+    dateTime.second   = tt->tm_sec;
+    dateTime.milliSecond  = 0; //roundVal(stats.st_ctimespec , 1000000);
     fileProps.lastChangeTime = tm_toDenseTime(dateTime);
 
     return fileProps;

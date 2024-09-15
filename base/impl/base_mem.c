@@ -307,7 +307,9 @@ u64 mem_getArenaMemOffsetPos(Arena* arena) {
 void* mem_arenaPush(Arena* arena, u64 size) {
     ASSERT(arena);
     void* result = NULL;
-    size = alignUp(size, 16);
+    if (!arena->unsafeRecord && arena->alignment > 1) {
+        size = alignUp(size, arena->alignment);
+    }
     if (arena->pos + size <= arena->cap) {
         result = arena->memory + (arena->pos - (u64_cast(&arena->memory[0]) - u64_cast(arena)));
         arena->pos += size;
@@ -440,6 +442,10 @@ LOCAL void arena__freeFn(void* ptr, void* userPtr) {
 }
 
 Arena* mem_makeArena(BaseMemory* baseMem, u64 cap) {
+    return mem_makeArenaAligned(baseMem, cap, 16);
+}
+
+Arena* mem_makeArenaAligned(BaseMemory* baseMem, u64 cap, u64 aligment) {
     u32 arr = sizeOf(Arena);
     ASSERT(baseMem);
     ASSERT(baseMem->reserve);
@@ -462,6 +468,7 @@ Arena* mem_makeArena(BaseMemory* baseMem, u64 cap) {
     arena->base = *baseMem;
     arena->cap = cap;
     arena->commitPos = commitSize;
+    arena->alignment = aligment;
 
     arena->pos = ((u64) &arena->memory[0]) - ((u64) arena);
     return arena;
@@ -476,6 +483,22 @@ void mem_destroyArena(Arena* arena) {
     arena->commitPos = 0;
     arena->cap = 0;
     arena->base.release(arena->base.ctx, (void*) arena, cap);
+}
+
+
+u64 mem_arenaStartUnsafeRecord(Arena* arena) {
+    ASSERT(arena);
+    arena->unsafeRecord += 1;
+    return mem_getArenaMemOffsetPos(arena);
+}
+void mem_arenaStopUnsafeRecord(Arena* arena) {
+    ASSERT(arena);
+    ASSERT(arena->unsafeRecord > 0);
+    arena->unsafeRecord -= 1;
+
+    if (arena->unsafeRecord == 0) {
+        arena->pos = alignUp(arena->pos, arena->alignment);
+    }
 }
 
 LOCAL void* mem__reservePre(void* ctx, u64 size) {

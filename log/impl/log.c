@@ -11,9 +11,9 @@
 #ifndef PROJECT_ROOT
 #define PROJECT_ROOT ""
 #endif
-
+#define STRLOG_NO_COLOR
 void log__writeTimestamp(Arena* arena, log_Severity severity, S8 fileName, u64 line) {
-    log_Severity sev = maxVal(minVal(severity, log_severity_fatal), log_severity_trace);
+    log_Severity sev = clampVal(severity, log_severity_trace, log_severity_fatal);
     S8 log__severityLevelStrings[] = {
         str_lit("TRACE"), str_lit("DEBUG"), str_lit("INFO "), str_lit("WARN "), str_lit("ERROR"), str_lit("FATAL")
     };
