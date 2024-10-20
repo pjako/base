@@ -304,7 +304,9 @@
 //
 
 #if COMPILER_MSVC
-#define ASSERT(C) while(!(C)) __assume(0)
+#include "assert.h"
+#define ASSERT(C) assert(C)
+//#define ASSERT(C) while(!(C)) __assume(0)
 #else
 #include "assert.h"
 #define ASSERT(C) assert(C)

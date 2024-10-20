@@ -3,6 +3,10 @@
 // C99 conversion by Aarni Gratseff
 // https://github.com/aarni57/offalloc
 
+#ifndef OFFALLOC_C
+#define OFFALLOC_C
+
+
 #include "offalloc.h"
 
 #include <stdlib.h>
@@ -526,3 +530,5 @@ void oa_storage_report_full(const oa_allocator_t *self,
         report->free_regions[i].count = count;
     }
 }
+
+#endif // OFFALLOC_C

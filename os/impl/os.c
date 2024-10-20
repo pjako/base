@@ -1072,33 +1072,41 @@ S8 os_filepath(Arena* arena, os_systemPath path) {
             u8* mem = mem_arenaPush(arena, pushAmount);
 			DWORD size = GetCurrentDirectoryW(tmpCount, (WCHAR*) tmpName);
             ASSERT((size >= tmpCount) && "Increase tmpName size");
+            path16.content = (u16*) mem;
             path16.size = size;
-            result = str_fromS16(tmpArena, path16);
+            result = str_replaceAll(arena, str_fromS16(tmpArena, path16), s8("\\"), s8("/"));
         } break;
         case os_systemPath_binary: {
-            mms pushAmount = 1024 * sizeOf(u32);
+            mms pushAmount = 2 * 1024 * sizeOf(u32);
             u8* mem = mem_arenaPush(arena, pushAmount);
+            DWORD preError = GetLastError();
             DWORD size = GetModuleFileNameW(0, (WCHAR*)mem, pushAmount);
-            ASSERT(size == tmpCount && GetLastError() == ERROR_INSUFFICIENT_BUFFER && "Increase tmpName size");
+            DWORD error = GetLastError();
+            ASSERT(size == tmpCount && error == ERROR_INSUFFICIENT_BUFFER && "Increase tmpName size");
+            path16.content = (u16*) mem;
             path16.size = size;
-            S8 fullPath = str_fromS16(tmpArena, path16);
+            S8 fullPath = str_replaceAll(arena, str_fromS16(tmpArena, path16), s8("\\"), s8("/"));
 			S8 binaryPath = os_getDirectoryFromFilepath(fullPath);
             result = binaryPath;
 		} break;
 		case os_systemPath_userData: {
+            mms pushAmount = 1024 * sizeOf(u32);
+            u8* mem = mem_arenaPush(arena, pushAmount);
 			HANDLE token = GetCurrentProcessToken();
             bx success = GetUserProfileDirectoryW(token, (WCHAR*)tmpName, &tmpCount);
             ASSERT(success && "Increase tmpName size");
+            path16.content = (u16*) mem;
             path16.size = tmpCount;
-            result = str_fromS16(tmpArena, path16);
+            result = str_replaceAll(arena, str_fromS16(tmpArena, path16), s8("\\"), s8("/"));
 		} break;
 		case os_systemPath_tempData: {
             mms pushAmount = 1024 * sizeOf(u32);
             u8* mem = mem_arenaPush(arena, pushAmount);
 			DWORD size = GetTempPathW(pushAmount, (WCHAR*)mem);
             ASSERT(size >= tmpCount && "Increase tmpName size");
+            path16.content = (u16*) mem;
             path16.size = size;
-            result = str_fromS16(tmpArena, path16);
+            result = str_replaceAll(arena, str_fromS16(tmpArena, path16), s8("\\"), s8("/"));
 		} break;
 	}
 
@@ -1413,18 +1421,17 @@ void os_threadSetName(os_Thread* thread, S8 name) {
 }
 
 os_Dl* os_dlOpen(S8 filePath) {
-    HINSTANCE hInst;
-    char fileName[1024];
-    u32 size = minVal(countOf(fileName) - 1, filePath.size);
-    mem_copy(fileName, filePath.content, size);
-    fileName[size] = '\0';
-    hInst = LoadLibrary(fileName);
-#if 0
-    if (hInst==NULL) {
-        var.lasterror = GetLastError ();
-        var.err_rutin = "dlopen";
+    S8 dllExtension = s8(".dll");
+    if (!str_hasSuffix(filePath, dllExtension)) {
+        dllExtension = s8("");
     }
-#endif
+
+    mem_defineMakeStackArena(tmpArena, 2048 * sizeOf(u32));
+
+    S8 dllPath = str_join(tmpArena, filePath, dllExtension, s8("\0"));
+
+    HINSTANCE hInst = LoadLibrary((const char *) dllPath.content);
+
     return (os_Dl*) hInst;
 }
 

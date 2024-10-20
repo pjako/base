@@ -11,6 +11,46 @@
 #define RX_INTERNAL
 #include "rx/rx.h"
 
+
+#define RX_WIN 0
+#define RX_OSX 0
+#define RX_IOS 0
+#define RX_ANDROID 0
+#define RX_LINUX 0
+#define RX_UNIX 0
+#define RX_EMSCRIPTEN 0
+
+#ifdef _WIN32
+#undef RX_WIN
+#define RX_WIN 1
+#elif defined(__ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__)
+#undef RX_OSX
+#define RX_OSX 1
+#elif defined(__ENVIRONMENT_IPHONE_OS_VERSION_MIN_REQUIRED__) || defined(__ENVIRONMENT_TV_OS_VERSION_MIN_REQUIRED__)
+#undef RX_IOS
+#define RX_IOS 1
+#elif __ANDROID__
+#undef RX_ANDROID
+#define RX_ANDROID 1
+#elif __linux__
+#undef RX_LINUX
+#define RX_LINUX 1
+#elif __unix__
+#undef RX_UNIX
+#define RX_UNIX 1
+#elif __EMSCRIPTEN__
+#undef RX_EMSCRIPTEN
+#define RX_EMSCRIPTEN 1
+#else
+#error "Unknown Operation System"
+#endif
+#if RX_OSX || RX_IOS
+#define RX_APPLE 1
+#else
+#define RX_APPLE 0
+#endif
+
+
 #define RX_OGL
 
 
@@ -30,13 +70,13 @@
 #import <QuartzCore/CAMetalLayer.h>
 #endif
 #if RX_OGL
-#if OS_APPLE
+#if RX_APPLE
 #include <TargetConditionals.h>
 #ifndef GL_SILENCE_DEPRECATION
 #define GL_SILENCE_DEPRECATION
 #endif
 
-#if OS_IOS
+#if RX_IOS
 #include <OpenGLES/ES3/gl.h>
 #include <OpenGLES/ES3/glext.h>
 #import <UIKit/UIKit.h>
@@ -46,7 +86,7 @@
 #import <QuartzCore/QuartzCore.h>
 #define RX_GLCORE33
 #endif
-#elif OS_WIN
+#elif RX_WIN
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
@@ -88,6 +128,17 @@
     typedef int64_t  GLint64;
     typedef float  GLfloat;
     typedef int  GLint;
+
+    typedef enum GL_ERRROR {
+        GL_NO_ERROR =                       0,
+        GL_INVALID_ENUM =                   0x0500,
+        GL_INVALID_VALUE =                  0x0501,
+        GL_INVALID_OPERATION =              0x0502,
+        GL_STACK_OVERFLOW =                 0x0503,
+        GL_STACK_UNDERFLOW =                0x0504,
+        GL_OUT_OF_MEMORY =                  0x0505,
+        error__forceU32 = RX_U32_MAX
+    } GL_ERRROR;
     
     #define GL_TRIANGLE_FAN 0x0006
     #define GL_LINES_ADJACENCY 0x000A
@@ -326,7 +377,7 @@
 // todo: embed the library
 #include "offalloc.c"
 
-#if OS_APPLE
+#if RX_APPLE
 #if __has_feature(objc_arc)
 #define RX_OBJC_RELESE(obj) { obj = nil; }
 #else
@@ -477,6 +528,7 @@ typedef struct rx_Texture {
 #endif
     };
     rx_Extend3D size;
+    rx_swapChain swapChain;
     rx_textureFormat format;
     rx_textureDimension dimension;
     uint32_t baseMipLevel;
@@ -619,6 +671,17 @@ typedef struct rx_ResGroupLayout {
 } rx_ResGroupLayout;
 
 typedef struct rx_SwapChain {
+    #if RX_OGL
+    struct {
+        #if RX_WIN
+        HGLRC wglCtx;
+        HDC dc;
+        #endif
+        GLuint vao;
+        int framebuffer;
+    } gl;
+    #endif
+
     rx_texture textures[RX_MAX_INFLIGHT_FRAMES];
     u32 textureCount : 2;
     u32 gen : 16;
@@ -814,6 +877,11 @@ typedef struct rx_Ctx {
     Arena* arena;
     rx_error error;
     u64 frameIdx;
+    int sampleCount;
+    struct {
+        bool (*makeSwapChain)(struct rx_Ctx*, rx_SwapChain* swapChain, rx_SwapChainDesc*);
+        rx_texture (*getCurrentSwapTexture)(struct rx_Ctx*, rx_SwapChain* swapChain);
+    } backendApi;
     rx_Features features;
     rx_Limits limits;
     rx__poolDef(rx_Buffer) buffers;
@@ -827,7 +895,7 @@ typedef struct rx_Ctx {
     rx__poolDef(rx_SwapChain) swapChains;
 
 
-    rx_swapChain defaultSwapChain;
+    //rx_swapChain defaultSwapChain;
     rx_resGroupLayout  defaultResGroupDynamicOffsetBuffers;
     rx_buffer uniformBuffer;
     rx_resGroup defaultDynResGroup;
@@ -1038,7 +1106,8 @@ inline uint64_t rx__nextBit32(uint64_t x) {
 }
 #endif
 
-#ifdef OS_WINDOWS
+#if RX_WIN
+#include <windows.h>
 #include <intrin.h>
 static inline uint64_t rx__nextBitIdx(uint64_t bitflield) {
     uint32_t out = 0;
@@ -2547,6 +2616,7 @@ typedef int  GLint;
     RX__XMACRO(glUniformBlockBinding,             void, (GLuint program, GLuint uniformBlockIndex, GLuint uniformBlockBinding)) \
     RX__XMACRO(glGetActiveUniformBlockiv,         void, (GLuint program, GLuint uniformBlockIndex, GLenum pname, GLint *params)) \
     RX__XMACRO(glBindBufferRange,                 void, (GLenum target, GLuint index, GLuint buffer, GLintptr offset, GLsizeiptr size)) \
+    RX__XMACRO(glFlush,                           void, (void)) \
     RX__XMACRO(glDeleteSamplers,                  void, (GLsizei n, const GLuint* samplers))
 
 // generate GL function pointer typedefs
@@ -2666,14 +2736,78 @@ typedef struct rx_GlCachedTextureSamplerBindSlot {
     GLuint sampler;
 } rx_GlCachedTextureSamplerBindSlot;
 
+#if OS_WIN
+#define WGL_NUMBER_PIXEL_FORMATS_ARB 0x2000
+#define WGL_SUPPORT_OPENGL_ARB 0x2010
+#define WGL_DRAW_TO_WINDOW_ARB 0x2001
+#define WGL_PIXEL_TYPE_ARB 0x2013
+#define WGL_TYPE_RGBA_ARB 0x202b
+#define WGL_ACCELERATION_ARB 0x2003
+#define WGL_NO_ACCELERATION_ARB 0x2025
+#define WGL_RED_BITS_ARB 0x2015
+#define WGL_GREEN_BITS_ARB 0x2017
+#define WGL_BLUE_BITS_ARB 0x2019
+#define WGL_ALPHA_BITS_ARB 0x201b
+#define WGL_DEPTH_BITS_ARB 0x2022
+#define WGL_STENCIL_BITS_ARB 0x2023
+#define WGL_DOUBLE_BUFFER_ARB 0x2011
+#define WGL_SAMPLES_ARB 0x2042
+#define WGL_CONTEXT_DEBUG_BIT_ARB 0x00000001
+#define WGL_CONTEXT_FORWARD_COMPATIBLE_BIT_ARB 0x00000002
+#define WGL_CONTEXT_PROFILE_MASK_ARB 0x9126
+#define WGL_CONTEXT_CORE_PROFILE_BIT_ARB 0x00000001
+#define WGL_CONTEXT_MAJOR_VERSION_ARB 0x2091
+#define WGL_CONTEXT_MINOR_VERSION_ARB 0x2092
+#define WGL_CONTEXT_FLAGS_ARB 0x2094
+#define ERROR_INVALID_VERSION_ARB 0x2095
+#define ERROR_INVALID_PROFILE_ARB 0x2096
+#define ERROR_INCOMPATIBLE_DEVICE_CONTEXTS_ARB 0x2054
+typedef BOOL (WINAPI * PFNWGLSWAPINTERVALEXTPROC)(int);
+typedef BOOL (WINAPI * PFNWGLGETPIXELFORMATATTRIBIVARBPROC)(HDC,int,int,UINT,const int*,int*);
+typedef const char* (WINAPI * PFNWGLGETEXTENSIONSSTRINGEXTPROC)(void);
+typedef const char* (WINAPI * PFNWGLGETEXTENSIONSSTRINGARBPROC)(HDC);
+typedef HGLRC (WINAPI * PFNWGLCREATECONTEXTATTRIBSARBPROC)(HDC,HGLRC,const int*);
+typedef HGLRC (WINAPI * PFN_wglCreateContext)(HDC);
+typedef BOOL (WINAPI * PFN_wglDeleteContext)(HGLRC);
+typedef PROC (WINAPI * PFN_wglGetProcAddress)(LPCSTR);
+typedef HDC (WINAPI * PFN_wglGetCurrentDC)(void);
+typedef BOOL (WINAPI * PFN_wglMakeCurrent)(HDC,HGLRC);
+typedef void (WINAPI * PNF_wglShareLists)(HGLRC, HGLRC);
+#endif
+
 typedef struct rx_OpenGlCtx {
     rx_Ctx base;
-#if defined(RX_USE_WIN32_GL_LOADER)
-    void* openGl32Dll;
-#endif
 #if OS_APPLE
     RXGLLayer* nsGlLayer;
 #endif
+#if defined(RX_USE_WIN32_GL_LOADER)
+    struct {
+        HINSTANCE openGl32Dll;
+        HGLRC ctx;
+        PFN_wglCreateContext createContext;
+        PFN_wglDeleteContext deleteContext;
+        PFN_wglGetProcAddress getProcAddress;
+        PFN_wglGetCurrentDC getCurrentDC;
+        PFN_wglMakeCurrent makeCurrent;
+        PNF_wglShareLists shareLists;
+        PFNWGLSWAPINTERVALEXTPROC swapIntervalEXT;
+        PFNWGLGETPIXELFORMATATTRIBIVARBPROC getPixelFormatAttribivARB;
+        PFNWGLGETEXTENSIONSSTRINGEXTPROC getExtensionsStringEXT;
+        PFNWGLGETEXTENSIONSSTRINGARBPROC getExtensionsStringARB;
+        PFNWGLCREATECONTEXTATTRIBSARBPROC createContextAttribsARB;
+        // special case glGetIntegerv
+        void (WINAPI *getIntegerv)(uint32_t pname, int32_t* data);
+        bool ext_swap_control;
+        bool arb_multisample;
+        bool arb_pixel_format;
+        bool arb_create_context;
+        bool arb_create_context_profile;
+        HWND msgHwnd;
+        HDC msgDeviceContext;
+    } wgl;
+#endif
+    int glMajorVersion;
+    int glMinorVersion;
     GLuint vao;
     GLuint defaultFramebuffer;
     bx extAnisotropic;
@@ -2707,28 +2841,178 @@ typedef struct rx_OpenGlCtx {
 } rx_OpenGlCtx;
 
 #if defined(RX_USE_WIN32_GL_LOADER)
+
+
 // helper function to lookup GL functions in GL DLL
 typedef PROC (WINAPI * rx__wglGetProcAddress)(LPCSTR);
-LOCAL void* rx__glGetProcAddr(void* openGl32Dll, const char* name, rx__wglGetProcAddress wgl_getprocaddress) {
-    void* proc_addr = (void*) wgl_getprocaddress(name);
-    if (0 == proc_addr) {
-        proc_addr = (void*) GetProcAddress(openGl32Dll, name);
+LOCAL void* rx__glGetProcAddr(void* dll__, const char* n__, rx__wglGetProcAddress wglGetprocaddress) {
+    void* proc_addr = (void*) wglGetprocaddress(n__);
+    DWORD lastError = GetLastError();
+    if (proc_addr == NULL) {
+        proc_addr = (void*) GetProcAddress(dll__, n__);
     }
-    SOKOL_ASSERT(proc_addr);
+    assert(proc_addr);
     return proc_addr;
 }
 
+LOCAL bool rx__wglHasExt(const char* ext, const char* extensions) {
+    ASSERT(ext && extensions);
+    const char* start = extensions;
+    while (true) {
+        const char* where = strstr(start, ext);
+        if (!where) {
+            return false;
+        }
+        const char* terminator = where + strlen(ext);
+        if ((where == start) || (*(where - 1) == ' ')) {
+            if (*terminator == ' ' || *terminator == '\0') {
+                break;
+            }
+        }
+        start = terminator;
+    }
+    return true;
+}
+
+LOCAL bool rx__wglExtSupported(rx_OpenGlCtx* ctx, const char* ext) {
+    ASSERT(ext);
+    if (ctx->wgl.getExtensionsStringEXT) {
+        const char* extensions = ctx->wgl.getExtensionsStringEXT();
+        if (extensions) {
+            if (rx__wglHasExt(ext, extensions)) {
+                return true;
+            }
+        }
+    }
+    if (ctx->wgl.getExtensionsStringARB) {
+        const char* extensions = ctx->wgl.getExtensionsStringARB(ctx->wgl.getCurrentDC());
+        if (extensions) {
+            if (rx__wglHasExt(ext, extensions)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+static rx_OpenGlCtx* rx__oglProcCtx;
+LOCAL LRESULT os__win32DefaultWindowProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    //rx_OpenGlCtx* ctx = (rx_OpenGlCtx*) lParam;
+    //ASSERT(!"Nood to do things in here");
+    return DefWindowProc(hWnd, msg, wParam, lParam);
+}
+
 // populate GL function pointers
-LOCAL void rx__loadOpenGl(rx_OpenGlCtx* ctx) {
-    ASSERT(ctx->openGl32Dll == 0);
-    ctx->openGl32Dll = LoadLibraryA("opengl32.dll");
-    ASSERT(ctx->openGl32Dll != NULL);
-    rx__wglGetProcAddress wgl_getprocaddress = (rx__wglGetProcAddress) GetProcAddress(ctx->openGl32Dll, "wglGetProcAddress");
-    ASSERT(wgl_getprocaddress);
-    #define RX__XMACRO(name, ret, args) name = (PFN_ ## name) rx__glGetProcAddr(ctx->openGl32Dll, #name, wgl_getprocaddress);
+LOCAL void rx__glLoadOpenGl(rx_OpenGlCtx* ctx) {
+    ASSERT(ctx->wgl.openGl32Dll == 0);
+    ctx->wgl.openGl32Dll = LoadLibraryA("opengl32.dll");
+
+    
+    ASSERT(ctx->wgl.openGl32Dll != NULL);
+    rx__wglGetProcAddress wglGetprocaddress = (rx__wglGetProcAddress) GetProcAddress(ctx->wgl.openGl32Dll, "wglGetProcAddress");
+
+    ASSERT(ctx->wgl.openGl32Dll);
+    ctx->wgl.createContext = (PFN_wglCreateContext)(void*) GetProcAddress(ctx->wgl.openGl32Dll, "wglCreateContext");
+    ASSERT(ctx->wgl.createContext);
+    ctx->wgl.deleteContext = (PFN_wglDeleteContext)(void*) GetProcAddress(ctx->wgl.openGl32Dll, "wglDeleteContext");
+    ASSERT(ctx->wgl.deleteContext);
+    ctx->wgl.getProcAddress = (PFN_wglGetProcAddress)(void*) GetProcAddress(ctx->wgl.openGl32Dll, "wglGetProcAddress");
+    ASSERT(ctx->wgl.getProcAddress);
+    ctx->wgl.getCurrentDC = (PFN_wglGetCurrentDC)(void*) GetProcAddress(ctx->wgl.openGl32Dll, "wglGetCurrentDC");
+    ASSERT(ctx->wgl.getCurrentDC);
+    ctx->wgl.makeCurrent = (PFN_wglMakeCurrent)(void*) GetProcAddress(ctx->wgl.openGl32Dll, "wglMakeCurrent");
+    ASSERT(ctx->wgl.makeCurrent);
+    ctx->wgl.getIntegerv = (void(WINAPI*)(uint32_t, int32_t*)) GetProcAddress(ctx->wgl.openGl32Dll, "glGetIntegerv");
+    ASSERT(ctx->wgl.getIntegerv);
+    ctx->wgl.shareLists = (PNF_wglShareLists*) GetProcAddress(ctx->wgl.openGl32Dll, "wglShareLists");
+    ASSERT(ctx->wgl.shareLists);
+     
+    rx__oglProcCtx = ctx;
+    WNDCLASSW wndclassw;
+    mem_setZero(&wndclassw, sizeof(wndclassw));
+    wndclassw.style = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
+    wndclassw.lpfnWndProc = (WNDPROC) os__win32DefaultWindowProc;
+    wndclassw.hInstance = GetModuleHandleW(NULL);
+    //wndclassw.hCursor = LoadCursor(NULL, IDC_ARROW);
+    //wndclassw.hIcon = LoadIcon(NULL, IDI_WINLOGO);
+    wndclassw.lpszClassName = L"rxWindow";
+    RegisterClassW(&wndclassw);
+
+    // we keep a hidden windows as the base context
+    ctx->wgl.msgHwnd = CreateWindowExW(WS_EX_OVERLAPPEDWINDOW,
+        L"rxWindow",
+        L"rxWindow message window",
+        WS_CLIPSIBLINGS|WS_CLIPCHILDREN,
+        0, 0, 1, 1,
+        NULL, NULL,
+        GetModuleHandleW(NULL),
+        (void*) ctx);
+    if (!ctx->wgl.msgHwnd) {
+        DWORD error = GetLastError();
+        ASSERT(!"Creating rx ogl window failed");
+        return;
+        //_SAPP_PANIC(WIN32_CREATE_HELPER_WINDOW_FAILED);
+    }
+    ASSERT(ctx->wgl.msgHwnd);
+    ShowWindow(ctx->wgl.msgHwnd, SW_HIDE);
+    MSG msg;
+    while (PeekMessageW(&msg, ctx->wgl.msgHwnd, 0, 0, PM_REMOVE)) {
+        TranslateMessage(&msg);
+        DispatchMessageW(&msg);
+    }
+    ctx->wgl.msgDeviceContext = GetDC(ctx->wgl.msgHwnd);
+    if (!ctx->wgl.msgDeviceContext) {
+        ASSERT(!"RX: OpenGL getting device context Failed");
+        return;
+        //_SAPP_PANIC(WIN32_HELPER_WINDOW_GETDC_FAILED);
+    }
+
+
+
+
+    ASSERT(ctx->wgl.msgDeviceContext);
+    PIXELFORMATDESCRIPTOR pfd;
+    mem_setZero(&pfd, sizeof(pfd));
+    pfd.nSize = sizeof(pfd);
+    pfd.nVersion = 1;
+    pfd.dwFlags = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER;
+    pfd.iPixelType = PFD_TYPE_RGBA;
+    pfd.cColorBits = 24;
+    if (!SetPixelFormat(ctx->wgl.msgDeviceContext, ChoosePixelFormat(ctx->wgl.msgDeviceContext, &pfd), &pfd)) {
+        //_SAPP_PANIC(WIN32_DUMMY_CONTEXT_SET_PIXELFORMAT_FAILED);
+        ASSERT(!"RX: OpenGL dummy context set pixel format failed");
+        return;
+    }
+    HGLRC rc = ctx->wgl.createContext(ctx->wgl.msgDeviceContext);
+    if (!rc) {
+        //_SAPP_PANIC(WIN32_CREATE_DUMMY_CONTEXT_FAILED);
+        ASSERT(!"RX: OpenGL create dummy context failed");
+        return;
+    }
+    if (!ctx->wgl.makeCurrent(ctx->wgl.msgDeviceContext, rc)) {
+        ASSERT(!"RX: OpenGL make context current failed");
+        //_SAPP_PANIC(WIN32_DUMMY_CONTEXT_MAKE_CURRENT_FAILED);
+        return;
+    }
+    ctx->wgl.getExtensionsStringEXT = (PFNWGLGETEXTENSIONSSTRINGEXTPROC)(void*) ctx->wgl.getProcAddress("wglGetExtensionsStringEXT");
+    ctx->wgl.getExtensionsStringARB = (PFNWGLGETEXTENSIONSSTRINGARBPROC)(void*) ctx->wgl.getProcAddress("wglGetExtensionsStringARB");
+    ctx->wgl.createContextAttribsARB = (PFNWGLCREATECONTEXTATTRIBSARBPROC)(void*) ctx->wgl.getProcAddress("wglCreateContextAttribsARB");
+    ctx->wgl.swapIntervalEXT = (PFNWGLSWAPINTERVALEXTPROC)(void*) ctx->wgl.getProcAddress("wglSwapIntervalEXT");
+    ctx->wgl.getPixelFormatAttribivARB = (PFNWGLGETPIXELFORMATATTRIBIVARBPROC)(void*) ctx->wgl.getProcAddress("wglGetPixelFormatAttribivARB");
+    ctx->wgl.arb_multisample = rx__wglExtSupported(ctx, "WGL_ARB_multisample");
+    ctx->wgl.arb_create_context = rx__wglExtSupported(ctx, "WGL_ARB_create_context");
+    ctx->wgl.arb_create_context_profile = rx__wglExtSupported(ctx, "WGL_ARB_create_context_profile");
+    ctx->wgl.ext_swap_control = rx__wglExtSupported(ctx, "WGL_EXT_swap_control");
+    ctx->wgl.arb_pixel_format = rx__wglExtSupported(ctx, "WGL_ARB_pixel_format");
+    //ctx->wgl.makeCurrent(ctx->wgl.msgDeviceContext, 0);
+    //ctx->wgl.deleteContext(rc);
+
+    ASSERT(wglGetprocaddress);
+    #define RX__XMACRO(name, ret, args) name = (PFN_ ## name) rx__glGetProcAddr(ctx->wgl.openGl32Dll, #name, wglGetprocaddress);
     RX__GL_FUNCS
     #undef RX__XMACRO
 }
+
 #endif // RX_USE_WIN32_GL_LOADER
 
 LOCAL void rx__glInitLimits(rx_OpenGlCtx* ctx) {
@@ -2934,10 +3218,6 @@ LOCAL void rx__setupBackend(rx_Ctx* baseCtx, const rx_SetupDesc* desc) {
     // assumes that _sg.gl is already zero-initialized
     //_sg.gl.valid = true;
 
-    #if defined(RX_USE_WIN32_GL_LOADER)
-    rx__glLoadOpenGl();
-    #endif
-
     // clear initial GL error state
     #if defined(RX_DEBUG)
         while (glGetError() != GL_NO_ERROR);
@@ -2961,43 +3241,6 @@ LOCAL void rx__setupBackend(rx_Ctx* baseCtx, const rx_SetupDesc* desc) {
     });
 
     a32_mpscInit(&ctx->activeBumpAllocators, baseCtx->arena, baseCtx->bumpAllocators.capacity + 1);
-}
-
-LOCAL rx_Ctx* rx__create(Arena* arena, rx_SetupDesc* desc) {
-    ASSERT(arena);
-    ASSERT(desc);
-    rx_OpenGlCtx* ctx = mem_arenaPushStructZero(arena, rx_OpenGlCtx);
-    ctx->base.backend = rx_backend_gl400;
-#if OS_WINDOWS
-    os_Dl* openGlLib = os_dlOpen(s8(""))
-#endif
-
-
-#if OS_APPLE
-    ctx->nsGlLayer = (RXGLLayer*) desc->context.gl.appleCaOpenGlLayer;
-    ASSERT(ctx->nsGlLayer != 0);
-#endif
-    // init context
-#if 1
-    glGetIntegerv(GL_FRAMEBUFFER_BINDING, (GLint*)&ctx->defaultFramebuffer);
-    rx__oglCheckErrors()
-    //ASSERT(ctx->defaultFramebuffer);
-    glGenVertexArrays(1, &ctx->vao);
-    rx__oglCheckErrors()
-    ASSERT(ctx->vao);
-    glBindVertexArray(ctx->vao);
-#endif
-    rx__oglCheckErrors()
-    // incoming texture data is generally expected to be packed tightly
-    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-    rx__oglCheckErrors()
-
-    #if defined(RX_GLCORE33)
-        // enable seamless cubemap sampling (only desktop GL)
-        glEnable(GL_TEXTURE_CUBE_MAP_SEAMLESS);
-    #endif
-
-    return (rx_Ctx*) ctx;
 }
 
 LOCAL void rx__glDiscardContext(rx_Ctx* baseCtx) {
@@ -4268,6 +4511,9 @@ LOCAL bx rx__glCreateSwapChain(rx_Ctx* baseCtx, rx_SwapChain* swapChain) {
     rx_OpenGlCtx* ctx = (rx_OpenGlCtx*) baseCtx;
 
     rx_texture texHandle = rx__allocTexture(baseCtx);
+    int txsize = sizeof(texHandle);
+    int isize = sizeof(uint32_t);
+
     rx_Texture* texture = rx__getTexture(baseCtx, texHandle);
     texture->belongsToSwapChain = true;
 
@@ -4283,6 +4529,314 @@ LOCAL bx rx__glCreateSwapChain(rx_Ctx* baseCtx, rx_SwapChain* swapChain) {
     return true;
 }
 
+
+typedef struct rx__GlFramebufferConfig {
+    int         redBits;
+    int         greenBits;
+    int         blueBits;
+    int         alphaBits;
+    int         depthBits;
+    int         stencilBits;
+    int         samples;
+    bool        doublebuffer;
+    uintptr_t   handle;
+} rx__GlFramebufferConfig;
+
+LOCAL void rx__glInitFramebufferConfig(rx__GlFramebufferConfig* fbConfig) {
+    mem_setZero(fbConfig, sizeof(rx__GlFramebufferConfig));
+    /* -1 means "don't care" */
+    fbConfig->redBits = -1;
+    fbConfig->greenBits = -1;
+    fbConfig->blueBits = -1;
+    fbConfig->alphaBits = -1;
+    fbConfig->depthBits = -1;
+    fbConfig->stencilBits = -1;
+    fbConfig->samples = -1;
+}
+
+#define rx__countOf(ARR) (sizeof(ARR) / sizeof(ARR[0]))
+
+typedef struct rx__GlFramebufferSelect {
+    int leastMissing;
+    int leastColorDiff;
+    int leastExtraDiff;
+    bool bestMatch;
+} rx__GlFramebufferSelect;
+
+
+LOCAL void rx__glInitFramebufferSelect(rx__GlFramebufferSelect* fbselect) {
+    mem_setZero(fbselect, sizeof(*fbselect));
+    fbselect->leastMissing = 1000000;
+    fbselect->leastColorDiff = 10000000;
+    fbselect->leastExtraDiff = 10000000;
+    fbselect->bestMatch = false;
+}
+
+LOCAL bool rx__wglSelectFrameBufferConfig(rx__GlFramebufferSelect* fbselect, const rx__GlFramebufferConfig* desired, const rx__GlFramebufferConfig* current) {
+    int missing = 0;
+    if (desired->doublebuffer != current->doublebuffer) {
+        return false;
+    }
+
+    if ((desired->alphaBits > 0) && (current->alphaBits == 0)) {
+        missing++;
+    }
+    if ((desired->depthBits > 0) && (current->depthBits == 0)) {
+        missing++;
+    }
+    if ((desired->stencilBits > 0) && (current->stencilBits == 0)) {
+        missing++;
+    }
+    if ((desired->samples > 0) && (current->samples == 0)) {
+        /* Technically, several multisampling buffers could be
+            involved, but that's a lower level implementation detail and
+            not important to us here, so we count them as one
+        */
+        missing++;
+    }
+
+    /* These polynomials make many small channel size differences matter
+        less than one large channel size difference
+        Calculate color channel size difference value
+    */
+    int colorDiff = 0;
+    if (desired->redBits != -1) {
+        colorDiff += (desired->redBits - current->redBits) * (desired->redBits - current->redBits);
+    }
+    if (desired->greenBits != -1) {
+        colorDiff += (desired->greenBits - current->greenBits) * (desired->greenBits - current->greenBits);
+    }
+    if (desired->blueBits != -1) {
+        colorDiff += (desired->blueBits - current->blueBits) * (desired->blueBits - current->blueBits);
+    }
+
+    /* Calculate non-color channel size difference value */
+    int extraDiff = 0;
+    if (desired->alphaBits != -1) {
+        extraDiff += (desired->alphaBits - current->alphaBits) * (desired->alphaBits - current->alphaBits);
+    }
+    if (desired->depthBits != -1) {
+        extraDiff += (desired->depthBits - current->depthBits) * (desired->depthBits - current->depthBits);
+    }
+    if (desired->stencilBits != -1) {
+        extraDiff += (desired->stencilBits - current->stencilBits) * (desired->stencilBits - current->stencilBits);
+    }
+    if (desired->samples != -1) {
+        extraDiff += (desired->samples - current->samples) * (desired->samples - current->samples);
+    }
+
+    /* Figure out if the current one is better than the best one found so far
+        Least number of missing buffers is the most important heuristic,
+        then color buffer size match and lastly size match for other buffers
+    */
+    bool newClosest = false;
+    if (missing < fbselect->leastMissing) {
+        newClosest = true;
+    } else if (missing == fbselect->leastMissing) {
+        if ((colorDiff < fbselect->leastColorDiff) ||
+            ((colorDiff == fbselect->leastColorDiff) && (extraDiff < fbselect->leastExtraDiff)))
+        {
+            newClosest = true;
+        }
+    }
+    if (newClosest) {
+        fbselect->leastMissing = missing;
+        fbselect->leastColorDiff = colorDiff;
+        fbselect->leastExtraDiff = extraDiff;
+        fbselect->bestMatch = (missing | colorDiff | extraDiff) == 0;
+    }
+    return newClosest;
+}
+
+LOCAL int rx__wglAttrib(rx_OpenGlCtx* ctx, HDC dc, int pixel_format, int attrib) {
+    ASSERT(ctx->wgl.arb_pixel_format);
+    int value = 0;
+    if (!ctx->wgl.getPixelFormatAttribivARB(dc, pixel_format, 0, 1, &attrib, &value)) {
+        //_SAPP_PANIC(WIN32_GET_PIXELFORMAT_ATTRIB_FAILED);
+        return false;
+    }
+    return value;
+}
+
+LOCAL void rx__wglAttribiv(rx_OpenGlCtx* ctx, HDC dc, int pixel_format, int num_attribs, const int* attribs, int* results) {
+    ASSERT(ctx->wgl.arb_pixel_format);
+    if (!ctx->wgl.getPixelFormatAttribivARB(dc, pixel_format, 0, num_attribs, attribs, results)) {
+        //_SAPP_PANIC(WIN32_GET_PIXELFORMAT_ATTRIB_FAILED);
+        ASSERT(!"Get Pixelformat failed!");
+    }
+}
+
+LOCAL int rx__glFindPixelFormat(rx_OpenGlCtx* ctx, HDC dc) {
+    ASSERT(dc);
+    // ASSERT(_sapp.wgl.arb_pixel_format);
+
+    // #define _sapp_wgl_num_query_tags (12)
+    const int query_tags[] = {
+        WGL_SUPPORT_OPENGL_ARB,
+        WGL_DRAW_TO_WINDOW_ARB,
+        WGL_PIXEL_TYPE_ARB,
+        WGL_ACCELERATION_ARB,
+        WGL_DOUBLE_BUFFER_ARB,
+        WGL_RED_BITS_ARB,
+        WGL_GREEN_BITS_ARB,
+        WGL_BLUE_BITS_ARB,
+        WGL_ALPHA_BITS_ARB,
+        WGL_DEPTH_BITS_ARB,
+        WGL_STENCIL_BITS_ARB,
+        WGL_SAMPLES_ARB,
+    };
+
+    int numQueryTags = rx__countOf(query_tags);
+
+    const int result_support_opengl_index = 0;
+    const int result_draw_to_window_index = 1;
+    const int result_pixel_type_index = 2;
+    const int result_acceleration_index = 3;
+    const int result_double_buffer_index = 4;
+    const int result_red_bits_index = 5;
+    const int result_green_bits_index = 6;
+    const int result_blue_bits_index = 7;
+    const int result_alpha_bits_index = 8;
+    const int result_depth_bits_index = 9;
+    const int result_stencil_bits_index = 10;
+    const int result_samples_index = 11;
+
+    int query_results[rx__countOf(query_tags)] = {0};
+    // Drop the last item if multisample extension is not supported.
+    //  If in future querying with multiple extensions, will have to shuffle index values to have active extensions on the end.
+    int query_count = numQueryTags;
+    if (!ctx->wgl.arb_multisample) {
+        query_count = numQueryTags - 1;
+    }
+
+    int native_count = rx__wglAttrib(ctx, dc, 1, WGL_NUMBER_PIXEL_FORMATS_ARB);
+
+    rx__GlFramebufferConfig desired;
+    rx__glInitFramebufferConfig(&desired);
+    desired.redBits = 8;
+    desired.greenBits = 8;
+    desired.blueBits = 8;
+    desired.alphaBits = 8;
+    desired.depthBits = 24;
+    desired.stencilBits = 8;
+    desired.doublebuffer = true;
+    desired.samples = (ctx->base.sampleCount > 1) ? ctx->base.sampleCount : 0;
+
+    int pixel_format = 0;
+
+    rx__GlFramebufferSelect fbselect;
+    rx__glInitFramebufferSelect(&fbselect);
+    for (int i = 0; i < native_count; i++) {
+        const int n = i + 1;
+        rx__wglAttribiv(ctx, dc, n, query_count, query_tags, query_results);
+
+        if (query_results[result_support_opengl_index] == 0
+            || query_results[result_draw_to_window_index] == 0
+            || query_results[result_pixel_type_index] != WGL_TYPE_RGBA_ARB
+            || query_results[result_acceleration_index] == WGL_NO_ACCELERATION_ARB)
+        {
+            continue;
+        }
+
+        rx__GlFramebufferConfig u;
+        mem_setZero(&u, sizeof(u));
+        u.redBits     = query_results[result_red_bits_index];
+        u.greenBits   = query_results[result_green_bits_index];
+        u.blueBits    = query_results[result_blue_bits_index];
+        u.alphaBits   = query_results[result_alpha_bits_index];
+        u.depthBits   = query_results[result_depth_bits_index];
+        u.stencilBits = query_results[result_stencil_bits_index];
+        u.doublebuffer = 0 != query_results[result_double_buffer_index];
+        u.samples = query_results[result_samples_index]; // NOTE: If arb_multisample is not supported  - just takes the default 0
+
+        // Test if this pixel format is better than the previous one
+        if (rx__wglSelectFrameBufferConfig(&fbselect, &desired, &u)) {
+            pixel_format = (uintptr_t)n;
+
+            // Early exit if matching as good as possible
+            if (fbselect.bestMatch) {
+                break;
+            }
+        }
+    }
+
+    return pixel_format;
+}
+
+LOCAL bool rx__glMakeSwapChain(rx_Ctx* baseCtx, rx_SwapChain* swapChain, rx_SwapChainDesc* desc) {
+    ASSERT(baseCtx);
+    rx_OpenGlCtx* ctx = (rx_OpenGlCtx*) baseCtx;
+    HDC dc = GetDC(desc->windows.hWnd);
+    swapChain->gl.dc = dc;
+    int pixel_format = rx__glFindPixelFormat(ctx, dc);
+    if (0 == pixel_format) {
+        //_SAPP_PANIC(WIN32_WGL_FIND_PIXELFORMAT_FAILED);
+        ASSERT(!"Cant find pixel format ");
+        return false;
+    }
+    PIXELFORMATDESCRIPTOR pfd;
+    if (!DescribePixelFormat(dc, pixel_format, sizeof(pfd), &pfd)) {
+        //_SAPP_PANIC(WIN32_WGL_DESCRIBE_PIXELFORMAT_FAILED);
+        ASSERT(!"Wrong pixel format desc.");
+        return false;
+    }
+    if (!SetPixelFormat(dc, pixel_format, &pfd)) {
+        //_SAPP_PANIC(WIN32_WGL_SET_PIXELFORMAT_FAILED);
+        ASSERT(!"Setting pixel format failed");
+    }
+    if (!ctx->wgl.createContext) {
+        //_SAPP_PANIC(WIN32_WGL_ARB_CREATE_CONTEXT_REQUIRED);
+        ASSERT(!"Wgl context creation function missing");
+        return false;
+    }
+    if (!ctx->wgl.arb_create_context_profile) {
+        //_SAPP_PANIC(WIN32_WGL_ARB_CREATE_CONTEXT_PROFILE_REQUIRED);
+        ASSERT(!"Wgl context creation function missing");
+        return false;
+    }
+    const int attrs[] = {
+        WGL_CONTEXT_MAJOR_VERSION_ARB, ctx->glMajorVersion,//_sapp.desc.gl_major_version,
+        WGL_CONTEXT_MINOR_VERSION_ARB, ctx->glMinorVersion,//_sapp.desc.gl_minor_version,
+#if defined(RX_DEBUG)
+        WGL_CONTEXT_FLAGS_ARB, WGL_CONTEXT_FORWARD_COMPATIBLE_BIT_ARB | WGL_CONTEXT_DEBUG_BIT_ARB,
+#else
+        WGL_CONTEXT_FLAGS_ARB, WGL_CONTEXT_FORWARD_COMPATIBLE_BIT_ARB,
+#endif
+        WGL_CONTEXT_PROFILE_MASK_ARB, WGL_CONTEXT_CORE_PROFILE_BIT_ARB,
+        0, 0
+    };
+    swapChain->gl.wglCtx = ctx->wgl.createContextAttribsARB(dc, 0, attrs);
+    if (!swapChain->gl.wglCtx) {
+        const DWORD err = GetLastError();
+        if (err == (0xc0070000 | ERROR_INVALID_VERSION_ARB)) {
+            //_SAPP_PANIC(WIN32_WGL_OPENGL_VERSION_NOT_SUPPORTED);
+            return false;
+        } else if (err == (0xc0070000 | ERROR_INVALID_PROFILE_ARB)) {
+            //_SAPP_PANIC(WIN32_WGL_OPENGL_PROFILE_NOT_SUPPORTED);
+            return false;
+        } else if (err == (0xc0070000 | ERROR_INCOMPATIBLE_DEVICE_CONTEXTS_ARB)) {
+            //_SAPP_PANIC(WIN32_WGL_INCOMPATIBLE_DEVICE_CONTEXT);
+            return false;
+        } else {
+            //_SAPP_PANIC(WIN32_WGL_CREATE_CONTEXT_ATTRIBS_FAILED_OTHER);
+            return false;
+        }
+    }
+    // share resources between gl context
+    ctx->wgl.shareLists(ctx->wgl.ctx, swapChain->gl.wglCtx);
+    ctx->wgl.makeCurrent(swapChain->gl.dc, swapChain->gl.wglCtx);
+    if (ctx->wgl.ext_swap_control) {
+        /* FIXME: DwmIsCompositionEnabled() (see GLFW) */
+        ctx->wgl.swapIntervalEXT(1); // 1 -> vsync
+    }
+    const uint32_t gl_framebufferBinding = 0x8CA6;
+    ctx->wgl.getIntegerv(gl_framebufferBinding, (int32_t*)&swapChain->gl.framebuffer);
+
+    swapChain->gl.vao = 0;
+    glGenVertexArrays(1, &swapChain->gl.vao);
+    glBindVertexArray(swapChain->gl.vao);
+}
+
 LOCAL rx_texture rx__glGetCurrentSwapTexture(rx_Ctx* baseCtx, rx_SwapChain* swapChain) {
     ASSERT(baseCtx);
     ASSERT(swapChain);
@@ -4290,6 +4844,7 @@ LOCAL rx_texture rx__glGetCurrentSwapTexture(rx_Ctx* baseCtx, rx_SwapChain* swap
     // TODO(PJ): might do something different on other platforms
     return swapChain->textures[0];
 }
+
 
 LOCAL GLenum rx__glStencilOp(rx_stencilOp op) {
     switch (op) {
@@ -5286,13 +5841,15 @@ LOCAL void rx__glExcuteGraph(rx_Ctx* baseCtx, rx_FrameGraph* frameGraph) {
     rx_GlStateCache glStateCache = {0};
     rx__glInitStateCache(ctx, &glStateCache);
 
-    rx_SwapChain* swapChain = rx__getSwapChain(baseCtx, baseCtx->defaultSwapChain);
-    rx_texture defaultTexture = swapChain->textures[0];
-    GLuint defaultFrameBuffer = rx__getTexture(baseCtx, swapChain->textures[0])->gl.handle;
+    //rx_SwapChain* swapChain = rx__getSwapChain(baseCtx, baseCtx->defaultSwapChain);
+    //rx_texture defaultTexture = swapChain->textures[0];
+    //GLuint defaultFrameBuffer = rx__getTexture(baseCtx, swapChain->textures[0])->gl.handle;
 
     glBindVertexArray(ctx->vao);
     rx_colorMaskFlags colorMaskFlags[RX_MAX_COLOR_TARGETS] = {0}; // 0
     u32 passCounter = 0;
+    rx_swapChain currentSwapChain;
+    currentSwapChain.id = 0;
     for (uint32_t depLvlIdx = 0; depLvlIdx < frameGraph->dependencyLevels.deplevels.count; depLvlIdx++) {
         rx__DependencyLevel* depLvl = frameGraph->dependencyLevels.deplevels.elements + depLvlIdx;
 
@@ -5308,9 +5865,22 @@ LOCAL void rx__glExcuteGraph(rx_Ctx* baseCtx, rx_FrameGraph* frameGraph) {
             i32 width = renderPass->width;
             i32 height = renderPass->height;
             ASSERT(width > 0 && height > 0);
+
+            rx_swapChain nextSwapChain;
+            nextSwapChain.id = 0;
             // execute pass
             for (u32 idx = 0; idx < colorAttachmentCount; idx++) {
                 rx_ColorTarget* colorTarget = &renderPass->colorTargets[idx];
+
+                // Figure out if we a drawing to a swapchain framebuffer
+                // Switching to a different swapchain resets the gl state cache
+                rx_Texture* texture = rx_getTexture(colorTarget->target);
+                if (texture->swapChain.id != 0) {
+                    nextSwapChain = texture->swapChain;
+                } else {
+
+                }
+                #if 0
                 if (colorTarget->target.id == defaultTexture.id) {
                     // default target
                     isDefaultPass = true;
@@ -5343,6 +5913,25 @@ LOCAL void rx__glExcuteGraph(rx_Ctx* baseCtx, rx_FrameGraph* frameGraph) {
                     //GLuint frameBuffer = rx__getTexture(baseCtx, rx__getTextureView(baseCtx, pass->textureView)->refTexture).glHandle;
                     //glBindFramebuffer(GL_FRAMEBUFFER, frameBuffer);
                 }
+                #endif
+            }
+
+            if (nextSwapChain.id != 0 && nextSwapChain.id != currentSwapChain.id) {
+                // switch to swapchain context
+                currentSwapChain = nextSwapChain;
+                rx_SwapChain* swapChain = rx__getSwapChain(&ctx->base, nextSwapChain);
+                #if RX_WIN            
+                ctx->wgl.makeCurrent(swapChain->gl.dc, swapChain->gl.wglCtx);
+                #else
+                #error "Implement switch context for this Platform"
+                #endif
+
+                // switch gl context
+                glBindVertexArray(swapChain->gl.vao);
+                // reset cache
+                mem_setZero(&glStateCache, sizeof(glStateCache));
+                rx__glInitStateCache(ctx, &glStateCache);
+                glBindFramebuffer(GL_FRAMEBUFFER, swapChain->gl.framebuffer);
             }
 
             // clear color and depth-stencil attachments if needed
@@ -5500,7 +6089,6 @@ LOCAL void rx__glExcuteGraph(rx_Ctx* baseCtx, rx_FrameGraph* frameGraph) {
         }
     }
 
-    glBindFramebuffer(GL_FRAMEBUFFER, defaultFrameBuffer);
 
     glFlush();
 }
@@ -5541,6 +6129,51 @@ LOCAL void rx__glCommit(rx_Ctx* baseCtx) {
     //[ctx->nsGlLayer display];
 }
 #endif
+
+LOCAL rx_Ctx* rx__glCreate(Arena* arena, rx_SetupDesc* desc) {
+    ASSERT(arena);
+    ASSERT(desc);
+    rx_OpenGlCtx* ctx = mem_arenaPushStructZero(arena, rx_OpenGlCtx);
+    ctx->base.backend = rx_backend_gl400;
+    ctx->base.sampleCount = 1;
+
+    ctx->glMajorVersion = 4;
+    ctx->glMinorVersion = 0;
+
+    ctx->base.backendApi.makeSwapChain = rx__glMakeSwapChain;
+    ctx->base.backendApi.getCurrentSwapTexture = rx__glGetCurrentSwapTexture;
+
+#if defined(RX_USE_WIN32_GL_LOADER)
+    rx__glLoadOpenGl(ctx);
+#endif
+
+
+#if OS_APPLE
+    ctx->nsGlLayer = (RXGLLayer*) desc->context.gl.appleCaOpenGlLayer;
+    ASSERT(ctx->nsGlLayer != 0);
+#endif
+    // init context
+#if 1
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING, (GLint*)&ctx->defaultFramebuffer);
+    rx__oglCheckErrors()
+    //ASSERT(ctx->defaultFramebuffer);
+    glGenVertexArrays(1, &ctx->vao);
+    rx__oglCheckErrors()
+    ASSERT(ctx->vao);
+    glBindVertexArray(ctx->vao);
+#endif
+    rx__oglCheckErrors()
+    // incoming texture data is generally expected to be packed tightly
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    rx__oglCheckErrors()
+
+    #if defined(RX_GLCORE33)
+        // enable seamless cubemap sampling (only desktop GL)
+        glEnable(GL_TEXTURE_CUBE_MAP_SEAMLESS);
+    #endif
+
+    return (rx_Ctx*) ctx;
+}
 
 #endif
 #pragma endregion
@@ -5583,10 +6216,11 @@ void rx_setup(rx_SetupDesc* desc) {
     descWithDefaults.streamingUniformSize = rx_valueOrDefault(descWithDefaults.streamingUniformSize, RX_DEFAULT_MAX_STREAMING_UNIFORM_SIZE);
     descWithDefaults.dynamicUniformSize = rx_valueOrDefault(descWithDefaults.dynamicUniformSize, RX_DEFAULT_MAX_DYNAMIC_UNIFORM_SIZE);
 
+
     BaseMemory baseMem = os_getBaseMemory();
     Arena* arena = mem_makeArenaAligned(&baseMem, MEGABYTE(6), 16);
 
-    rx_Ctx* ctx = rx__ctx = rx__create(arena, &descWithDefaults);
+    rx_Ctx* ctx = rx__ctx = rx__glCreate(arena, &descWithDefaults);
     ctx->arena = arena;
 
     rx__poolInit(ctx->arena, &ctx->buffers, descWithDefaults.maxBuffers);
@@ -5604,8 +6238,8 @@ void rx_setup(rx_SetupDesc* desc) {
 
     
     // create default swapchain, should maybe be user driven
-    ctx->defaultSwapChain = rx__allocSwapChain(ctx);
-    rx_callBknFn(CreateSwapChain, ctx, &ctx->swapChains.elements[ctx->defaultSwapChain.idx]);
+    //ctx->defaultSwapChain = rx__allocSwapChain(ctx);
+   // rx_callBknFn(CreateSwapChain, ctx, &ctx->swapChains.elements[ctx->defaultSwapChain.idx]);
 
 
     // Frame Related
@@ -5695,6 +6329,9 @@ rx_buffer rx_makeBuffer(const rx_BufferDesc* desc) {
         .idx = idx,
         .gen = buffer->gen
     };
+
+    ASSERT(bufferHandle.idx == idx);
+    ASSERT(bufferHandle.gen == buffer->gen);
 
     return bufferHandle;
 }
@@ -6033,9 +6670,9 @@ rx_resGroup rx_makeDynamicBufferResGroup(rx_buffer dynBuffer0, rx_buffer dynBuff
 flags64 rx_getResGroupPassDepFlags(rx_resGroup resGroupHandle) {
     ASSERT(rx__ctx && resGroupHandle.id);
     rx_Ctx* ctx = rx__ctx;
-    if (!resGroupHandle.hasPassDep) {
-        return 0;
-    }
+    //if (!resGroupHandle.hasPassDep) {
+    //    return 0;
+    //}
     rx_ResGroup* resGroup = rx__getResGroup(ctx, resGroupHandle);
     ASSERT(resGroup->lastUpdateFrameIdx == ctx->frameIdx);
     
@@ -6256,6 +6893,39 @@ rx_renderPass rx_makeRenderPass(rx_RenderPassDesc* renderPassDesc, rx_RenderPass
     return handle;
 }
 
+
+rx_swapChain rx_makeSwapChain(rx_SwapChainDesc* desc) {
+    ASSERT(rx__ctx && desc);
+    rx_Ctx* ctx = rx__ctx;
+
+
+    rx_swapChain handle = rx__allocSwapChain(ctx);
+
+    if (handle.id == 0) {
+        return handle;
+    }
+
+    rx_SwapChain* swapChain = rx__getSwapChain(ctx, handle);
+
+    ctx->backendApi.makeSwapChain(ctx, swapChain, desc);
+
+    return handle;
+}
+
+rx_texture rx_getCurrentSwapTexture(rx_swapChain handle) {
+    ASSERT(handle.id);
+    ASSERT(rx__ctx);
+    rx_Ctx* ctx = rx__ctx;
+    
+    rx_SwapChain* swapChain = rx__getSwapChain(ctx, handle);
+    ASSERT(swapChain);
+
+    rx_texture texture = ctx->backendApi.getCurrentSwapTexture(ctx, swapChain);
+
+    return texture;
+}
+
+#if 0
 rx_texture rx_getCurrentSwapTexture(void) {
     ASSERT(rx__ctx);
     rx_Ctx* ctx = rx__ctx;
@@ -6263,6 +6933,7 @@ rx_texture rx_getCurrentSwapTexture(void) {
     rx_texture texture = rx_callBknFn(GetCurrentSwapTexture, ctx, swapChain);
     return texture;
 }
+#endif
 
 void rx_setRenderPassDrawList(rx_renderPass renderPass, rx_DrawArea* arenas, u32 areaCount, rx_DrawList* drawList) {
     ASSERT(rx__ctx);

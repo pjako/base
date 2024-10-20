@@ -955,7 +955,8 @@ INLINE Mat4 mat4_multiply(Mat4 left, Mat4 right) {
 #endif 
     return result;
 }
-INLINE Mat4 mat4_perspective(f32 fov, f32 aspectRatio, float near, float far) {
+
+INLINE Mat4 mat4_perspective(f32 fov, f32 aspectRatio, f32 nearX, f32 farX) {
     Mat4 result = mat4_diag(1.0f);
 
     f32 tanThetaOver2 = f32_tan(fov * (f32_pi / 360.0f));
@@ -963,8 +964,8 @@ INLINE Mat4 mat4_perspective(f32 fov, f32 aspectRatio, float near, float far) {
     result.store4x4[0][0] = 1.0f / tanThetaOver2;
     result.store4x4[1][1] = aspectRatio / tanThetaOver2;
     result.store4x4[2][3] = -1.0f;
-    result.store4x4[2][2] = (near + far) / (near - far);
-    result.store4x4[3][2] = (2.0f * near * far) / (near - far);
+    result.store4x4[2][2] = (nearX + farX) / (nearX - farX);
+    result.store4x4[3][2] = (2.0f * nearX * farX) / (nearX - farX);
     result.store4x4[3][3] = 0.0f;
 
     return result;

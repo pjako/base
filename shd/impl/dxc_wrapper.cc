@@ -34,6 +34,8 @@
 
 #include "dxc_wrapper.h"
 
+#include "assert.h"
+
 
 #if COMPILER_MSVC
 #define str_toStrWchar str_toS16
@@ -59,11 +61,12 @@ public:
     DxCompiler(Arena* arena) {
         mem_scoped(mem, arena) {
             //execPath = s8(""); // os_execPath(mem.arena);
-            
+            S8 binaryPath = os_filepath(mem.arena, os_systemPath_binary);
             S8 paths[] = {
-                str_join(mem.arena, os_filepath(mem.arena, os_systemPath_binary), s8("/"), s8("libdxcompiler"), s8(".dylib")),
-                s8("/Users/peterjakobs/pjako/base_kit/bin_tools/libdxcompiler.dylib"),
-                s8("/Users/peterjakobs/pjako/base_kit/bin_tools/dxcompiler.dll"),
+                str_join(mem.arena, binaryPath, s8("/"), s8("dxcompiler")),
+                str_join(mem.arena, binaryPath, s8("/"), s8("libdxcompiler"), s8(".dylib")),
+                s8("libdxcompiler.dylib"),
+                s8("/dxcompiler.dll"),
                 s8("/Users/peterjakobs/pjako/base_kit/bin_tools/libdxcompiler.so"),
                 // str_join(mem.arena, execPath, s8("/"), s8("libdxcompiler"), s8(".dylib")),
                 // str_join(mem.arena, execPath, s8("/"), s8("dxcompiler"), s8(".dll")),
@@ -81,7 +84,7 @@ public:
             }
         }
 
-        ASSERT(this->m_dxcompilerDll);
+        assert(this->m_dxcompilerDll);
 
         if (!this->m_dxcompilerDll) {
             return;

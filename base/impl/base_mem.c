@@ -520,6 +520,7 @@ LOCAL void mem__releasePre(void* ctx, void* ptr, u64 size) {
 
 Arena* mem_makeArenaPreAllocated(void* mem, u64 size) {
     Arena* arena = (Arena*) mem;
+    mem_setZero(arena, sizeof(Arena));
     arena->base.ctx = mem;
     arena->base.pageSize = size;
     arena->base.reserve = mem__reserve;
@@ -528,6 +529,8 @@ Arena* mem_makeArenaPreAllocated(void* mem, u64 size) {
     arena->base.release = mem__releasePre;
 
     arena->cap = size;
+    arena->unsafeRecord = 0;
+    arena->alignment = 16;
     arena->commitPos = size;
     arena->pos = ((u64) &arena->memory[0]) - ((u64) arena);
 

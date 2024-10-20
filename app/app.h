@@ -200,7 +200,7 @@ typedef enum app_appEventType {
     //app_appEventType_quitRequested,
     //app_appEventType_pathChanged,
     //app_appEventType_filesDropped,
-    //app_appEventType_clipboardPasted,
+    app_appEventType_clipboardPasted,
 
     app_appEventType__count,
     app_appEventType__force32 = 0x7FFFFFFF
@@ -209,6 +209,7 @@ typedef enum app_appEventType {
 typedef struct app_AppEvent {
     app_appEventType type;
     app_window window;
+    app_window focusedWindow;
     app_keyCode keyCode;
     u32 charCode;
     bx keyRepeat;
@@ -235,7 +236,7 @@ typedef struct app_ApplicationDesc {
     mms appMemoryBudget;
     void (*init) (void);
     void (*update) (void);
-    void (*event) (app_AppEvent* event);
+    void (*event) (const app_AppEvent* event);
     void (*prepareReloadDll) (void);
     void (*continueDll) (void);
     void (*cleanup) (void);
@@ -291,6 +292,7 @@ API app_window  app_makeWindow(app_WindowDesc* desc);
 API void        app_destroyWindow(app_window window);
 API void        app_showWindow(app_window window);
 API void        app_hideWindow(app_window window);
+API void*       app_getWin32WindowHandle(app_window window);
 API void*       app_getGraphicsHandle(app_window window);
 
 API Vec2i       app_getWindowSize(app_window window);

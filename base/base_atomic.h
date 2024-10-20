@@ -3,6 +3,7 @@
 
 #ifdef _MSC_VER
 // #include <winnt.h>
+#include <windows.h>
 #include <intrin.h>
 //typedef u32 volatile A32;
 //typedef u64 volatile A64;
@@ -10,7 +11,7 @@
 #define a16_compareAndSwap(dst, expected, desired) ((u16) _InterlockedCompareExchange16((volatile short*)dst, (short)desired, (short)expected))
 #define a32_compareAndSwap(dst, expected, desired) ((u32) _InterlockedCompareExchange32((volatile long*)dst, (long)desired, (long)expected))
 #define a64_compareAndSwap(dst, expected, desired) ((u64) _InterlockedCompareExchange64((volatile long long*)dst, (long long)desired, (long long)expected))
-#define a32_loadAcquire(VALPTR) InterlockedOr32(VALPTR, 0)
+#define a32_loadAcquire(VALPTR) InterlockedOr(VALPTR, 0)
 #define a64_loadAcquire(VALPTR) InterlockedOr64(VALPTR, 0)
 
 #define a32_add(dst, val) _InterlockedExchangeAdd((a32*) dst, (u32) val)
@@ -66,7 +67,7 @@ INLINE void a32_mpscInit(a32_MPSCIndexQueue* queue, Arena* arena, u64 capacity) 
     queue->out = 0;
 }
 
-#define a32_mpscForEach(QUEUE, INDEXNAME) for(u64 to = a32_loadAcquire(&(QUEUE)->in), INDEXNAME = (QUEUE)->out; (INDEXNAME) < to; (INDEXNAME)++)
+#define a32_mpscForEach(QUEUE, INDEXNAME) for(u32 to = a32_loadAcquire(&(QUEUE)->in), INDEXNAME = (QUEUE)->out; (INDEXNAME) < to; (INDEXNAME)++)
 
 INLINE void a32_mpscEnqeue(a32_MPSCIndexQueue* queue, a32 element) {
     ASSERT(element != 0);

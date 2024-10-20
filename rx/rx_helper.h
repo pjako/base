@@ -77,27 +77,27 @@ INLINE void rx_renderCmdBuilderDraw(rx_RenderCmdBuilder* builder, u32 indexOffse
 
         if ((builder->changedFlags & rx_renderCmd_resGroup1) != 0) {
             drawList->commands[drawList->count++] = builder->resGroup1.id;
-            if (builder->resGroup1.hasPassDep) {
+            //if (builder->resGroup1.hasPassDep) {
                 drawList->passIdxDepFlags |= rx_getResGroupPassDepFlags(builder->resGroup1);
                 // get pass dep!
                 //drawList->passIdxDepFlags |=  (builder->resGroup1.passIdx - 1) << 2;
-            }
+            //}
         }
 
         if ((builder->changedFlags & rx_renderCmd_resGroup2) != 0) {
             drawList->commands[drawList->count++] = builder->resGroup2.id;
-            if (builder->resGroup2.hasPassDep) {
+            //if (builder->resGroup2.hasPassDep) {
                 drawList->passIdxDepFlags |= rx_getResGroupPassDepFlags(builder->resGroup2);
                 //drawList->passIdxDepFlags |=  (builder->resGroup1.passIdx - 1) << 2;
-            }
+            //}
         }
 #if 0
         if ((builder->changedFlags & rx_renderCmd_resGroup3) != 0) {
             drawList->commands[drawList->count++] = builder->resGroup3.id;
-            if (builder->resGroup3.hasPassDep) {
+            //if (builder->resGroup3.hasPassDep) {
                 drawList->passIdxDepFlags |= rx_getResGroupPassDepFlags(builder->resGroup3);
                 //drawList->passIdxDepFlags |=  (builder->resGroup1.passIdx - 1) << 2;
-            }
+            //}
         }
 #endif
         if ((builder->changedFlags & rx_renderCmd_dynResGroup0) != 0) {

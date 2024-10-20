@@ -60,7 +60,7 @@ INLINE S8 os_getDirectoryFromFilepath(S8 filepath) {
     }
     S8 result = filepath;
     if (lastSlash != -1) {
-        result.size = lastSlash - 1;
+        result.size = lastSlash;
     }
     return result;
 }

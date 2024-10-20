@@ -2779,6 +2779,12 @@ i32 main(i32 argc, char* argv[]) {
     BaseMemory baseMem = os_getBaseMemory();
     Arena* arena = mem_makeArena(&baseMem, MEGABYTE(60));
 
+    DxCompiler* dxCompiler = NULL;
+    mem_scoped(mm, arena) {
+        dxCompiler = dxc_create(mm.arena);
+    }
+    ASSERT(dxCompiler);
+
 
     S8 shaderFileContent = os_fileRead(arena, shaderFilePath);
 
@@ -2791,12 +2797,6 @@ i32 main(i32 argc, char* argv[]) {
     if (!shd_parseFromFile(arena, &fileInfo, shaderFileName, shaderFileContent)) {
         return 1; // error!
     }
-
-    DxCompiler* dxCompiler = NULL;
-    mem_scoped(mm, arena) {
-        dxCompiler = dxc_create(mm.arena);
-    }
-    ASSERT(dxCompiler);
 
     if (!shd_generateShaders(arena, dxCompiler, &fileInfo, &fileInfo.codeInfos.elements[0], shaderFilePath)) {
         return 1; // error!

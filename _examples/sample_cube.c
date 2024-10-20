@@ -30,6 +30,7 @@ typedef struct g_State {
     rx_buffer perInstancePosAndVelocityVertexBuffer;
     rx_sampler sampler;
     rx_texture texture;
+    rx_swapChain swapChain;
     rx_resGroupLayout resGroupLayout;
     rx_renderPipeline renderPipeline;
     rx_resGroup resGroup;
@@ -50,7 +51,7 @@ typedef struct g_State {
 void g_init(void) {
     BaseMemory baseMem = os_getBaseMemory();
     Arena* mainArena = mem_makeArena(&baseMem, MEGABYTE(20));
-    g_State* state = mem_arenaPushStruct(mainArena, g_State);
+    g_State* state = mem_arenaPushStructZero(mainArena, g_State);
     app_setUserData(state);
     state->arena = mainArena;
 
@@ -65,14 +66,20 @@ void g_init(void) {
         .sampleCount = 1
     });
 
+    state->swapChain = rx_makeSwapChain(&(rx_SwapChainDesc) {
+        .windows.hWnd = app_getWin32WindowHandle(state->window)
+    });
+
     // uniform buffer
 
     {
         u32 streamingUniformSize = MEGABYTE(1);
-        state->streamingUniforms.buffer = rx_makeBuffer(&(rx_BufferDesc) {
+        
+        rx_buffer buffer = rx_makeBuffer(&(rx_BufferDesc) {
             .usage = rx_bufferUsage_uniform,
             .size = streamingUniformSize
         });
+        state->streamingUniforms.buffer = buffer;
         state->streamingUniforms.cpuArena = mem_makeArena(&baseMem, streamingUniformSize + KILOBYTE(1));
         state->streamingUniforms.gpuArena = rx_makeBumpAllocator(&(rx_BumpAllocatorDesc) {
             .arena = state->streamingUniforms.cpuArena,
@@ -235,16 +242,16 @@ void g_update(void) {
     u64 roundedFrameTime = tm_roundToCommonRefreshRate(frameTime);
     f32 frameTimeInSeconds = (f32) tm_countToSeconds(roundedFrameTime);
 
-    log_debugFmt(state->arena, s8("frame time: {}"), frameTimeInSeconds);
+    //log_debugFmt(state->arena, s8("frame time: {}"), frameTimeInSeconds);
 
 
     Vec2 windowSize = app_getWindowSizeF32(state->window);
-    Vec2 windowFrameBufferSize = app_getWindowFrameBufferSizeF32(state->window);
+    Vec2 windowFrameBufferSize = app_getWindowSizeF32(state->window);//app_getWindowFrameBufferSizeF32(state->window);
     
-    rx_texture texture = rx_getCurrentSwapTexture();
+    rx_texture currentSwapTexture = rx_getCurrentSwapTexture(state->swapChain);
 
     rx_renderPass renderPass = rx_makeRenderPass(&(rx_RenderPassDesc) {
-        .colorTargets[0].target = texture,
+        .colorTargets[0].target = currentSwapTexture,
         .colorTargets[0].clearColor = rgba_chocolate,
         .depthStencil.active = true,
         // Only needed on legacy apis (OpenGL/WebGL) for the "default pass"

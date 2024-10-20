@@ -42,12 +42,13 @@ typedef struct rx_Range {
 } rx_Range;
 
 typedef union rx_buffer {
-    u32 id;
+    u64 id;
 #ifdef RX_INTERNAL
     struct {
-        u16 idx     : 16;
-        u32 gen     : 7;
-        u32 passIdx : 9;
+        u16 idx      : 16;
+        u16 gen      : 16;
+        u16 passIdx  : 16;
+        u16 __unused : 16;
     };
 #endif
 } rx_buffer;
@@ -72,16 +73,19 @@ typedef union rx_sampler {
 #endif
 } rx_sampler;
 
+#pragma pack(push, 1)
 typedef union rx_texture {
-    u32 id;
+    u64 id;
 #ifdef RX_INTERNAL
     struct {
         u16 idx;
-        u32 gen     : 7;
-        u32 passIdx : 9;
+        u16 gen;
+        u16 passIdx;
+        u16 __unused;
     };
 #endif
 } rx_texture;
+#pragma pack(pop)
 
 
 typedef union rx_swapChain {
@@ -116,13 +120,13 @@ typedef union rx_resGroupLayout {
 
 typedef union rx_resGroup {
     u32 id;
-//#ifdef RX_INTERNAL
+#ifdef RX_INTERNAL
     struct {
         u16 idx;
-        u16 gen : 15;
-        bx hasPassDep : 1;
+        u16 gen : 16;
+       // bx hasPassDep : 1;
     };
-//#endif
+#endif
 } rx_resGroup;
 
 typedef union rx_renderPipeline {
@@ -223,7 +227,10 @@ typedef enum rx_backend {
 typedef struct rx_SetupDesc {
     struct {
         struct {
+            bool oglWasInitialized;
             void* appleCaOpenGlLayer;
+            void(*userInitOpenGL)(void* userPtr);
+            void* userPtr;
         } gl;
     } context;
     u32 sampleCount;
@@ -1137,10 +1144,41 @@ typedef struct rx_RenderPipelineDesc {
 
 API rx_renderPipeline rx_makeRenderPipeline(rx_RenderPipelineDesc* desc);
 
+typedef enum rx_presentMode {
+    rx_presentMode__default = 0,
+    // The presentation of the image to the user waits for the next vertical blanking period to update in a first-in, first-out manner.
+    // Tearing cannot be observed and frame-loop will be limited to the display's refresh rate.
+    // This is the only mode that's always available.
+    rx_presentMode_fifo,
+    // The presentation of the image to the user tries to wait for the next vertical blanking period but may decide to not wait if a frame is presented late.
+    // Tearing can sometimes be observed but late-frame don't produce a full-frame stutter in the presentation.
+    // This is still a first-in, first-out mechanism so a frame-loop will be limited to the display's refresh rate.
+    rx_presentMode_fifoRelaxed,
+    // The presentation of the image to the user is updated immediately without waiting for a vertical blank.
+    // Tearing can be observed but latency is minimized.
+    rx_presentMode_immediate,
+    rx_presentMode_mailbox,
+    rx_presentMode__forceU32 = RX_U32_MAX
+} rx_presentMode;
 
 
-// in the future there may be multiple swap chains so this needs to be called with a specific one
-API rx_texture rx_getCurrentSwapTexture(void);
+typedef enum rx_swapStrategy {
+    rx_swapStrategy__default = 0,
+    rx_swapStrategy_single,
+    rx_swapStrategy_double,
+    rx_swapStrategy_tripple,
+} rx_swapStrategy;
+
+typedef struct rx_SwapChainDesc {
+    rx_presentMode presentMode;
+    rx_swapStrategy swapStrategy;
+    struct {
+        void* hWnd;
+    } windows;
+} rx_SwapChainDesc;
+
+API rx_swapChain rx_makeSwapChain(rx_SwapChainDesc* desc);
+API rx_texture rx_getCurrentSwapTexture(rx_swapChain swapChain);
 
 typedef struct rx_ScissorRect {
     struct { uint16_t x, y; } offset;
@@ -1188,6 +1226,7 @@ typedef struct rx_RenderPassColorTargetDesc {
 
 typedef struct rx_RenderPassDesc {
     S8 name;
+    rx_swapChain swapChain;
     rx_RenderPassColorTargetDesc colorTargets[RX_MAX_COLOR_TARGETS];
     struct {
         bx               active;
