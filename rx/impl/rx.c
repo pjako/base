@@ -683,6 +683,7 @@ typedef struct rx_SwapChain {
     #endif
 
     rx_texture textures[RX_MAX_INFLIGHT_FRAMES];
+    u64 swapCount;
     u32 textureCount : 2;
     u32 gen : 16;
 } rx_SwapChain;
@@ -893,6 +894,9 @@ typedef struct rx_Ctx {
     rx__poolDef(rx_ResGroup) resGroups;
     rx__poolDef(rx_ResGroupLayout) resGroupLayouts;
     rx__poolDef(rx_SwapChain) swapChains;
+
+
+    rx_arrDef(rx_SwapChain) swapChainToUpdate;
 
 
     //rx_swapChain defaultSwapChain;
@@ -2924,7 +2928,7 @@ LOCAL void rx__glLoadOpenGl(rx_OpenGlCtx* ctx) {
     ASSERT(ctx->wgl.makeCurrent);
     ctx->wgl.getIntegerv = (void(WINAPI*)(uint32_t, int32_t*)) GetProcAddress(ctx->wgl.openGl32Dll, "glGetIntegerv");
     ASSERT(ctx->wgl.getIntegerv);
-    ctx->wgl.shareLists = (PNF_wglShareLists*) GetProcAddress(ctx->wgl.openGl32Dll, "wglShareLists");
+    ctx->wgl.shareLists = (PNF_wglShareLists) GetProcAddress(ctx->wgl.openGl32Dll, "wglShareLists");
     ASSERT(ctx->wgl.shareLists);
      
     rx__oglProcCtx = ctx;
@@ -4835,6 +4839,16 @@ LOCAL bool rx__glMakeSwapChain(rx_Ctx* baseCtx, rx_SwapChain* swapChain, rx_Swap
     swapChain->gl.vao = 0;
     glGenVertexArrays(1, &swapChain->gl.vao);
     glBindVertexArray(swapChain->gl.vao);
+
+    rx_swapStrategy swapStrategy = desc->swapStrategy ? desc->swapStrategy : rx_swapStrategy_double;
+    
+    for (uint32_t idx = 0; idx < swapStrategy) {
+        rx_allocTexture(ctx);
+        swapChain->textures[idx] = 
+    }
+
+    rx_countOf()
+    return true;
 }
 
 LOCAL rx_texture rx__glGetCurrentSwapTexture(rx_Ctx* baseCtx, rx_SwapChain* swapChain) {
@@ -5845,6 +5859,9 @@ LOCAL void rx__glExcuteGraph(rx_Ctx* baseCtx, rx_FrameGraph* frameGraph) {
     //rx_texture defaultTexture = swapChain->textures[0];
     //GLuint defaultFrameBuffer = rx__getTexture(baseCtx, swapChain->textures[0])->gl.handle;
 
+    rx_SwapChain* swapChainsToFlush[10];
+    uint32_t swapChainsToFlushCount = 0;
+
     glBindVertexArray(ctx->vao);
     rx_colorMaskFlags colorMaskFlags[RX_MAX_COLOR_TARGETS] = {0}; // 0
     u32 passCounter = 0;
@@ -5874,11 +5891,10 @@ LOCAL void rx__glExcuteGraph(rx_Ctx* baseCtx, rx_FrameGraph* frameGraph) {
 
                 // Figure out if we a drawing to a swapchain framebuffer
                 // Switching to a different swapchain resets the gl state cache
-                rx_Texture* texture = rx_getTexture(colorTarget->target);
+                rx_Texture* texture = rx__getTexture(baseCtx, colorTarget->target);
                 if (texture->swapChain.id != 0) {
                     nextSwapChain = texture->swapChain;
-                } else {
-
+                    isDefaultPass = true;
                 }
                 #if 0
                 if (colorTarget->target.id == defaultTexture.id) {
@@ -5925,6 +5941,20 @@ LOCAL void rx__glExcuteGraph(rx_Ctx* baseCtx, rx_FrameGraph* frameGraph) {
                 #else
                 #error "Implement switch context for this Platform"
                 #endif
+
+                // store swapchain to flush it when all render passes are done
+                {
+                    bool isInList = false;
+                    for (uint32_t idx = 0; idx < swapChainsToFlushCount; idx++) {
+                        if (swapChainsToFlush[idx] == swapChain) {
+                            isInList = true;
+                            break;
+                        }
+                    }
+                    if (!isInList) {
+                        swapChainsToFlush[swapChainsToFlushCount++] == swapChain;
+                    }
+                }
 
                 // switch gl context
                 glBindVertexArray(swapChain->gl.vao);
@@ -5991,7 +6021,6 @@ LOCAL void rx__glExcuteGraph(rx_Ctx* baseCtx, rx_FrameGraph* frameGraph) {
             //}
 
             for (int i = 0; i < colorAttachmentCount; i++) {
-                
                 if (renderPass->colorTargets[i].loadOp == rx_loadOp_clear) {
                     glClearBufferfv(GL_COLOR, i, &renderPass->colorTargets[i].clearColor.red);
                 }
@@ -6089,8 +6118,17 @@ LOCAL void rx__glExcuteGraph(rx_Ctx* baseCtx, rx_FrameGraph* frameGraph) {
         }
     }
 
-
-    glFlush();
+    // flush all gl context that has been rendered to
+    for (uint32_t idx = 0; idx < swapChainsToFlushCount; idx++) {
+        rx_SwapChain* swapChain = &swapChainsToFlush[idx];
+        #if RX_WIN            
+        ctx->wgl.makeCurrent(swapChain->gl.dc, swapChain->gl.wglCtx);
+        #else
+        #error "Implement switch context for this Platform"
+        #endif
+        glFlush();
+        swapCount->swapCount += 1;
+    }
 }
 #pragma endregion
 
@@ -6235,6 +6273,8 @@ void rx_setup(rx_SetupDesc* desc) {
     rx__poolInit(ctx->arena, &ctx->resGroupLayouts, descWithDefaults.maxResGroupLayouts);
     
     rx__poolInit(ctx->arena, &ctx->swapChains, descWithDefaults.maxSwapChains);
+
+    rx__arrInit(ctx->arena, &ctx->swapChainToUpdate, descWithDefaults.maxSwapChains);
 
     
     // create default swapchain, should maybe be user driven
