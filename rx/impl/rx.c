@@ -683,6 +683,7 @@ typedef struct rx_SwapChain {
     #endif
 
     rx_texture textures[RX_MAX_INFLIGHT_FRAMES];
+    rx_swapStrategy swapStrategy;
     u64 swapCount;
     u32 textureCount : 2;
     u32 gen : 16;
@@ -880,7 +881,7 @@ typedef struct rx_Ctx {
     u64 frameIdx;
     int sampleCount;
     struct {
-        bool (*makeSwapChain)(struct rx_Ctx*, rx_SwapChain* swapChain, rx_SwapChainDesc*);
+        bool (*makeSwapChain)(struct rx_Ctx*, rx_swapChain swapChainHandle, rx_SwapChain* swapChain, rx_SwapChainDesc*);
         rx_texture (*getCurrentSwapTexture)(struct rx_Ctx*, rx_SwapChain* swapChain);
     } backendApi;
     rx_Features features;
@@ -4767,7 +4768,7 @@ LOCAL int rx__glFindPixelFormat(rx_OpenGlCtx* ctx, HDC dc) {
     return pixel_format;
 }
 
-LOCAL bool rx__glMakeSwapChain(rx_Ctx* baseCtx, rx_SwapChain* swapChain, rx_SwapChainDesc* desc) {
+LOCAL bool rx__glMakeSwapChain(rx_Ctx* baseCtx, rx_swapChain swapChainHandle, rx_SwapChain* swapChain, rx_SwapChainDesc* desc) {
     ASSERT(baseCtx);
     rx_OpenGlCtx* ctx = (rx_OpenGlCtx*) baseCtx;
     HDC dc = GetDC(desc->windows.hWnd);
@@ -4841,13 +4842,15 @@ LOCAL bool rx__glMakeSwapChain(rx_Ctx* baseCtx, rx_SwapChain* swapChain, rx_Swap
     glBindVertexArray(swapChain->gl.vao);
 
     rx_swapStrategy swapStrategy = desc->swapStrategy ? desc->swapStrategy : rx_swapStrategy_double;
+    swapChain->swapStrategy = swapStrategy;
     
-    for (uint32_t idx = 0; idx < swapStrategy) {
-        rx_allocTexture(ctx);
-        swapChain->textures[idx] = 
+    for (uint32_t idx = 0; idx < swapStrategy; idx++) {
+        rx_texture texture = rx__allocTexture(baseCtx);
+        rx_Texture* textureInfo = rx__getTexture(baseCtx, texture);
+        textureInfo->swapChain = swapChainHandle;
+        swapChain->textures[idx] = texture;
     }
 
-    rx_countOf()
     return true;
 }
 
@@ -4856,7 +4859,8 @@ LOCAL rx_texture rx__glGetCurrentSwapTexture(rx_Ctx* baseCtx, rx_SwapChain* swap
     ASSERT(swapChain);
     // swapchain is external controlled and created for MacOS
     // TODO(PJ): might do something different on other platforms
-    return swapChain->textures[0];
+    
+    return swapChain->textures[swapChain->swapCount % swapChain->swapStrategy];
 }
 
 
@@ -5941,6 +5945,8 @@ LOCAL void rx__glExcuteGraph(rx_Ctx* baseCtx, rx_FrameGraph* frameGraph) {
                 #else
                 #error "Implement switch context for this Platform"
                 #endif
+                // set default buffer
+                glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
                 // store swapchain to flush it when all render passes are done
                 {
@@ -6126,8 +6132,9 @@ LOCAL void rx__glExcuteGraph(rx_Ctx* baseCtx, rx_FrameGraph* frameGraph) {
         #else
         #error "Implement switch context for this Platform"
         #endif
-        glFlush();
-        swapCount->swapCount += 1;
+        //glFlush();
+        SwapBuffers(swapChain->gl.dc);
+        swapChain->swapCount += 1;
     }
 }
 #pragma endregion
@@ -6274,7 +6281,7 @@ void rx_setup(rx_SetupDesc* desc) {
     
     rx__poolInit(ctx->arena, &ctx->swapChains, descWithDefaults.maxSwapChains);
 
-    rx__arrInit(ctx->arena, &ctx->swapChainToUpdate, descWithDefaults.maxSwapChains);
+    rx_arrInit(ctx->arena, &ctx->swapChainToUpdate, descWithDefaults.maxSwapChains);
 
     
     // create default swapchain, should maybe be user driven
@@ -6881,7 +6888,7 @@ rx_renderPass rx_makeRenderPass(rx_RenderPassDesc* renderPassDesc, rx_RenderPass
         colorAttachmentCount += 1;
     }
 
-    ASSERT(width != 0 && height != 0 && "Implement ofscreen pass!");
+    ASSERT(width != 0 && height != 0 && "Implement offscreen pass!");
     renderPass->colorAttachmentCount = colorAttachmentCount;
     renderPass->width = width;
     renderPass->height = height;
@@ -6946,8 +6953,9 @@ rx_swapChain rx_makeSwapChain(rx_SwapChainDesc* desc) {
     }
 
     rx_SwapChain* swapChain = rx__getSwapChain(ctx, handle);
+    ASSERT(swapChain);
 
-    ctx->backendApi.makeSwapChain(ctx, swapChain, desc);
+    ctx->backendApi.makeSwapChain(ctx, handle, swapChain, desc);
 
     return handle;
 }
