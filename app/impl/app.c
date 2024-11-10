@@ -2202,24 +2202,52 @@ static LRESULT os__win32DefaultWindowProc(HWND hWnd, UINT msg, WPARAM wParam, LP
 
 static const LPCWSTR* app__win32WindowClass = L"AppWindowClass";
 void app_startApplication(void) {
-    WNDCLASSEXW* windowClass = &app__appCtx->windowClass;
-    windowClass->cbSize        = sizeof(WNDCLASSEXA);
-    windowClass->cbWndExtra    = sizeof(void*);
-    windowClass->lpfnWndProc   = (WNDPROC) os__win32DefaultWindowProc;
-    windowClass->lpszClassName = app__win32WindowClass;
-    windowClass->hCursor       = LoadCursorA(NULL, MAKEINTRESOURCEA(32512));
-    windowClass->style         = CS_OWNDC | CS_DBLCLKS;
-    if (!RegisterClassExA(windowClass)) {
-        ASSERT(!"Failed to initialize window class.");
-        return;
-    }
+    //WNDCLASSEXW* windowClass = &app__appCtx->windowClass;
+    WNDCLASSW windowClass;
+    mem_setZero(&windowClass, sizeof(windowClass));
+    windowClass.style = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
+    windowClass.lpfnWndProc = (WNDPROC) os__win32DefaultWindowProc;
+    windowClass.hInstance = GetModuleHandleW(NULL);
+    windowClass.hCursor = LoadCursor(NULL, IDC_ARROW);
+    windowClass.hIcon = LoadIcon(NULL, IDI_WINLOGO);
+    windowClass.lpszClassName = L"AppWindowClass";
+    RegisterClassW(&windowClass);
+    // windowClass->cbSize        = sizeof(WNDCLASSEXA);
+    // windowClass->cbWndExtra    = sizeof(void*);
+    // windowClass->lpfnWndProc   = (WNDPROC) os__win32DefaultWindowProc;
+    // windowClass->lpszClassName = L"AppWindowClass";
+    // windowClass->hCursor       = LoadCursorA(NULL, MAKEINTRESOURCEA(32512));
+    // windowClass->style         = CS_OWNDC | CS_DBLCLKS;
+
+    RegisterClassW(&windowClass);
+
     if (app__appCtx->desc.init) {
         app__appCtx->desc.init();
     }
     
+    bool done = false;
+
+    while (!done) {
+        MSG msg;
+        while (PeekMessageW(&msg, NULL, 0, 0, PM_REMOVE)) {
+            if (WM_QUIT == msg.message) {
+                done = true;
+                continue;
+            } else {
+                TranslateMessage(&msg);
+                DispatchMessageW(&msg);
+            }
+        }
+        
+        if (app__appCtx->desc.update) {
+            app__appCtx->desc.update();
+        }
+
+    }
+    
     while (1) {
         MSG msg;
-        if (PeekMessageA(&msg, NULL, 0, 0, PM_REMOVE)) {
+        if (PeekMessageW(&msg, NULL, 0, 0, PM_REMOVE)) {
             if (msg.message == WM_QUIT) {
                 if (app__appCtx->desc.cleanup) {
                     app__appCtx->desc.cleanup();
@@ -2407,6 +2435,12 @@ app_window app_makeWindow(app_WindowDesc* desc) {
     int windowWidth = desc->width ? desc->width : 420;
     int windowHeight = desc->height ? desc->height : 320;
 
+    app__Window* win = app__appCtx->windows + idx;
+    win->dpi.aware = 1.0f;
+    win->dpi.contentScale = 1.0f;
+    win->dpi.windowScale = 1.0f;
+    win->dpi.mouseScale = 1.0f;
+
     RECT rect = { 0, 0, 0, 0 };
     rect.right  = (int) ((float)windowWidth  * 1.0f/*win->dpi.window_scale*/);
     rect.bottom = (int) ((float)windowHeight * 1.0f/*win->dpi.window_scale*/);
@@ -2415,12 +2449,6 @@ app_window app_makeWindow(app_WindowDesc* desc) {
     const int win_width = rect.right - rect.left;
     const int win_height = rect.bottom - rect.top;
 
-    app__Window* win = app__appCtx->windows + idx;
-
-    win->dpi.aware = 1.0f;
-    win->dpi.contentScale = 1.0f;
-    win->dpi.windowScale = 1.0f;
-    win->dpi.mouseScale = 1.0f;
     win->dpi.scale = 1.0f;
 
     win->width = windowWidth;
@@ -2428,13 +2456,13 @@ app_window app_makeWindow(app_WindowDesc* desc) {
     win->frameBufferWidth = windowWidth;
     win->frameBufferHeight = windowHeight;
     win->active = true;
-    win->hWnd = CreateWindowEx(
+    win->hWnd = CreateWindowExW(
         winExStyle,                 // dwExStyle
-        app__win32WindowClass, //app__win32WindowClass,      // lpClassName
+        L"AppWindowClass", //app__win32WindowClass,      // lpClassName
         L"Window Title :(",//nullterminatedWindowName.content,    // lpWindowName
         winStyle,                   // dwStyle
         CW_USEDEFAULT,              // X
-        SW_HIDE,                    // Y (NOTE: CW_USEDEFAULT is not used for position here, but internally calls ShowWindow!
+        SW_HIDE, //SW_HIDE,                    // Y (NOTE: CW_USEDEFAULT is not used for position here, but internally calls ShowWindow!
         windowWidth,                // nWidth
         windowHeight,               // nHeight (NOTE: if width is CW_USEDEFAULT, height is actually ignored)
         NULL,                       // hWndParent
@@ -2443,6 +2471,7 @@ app_window app_makeWindow(app_WindowDesc* desc) {
         NULL                        // lParam
     );
 
+    ASSERT(win->hWnd);
     
     win->dc = GetDC(win->hWnd);
     win->hmonitor = MonitorFromWindow(win->hWnd, MONITOR_DEFAULTTONULL);
@@ -2450,10 +2479,11 @@ app_window app_makeWindow(app_WindowDesc* desc) {
     app__win32UpdateDimensions(win);
     
     ShowWindow(win->hWnd, SW_SHOW);
+    DragAcceptFiles(win->hWnd, 1);
     
     
     //CreateWindowExA(0, app__win32WindowClass, nullterminatedWindowName.content, WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, desc->width ? desc->width : 420, desc->height ? desc->height : 320, NULL, NULL, NULL, win);
-    ASSERT(win->hWnd);
+
     window.id = idx + 1;
     return window;
 }
@@ -2478,7 +2508,7 @@ void app_showWindow(app_window window) {
     ASSERT(window.id);
     window.id -= 1;
     app__Window* win = &app__appCtx->windows[window.id];
-    ShowWindow(win->hWnd, SW_SHOWNORMAL);
+    ShowWindow(win->hWnd, SW_SHOW);
 }
 
 void app_hideWindow(app_window window) {

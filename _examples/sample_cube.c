@@ -61,6 +61,8 @@ void g_init(void) {
         .height = 400
     });
 
+    //app_showWindow(state->window);
+
     rx_setup(&(rx_SetupDesc) {
         .context.gl.appleCaOpenGlLayer = app_getGraphicsHandle(state->window),
         .sampleCount = 1
@@ -218,7 +220,7 @@ void g_init(void) {
 
     // show window!
 
-    app_showWindow(state->window);
+    //app_showWindow(state->window);
 }
 
 void g_event(app_AppEvent* event) {
@@ -229,6 +231,7 @@ void g_event(app_AppEvent* event) {
 
 void g_update(void) {
     g_State* state = (g_State*) app_getUserData();
+    //app_showWindow(state->window);
 
     
     u64 timeCount = tm_currentCount();

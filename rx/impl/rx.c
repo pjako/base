@@ -2777,7 +2777,7 @@ typedef BOOL (WINAPI * PFN_wglDeleteContext)(HGLRC);
 typedef PROC (WINAPI * PFN_wglGetProcAddress)(LPCSTR);
 typedef HDC (WINAPI * PFN_wglGetCurrentDC)(void);
 typedef BOOL (WINAPI * PFN_wglMakeCurrent)(HDC,HGLRC);
-typedef void (WINAPI * PNF_wglShareLists)(HGLRC, HGLRC);
+typedef BOOL (WINAPI * PNF_wglShareLists)(HGLRC, HGLRC);
 #endif
 
 typedef struct rx_OpenGlCtx {
@@ -2966,15 +2966,14 @@ LOCAL void rx__glLoadOpenGl(rx_OpenGlCtx* ctx) {
         DispatchMessageW(&msg);
     }
     ctx->wgl.msgDeviceContext = GetDC(ctx->wgl.msgHwnd);
+
     if (!ctx->wgl.msgDeviceContext) {
         ASSERT(!"RX: OpenGL getting device context Failed");
         return;
         //_SAPP_PANIC(WIN32_HELPER_WINDOW_GETDC_FAILED);
     }
 
-
-
-
+#if 1
     ASSERT(ctx->wgl.msgDeviceContext);
     PIXELFORMATDESCRIPTOR pfd;
     mem_setZero(&pfd, sizeof(pfd));
@@ -2988,29 +2987,92 @@ LOCAL void rx__glLoadOpenGl(rx_OpenGlCtx* ctx) {
         ASSERT(!"RX: OpenGL dummy context set pixel format failed");
         return;
     }
-    HGLRC rc = ctx->wgl.createContext(ctx->wgl.msgDeviceContext);
-    if (!rc) {
-        //_SAPP_PANIC(WIN32_CREATE_DUMMY_CONTEXT_FAILED);
-        ASSERT(!"RX: OpenGL create dummy context failed");
+#endif
+    //HGLRC rc = ctx->wgl.createContext(ctx->wgl.msgDeviceContext);
+    //if (!rc) {
+    //    //_SAPP_PANIC(WIN32_CREATE_DUMMY_CONTEXT_FAILED);
+    //    ASSERT(!"RX: OpenGL create dummy context failed");
+    //    return;
+    //}
+
+
+#if 0
+    int pixel_format = rx__glFindPixelFormat(ctx, dc);
+    if (0 == pixel_format) {
+        //_SAPP_PANIC(WIN32_WGL_FIND_PIXELFORMAT_FAILED);
+        ASSERT(!"Cant find pixel format ");
+        return false;
+    }
+    PIXELFORMATDESCRIPTOR pfd;
+    if (!DescribePixelFormat(dc, pixel_format, sizeof(pfd), &pfd)) {
+        //_SAPP_PANIC(WIN32_WGL_DESCRIBE_PIXELFORMAT_FAILED);
+        ASSERT(!"Wrong pixel format desc.");
+        return false;
+    }
+    if (!SetPixelFormat(dc, pixel_format, &pfd)) {
+        //_SAPP_PANIC(WIN32_WGL_SET_PIXELFORMAT_FAILED);
+        ASSERT(!"Setting pixel format failed");
+    }
+    if (!ctx->wgl.createContext) {
+        //_SAPP_PANIC(WIN32_WGL_ARB_CREATE_CONTEXT_REQUIRED);
+        ASSERT(!"Wgl context creation function missing");
+        return false;
+    }
+#endif
+    {
+        HGLRC rc = ctx->wgl.createContext(ctx->wgl.msgDeviceContext);
+
+        if (!ctx->wgl.makeCurrent(ctx->wgl.msgDeviceContext, rc)) {
+            ASSERT(!"RX: OpenGL make context current failed");
+            //_SAPP_PANIC(WIN32_DUMMY_CONTEXT_MAKE_CURRENT_FAILED);
+            return;
+        }
+        ctx->wgl.getExtensionsStringEXT = (PFNWGLGETEXTENSIONSSTRINGEXTPROC)(void*) ctx->wgl.getProcAddress("wglGetExtensionsStringEXT");
+        ctx->wgl.getExtensionsStringARB = (PFNWGLGETEXTENSIONSSTRINGARBPROC)(void*) ctx->wgl.getProcAddress("wglGetExtensionsStringARB");
+        ctx->wgl.createContextAttribsARB = (PFNWGLCREATECONTEXTATTRIBSARBPROC)(void*) ctx->wgl.getProcAddress("wglCreateContextAttribsARB");
+        ctx->wgl.swapIntervalEXT = (PFNWGLSWAPINTERVALEXTPROC)(void*) ctx->wgl.getProcAddress("wglSwapIntervalEXT");
+        ctx->wgl.getPixelFormatAttribivARB = (PFNWGLGETPIXELFORMATATTRIBIVARBPROC)(void*) ctx->wgl.getProcAddress("wglGetPixelFormatAttribivARB");
+        ctx->wgl.arb_multisample = rx__wglExtSupported(ctx, "WGL_ARB_multisample");
+        ctx->wgl.arb_create_context = rx__wglExtSupported(ctx, "WGL_ARB_create_context");
+        ctx->wgl.arb_create_context_profile = rx__wglExtSupported(ctx, "WGL_ARB_create_context_profile");
+        ctx->wgl.ext_swap_control = rx__wglExtSupported(ctx, "WGL_EXT_swap_control");
+        ctx->wgl.arb_pixel_format = rx__wglExtSupported(ctx, "WGL_ARB_pixel_format");
+        ctx->wgl.makeCurrent(ctx->wgl.msgDeviceContext, 0);
+    
+        ctx->wgl.deleteContext(rc);
+    }
+
+
+    if (!ctx->wgl.arb_create_context_profile) {
+        //_SAPP_PANIC(WIN32_WGL_ARB_CREATE_CONTEXT_PROFILE_REQUIRED);
+        ASSERT(!"Wgl context creation function missing");
         return;
     }
-    if (!ctx->wgl.makeCurrent(ctx->wgl.msgDeviceContext, rc)) {
+
+    const int attrs[] = {
+        WGL_CONTEXT_MAJOR_VERSION_ARB, ctx->glMajorVersion,//_sapp.desc.gl_major_version,
+        WGL_CONTEXT_MINOR_VERSION_ARB, ctx->glMinorVersion,//_sapp.desc.gl_minor_version,
+#if defined(RX_DEBUG)
+        WGL_CONTEXT_FLAGS_ARB, WGL_CONTEXT_FORWARD_COMPATIBLE_BIT_ARB | WGL_CONTEXT_DEBUG_BIT_ARB,
+#else
+        WGL_CONTEXT_FLAGS_ARB, WGL_CONTEXT_FORWARD_COMPATIBLE_BIT_ARB,
+#endif
+        WGL_CONTEXT_PROFILE_MASK_ARB, WGL_CONTEXT_CORE_PROFILE_BIT_ARB,
+        0, 0
+    };
+    ctx->wgl.ctx = ctx->wgl.createContextAttribsARB(ctx->wgl.msgDeviceContext, 0, attrs);
+
+    if (!ctx->wgl.ctx) {
+        ASSERT(!"RX: OpenGL make context failed");
+        //_SAPP_PANIC(WIN32_DUMMY_CONTEXT_MAKE_CURRENT_FAILED);
+        return;
+    }
+
+    if (!ctx->wgl.makeCurrent(ctx->wgl.msgDeviceContext, ctx->wgl.ctx)) {
         ASSERT(!"RX: OpenGL make context current failed");
         //_SAPP_PANIC(WIN32_DUMMY_CONTEXT_MAKE_CURRENT_FAILED);
         return;
     }
-    ctx->wgl.getExtensionsStringEXT = (PFNWGLGETEXTENSIONSSTRINGEXTPROC)(void*) ctx->wgl.getProcAddress("wglGetExtensionsStringEXT");
-    ctx->wgl.getExtensionsStringARB = (PFNWGLGETEXTENSIONSSTRINGARBPROC)(void*) ctx->wgl.getProcAddress("wglGetExtensionsStringARB");
-    ctx->wgl.createContextAttribsARB = (PFNWGLCREATECONTEXTATTRIBSARBPROC)(void*) ctx->wgl.getProcAddress("wglCreateContextAttribsARB");
-    ctx->wgl.swapIntervalEXT = (PFNWGLSWAPINTERVALEXTPROC)(void*) ctx->wgl.getProcAddress("wglSwapIntervalEXT");
-    ctx->wgl.getPixelFormatAttribivARB = (PFNWGLGETPIXELFORMATATTRIBIVARBPROC)(void*) ctx->wgl.getProcAddress("wglGetPixelFormatAttribivARB");
-    ctx->wgl.arb_multisample = rx__wglExtSupported(ctx, "WGL_ARB_multisample");
-    ctx->wgl.arb_create_context = rx__wglExtSupported(ctx, "WGL_ARB_create_context");
-    ctx->wgl.arb_create_context_profile = rx__wglExtSupported(ctx, "WGL_ARB_create_context_profile");
-    ctx->wgl.ext_swap_control = rx__wglExtSupported(ctx, "WGL_EXT_swap_control");
-    ctx->wgl.arb_pixel_format = rx__wglExtSupported(ctx, "WGL_ARB_pixel_format");
-    //ctx->wgl.makeCurrent(ctx->wgl.msgDeviceContext, 0);
-    //ctx->wgl.deleteContext(rc);
 
     ASSERT(wglGetprocaddress);
     #define RX__XMACRO(name, ret, args) name = (PFN_ ## name) rx__glGetProcAddr(ctx->wgl.openGl32Dll, #name, wglGetprocaddress);
@@ -4827,9 +4889,12 @@ LOCAL bool rx__glMakeSwapChain(rx_Ctx* baseCtx, rx_swapChain swapChainHandle, rx
             return false;
         }
     }
+
     // share resources between gl context
-    ctx->wgl.shareLists(ctx->wgl.ctx, swapChain->gl.wglCtx);
-    ctx->wgl.makeCurrent(swapChain->gl.dc, swapChain->gl.wglCtx);
+    BOOL success = ctx->wgl.shareLists(ctx->wgl.ctx, swapChain->gl.wglCtx);
+    ASSERT(success);
+    success = ctx->wgl.makeCurrent(swapChain->gl.dc, swapChain->gl.wglCtx);
+    ASSERT(success);
     if (ctx->wgl.ext_swap_control) {
         /* FIXME: DwmIsCompositionEnabled() (see GLFW) */
         ctx->wgl.swapIntervalEXT(1); // 1 -> vsync
@@ -4850,6 +4915,9 @@ LOCAL bool rx__glMakeSwapChain(rx_Ctx* baseCtx, rx_swapChain swapChainHandle, rx
         textureInfo->swapChain = swapChainHandle;
         swapChain->textures[idx] = texture;
     }
+
+    GLuint defaultFramebuffer = 0;
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING, (GLint*)&defaultFramebuffer);
 
     return true;
 }
@@ -5958,7 +6026,7 @@ LOCAL void rx__glExcuteGraph(rx_Ctx* baseCtx, rx_FrameGraph* frameGraph) {
                         }
                     }
                     if (!isInList) {
-                        swapChainsToFlush[swapChainsToFlushCount++] == swapChain;
+                        swapChainsToFlush[swapChainsToFlushCount++] = swapChain;
                     }
                 }
 
@@ -6126,7 +6194,7 @@ LOCAL void rx__glExcuteGraph(rx_Ctx* baseCtx, rx_FrameGraph* frameGraph) {
 
     // flush all gl context that has been rendered to
     for (uint32_t idx = 0; idx < swapChainsToFlushCount; idx++) {
-        rx_SwapChain* swapChain = &swapChainsToFlush[idx];
+        rx_SwapChain* swapChain = swapChainsToFlush[idx];
         #if RX_WIN            
         ctx->wgl.makeCurrent(swapChain->gl.dc, swapChain->gl.wglCtx);
         #else
