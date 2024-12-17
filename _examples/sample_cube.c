@@ -46,6 +46,7 @@ typedef struct g_State {
 
     u64 lastFrameTimeCount;
     u64 frameCount;
+    f64 lastFrameTime;
 } g_State;
 
 void g_init(void) {
@@ -231,7 +232,7 @@ void g_event(app_AppEvent* event) {
 
 void g_update(void) {
     g_State* state = (g_State*) app_getUserData();
-    //app_showWindow(state->window);
+    app_showWindow(state->window);
 
     
     u64 timeCount = tm_currentCount();
@@ -239,17 +240,31 @@ void g_update(void) {
         state->lastFrameTimeCount = timeCount;
     }
     u64 timeCountDiffSinceLastFrame = (timeCount - state->lastFrameTimeCount);
-    
+    state->lastFrameTimeCount = timeCount;
+    // something is wrong with the performance timer on windows
     tm_FrequencyInfo frequencyInfo = tm_getPerformanceFrequency();
     u64 frameTime = tm_countToNanoseconds(frequencyInfo, timeCountDiffSinceLastFrame);
     u64 roundedFrameTime = tm_roundToCommonRefreshRate(frameTime);
-    f32 frameTimeInSeconds = (f32) tm_countToSeconds(roundedFrameTime);
 
-    //log_debugFmt(state->arena, s8("frame time: {}"), frameTimeInSeconds);
+    state->lastFrameTime += (f64) tm_countToSeconds(roundedFrameTime);
+    f32 frameTimeInSeconds = (f32) state->lastFrameTime;
+    // static f32 frameC;
+    // frameTimeInSeconds = frameC + 0.01f;
+    // frameC = frameTimeInSeconds;
+    //log_debugFmt(state->arena, s8("timeCount: {} size: ({}|{})"), timeCountDiffSinceLastFrame, windowFrameBufferSize.x, windowFrameBufferSize.y);
 
+    if (frameTimeInSeconds == 0) {
+        return;
+    }
 
     Vec2 windowSize = app_getWindowSizeF32(state->window);
     Vec2 windowFrameBufferSize = app_getWindowSizeF32(state->window);//app_getWindowFrameBufferSizeF32(state->window);
+
+    if (windowSize.x <= 0 || windowSize.y <= 0) {
+        return;
+    }
+
+    log_debugFmt(state->arena, s8("size: ({}|{})"), windowSize.x, windowSize.y);
     
     rx_texture currentSwapTexture = rx_getCurrentSwapTexture(state->swapChain);
 

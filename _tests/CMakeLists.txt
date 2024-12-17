@@ -1,6 +1,7 @@
 
 # str test
 add_executable(str_test str_test.c)
+set_property(TARGET str_test PROPERTY C_STANDARD 11)
 target_link_libraries(str_test base os)
 
 add_executable(test_math test_math.c)

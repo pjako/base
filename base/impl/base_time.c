@@ -122,7 +122,7 @@ u64 tm_currentCount(void) {
     return counter;
 }
 
- tm_FrequencyInfo tm_getPerformanceFrequency(void) {
+tm_FrequencyInfo tm_getPerformanceFrequency(void) {
     tm_FrequencyInfo freq;
     freq.frequency = i64_val(1000000000);
 #if  OS_WIN

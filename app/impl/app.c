@@ -1659,6 +1659,7 @@ void app_appCleanupThread(void) {
 #include <windows.h>
 #include <windowsx.h>
 #include <shellapi.h>
+#include <synchapi.h>
 
 typedef struct app__Window {
     HWND hWnd;
@@ -1979,6 +1980,9 @@ static LRESULT os__win32DefaultWindowProc(HWND hWnd, UINT msg, WPARAM wParam, LP
             //PostQuitMessage(0);
             return 0;
         } break;
+        // case WM_PAINT: {
+        //     app__appCtx->desc.update();
+        // } break;
         case WM_SYSCOMMAND: {
             switch (wParam & 0xFFF0) {
                 case SC_SCREENSAVE:
@@ -2189,7 +2193,7 @@ static LRESULT os__win32DefaultWindowProc(HWND hWnd, UINT msg, WPARAM wParam, LP
 
         default: break;
     }
-    return DefWindowProcA(hWnd, msg, wParam, lParam);
+    return DefWindowProcW(hWnd, msg, wParam, lParam);
 }
 
 // void CALLBACK TimerProc(HWND hwnd, UINT uMsg, UINT_PTR idEvent, DWORD dwTime) {
@@ -2199,7 +2203,7 @@ static LRESULT os__win32DefaultWindowProc(HWND hWnd, UINT msg, WPARAM wParam, LP
 //         RenderWindow(window);
 //     }
 // }
-
+LOCAL bool app__win32UpdateDimensions(app__Window* window);
 static const LPCWSTR* app__win32WindowClass = L"AppWindowClass";
 void app_startApplication(void) {
     //WNDCLASSEXW* windowClass = &app__appCtx->windowClass;
@@ -2207,6 +2211,7 @@ void app_startApplication(void) {
     mem_setZero(&windowClass, sizeof(windowClass));
     windowClass.style = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
     windowClass.lpfnWndProc = (WNDPROC) os__win32DefaultWindowProc;
+    windowClass.cbWndExtra  = sizeof(void*);
     windowClass.hInstance = GetModuleHandleW(NULL);
     windowClass.hCursor = LoadCursor(NULL, IDC_ARROW);
     windowClass.hIcon = LoadIcon(NULL, IDI_WINLOGO);
@@ -2242,25 +2247,8 @@ void app_startApplication(void) {
         if (app__appCtx->desc.update) {
             app__appCtx->desc.update();
         }
-
-    }
-    
-    while (1) {
-        MSG msg;
-        if (PeekMessageW(&msg, NULL, 0, 0, PM_REMOVE)) {
-            if (msg.message == WM_QUIT) {
-                if (app__appCtx->desc.cleanup) {
-                    app__appCtx->desc.cleanup();
-                }
-                break;
-            }
-
-            TranslateMessage(&msg);
-            DispatchMessageA(&msg);
-        }
-        if (app__appCtx->desc.update) {
-            app__appCtx->desc.update();
-        }
+        //PostMessage(_sapp.win32.hwnd, WM_CLOSE, 0, 0);
+        app__win32UpdateDimensions(&app__appCtx->windows[0]);
     }
 }
 void app_initApplication(app_ApplicationDesc* applicationDesc) {
@@ -2472,14 +2460,15 @@ app_window app_makeWindow(app_WindowDesc* desc) {
     );
 
     ASSERT(win->hWnd);
-    
+    //
     win->dc = GetDC(win->hWnd);
     win->hmonitor = MonitorFromWindow(win->hWnd, MONITOR_DEFAULTTONULL);
 
+
     app__win32UpdateDimensions(win);
     
-    ShowWindow(win->hWnd, SW_SHOW);
-    DragAcceptFiles(win->hWnd, 1);
+    //ShowWindow(win->hWnd, SW_SHOW);
+    //DragAcceptFiles(win->hWnd, 1);
     
     
     //CreateWindowExA(0, app__win32WindowClass, nullterminatedWindowName.content, WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, desc->width ? desc->width : 420, desc->height ? desc->height : 320, NULL, NULL, NULL, win);

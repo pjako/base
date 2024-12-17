@@ -7,6 +7,8 @@ endif(WIN32)
 
 add_definitions(-DPROJECT_ROOT="${PROJECT_SOURCE_DIR}")
 
+set(CMAKE_C_STANDARD 11)
+
 include_directories(${CMAKE_CURRENT_LIST_DIR})
 
 # Base
